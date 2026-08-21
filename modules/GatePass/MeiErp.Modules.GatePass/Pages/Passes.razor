@@ -1,0 +1,163 @@
+@page "/gatepass"
+@page "/gatepass/passes"
+@attribute [Authorize(Policy = GatePassModule.PassesView)]
+@rendermode InteractiveServer
+@inject IGatePassService Gate
+@inject IClock Clock
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Gate passes</PageTitle>
+
+<div class="d-flex align-center mb-1">
+    <div>
+        <MudText Typo="Typo.h5">Gate passes</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            Whoever raises a pass cannot clear it through the gate. That separation is the point.
+        </MudText>
+    </div>
+    <MudSpacer />
+    <AuthorizeView Policy="@GatePassModule.PassesRaise" Context="perms">
+        <Authorized>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+                New pass
+            </MudButton>
+        </Authorized>
+    </AuthorizeView>
+</div>
+
+@if (_overdue.Count > 0)
+{
+    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mt-4">
+        <b>@_overdue.Count</b> returnable
+        @(_overdue.Count == 1 ? "pass is" : "passes are")
+        past their return date with goods still out:
+        @string.Join(", ", _overdue.Select(p => p.Number))
+    </MudAlert>
+}
+
+<MudPaper Outlined="true" Elevation="0" Class="mt-4">
+    <MudDataGrid T="Pass" Items="_rows" Dense="true" Hover="true" Elevation="0"
+                 Loading="_loading" Filterable="false" RowsPerPage="25">
+        <Columns>
+            <PropertyColumn Property="@(p => p.Number)" Title="Number" />
+            <TemplateColumn Title="Date">
+                <CellTemplate>@context.Item.Date.ToString("d MMM yyyy")</CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Direction">
+                <CellTemplate>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                             Color="@(context.Item.Direction == PassDirection.Outward ? Color.Warning : Color.Info)">
+                        @context.Item.Direction
+                    </MudChip>
+                </CellTemplate>
+            </TemplateColumn>
+            <PropertyColumn Property="@(p => p.PartyName)" Title="To / from" />
+            <TemplateColumn Title="Items">
+                <CellTemplate>
+                    @context.Item.Items.Count
+                    @if (context.Item.IsReturnable)
+                    {
+                        <MudTooltip Text="@($"Expected back {context.Item.ExpectedBack:d MMM yyyy}")">
+                            <MudIcon Icon="@Icons.Material.Outlined.AssignmentReturn" Size="Size.Small"
+                                     Class="ml-1 mud-text-secondary" />
+                        </MudTooltip>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Status">
+                <CellTemplate>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                             Color="@Colour(context.Item.Status)">@context.Item.Status</MudChip>
+                    @if (context.Item.IsOverdue(Clock.Today))
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Error"
+                                 Variant="Variant.Filled">overdue</MudChip>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="" Sortable="false">
+                <CellTemplate>
+                    <div class="d-flex justify-end gap-1">
+                        @if (context.Item.Status is PassStatus.Issued)
+                        {
+                            <AuthorizeView Policy="@GatePassModule.PassesClear" Context="perms">
+                                <Authorized>
+                                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
+                                               OnClick="@(() => Clear(context.Item))">Clear</MudButton>
+                                </Authorized>
+                            </AuthorizeView>
+                        }
+                        else if (context.Item.IsReturnable
+                                 && context.Item.Status is PassStatus.Cleared
+                                                        or PassStatus.PartiallyReturned)
+                        {
+                            <AuthorizeView Policy="@GatePassModule.PassesReturn" Context="perms">
+                                <Authorized>
+                                    <MudButton Size="Size.Small" Variant="Variant.Text"
+                                               OnClick="@(() => Receive(context.Item))">Receive back</MudButton>
+                                </Authorized>
+                            </AuthorizeView>
+                        }
+                    </div>
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+        <NoRecordsContent>
+            <MudText Class="pa-8 text-center mud-text-secondary">No gate passes yet.</MudText>
+        </NoRecordsContent>
+    </MudDataGrid>
+</MudPaper>
+
+@code {
+    private IReadOnlyList<Pass> _rows = [];
+    private IReadOnlyList<Pass> _overdue = [];
+    private bool _loading = true;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _rows = await Gate.ListAsync(null);
+        _overdue = await Gate.OverdueAsync();
+        _loading = false;
+    }
+
+    private static Color Colour(PassStatus status) => status switch
+    {
+        PassStatus.Returned => Color.Success,
+        PassStatus.Cleared => Color.Info,
+        PassStatus.PartiallyReturned => Color.Warning,
+        PassStatus.Cancelled => Color.Error,
+        _ => Color.Default
+    };
+
+    private async Task Edit(Pass? row)
+    {
+        var parameters = new DialogParameters<PassEditor> { { x => x.PassId, row?.Id } };
+        var dialog = await Dialogs.ShowAsync<PassEditor>(
+            row is null ? "New gate pass" : "Edit pass", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+
+    private async Task Clear(Pass row)
+    {
+        var result = await Gate.ClearAsync(row.Id);
+        if (result.Failed) Snackbar.Add(result.Error!, Severity.Error);
+        else Snackbar.Add($"{row.Number} cleared through the gate.", Severity.Success);
+        await LoadAsync();
+    }
+
+    private async Task Receive(Pass row)
+    {
+        var parameters = new DialogParameters<ReturnDialog> { { x => x.PassId, row.Id } };
+        var dialog = await Dialogs.ShowAsync<ReturnDialog>("Receive goods back", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+}

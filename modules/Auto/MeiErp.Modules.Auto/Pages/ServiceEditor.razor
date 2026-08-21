@@ -1,0 +1,111 @@
+@inject IFleetService Fleet
+@inject IClock Clock
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-4">Logging against <b>@Registration</b>.</MudText>
+
+        <MudForm @ref="_form">
+            <div class="d-flex gap-3 mb-4">
+                <MudSelect T="ServiceKind" @bind-Value="_kind" Label="Kind" Variant="Variant.Outlined">
+                    @foreach (var k in Enum.GetValues<ServiceKind>())
+                    {
+                        <MudSelectItem Value="@k">@k</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudDatePicker Label="Date" Variant="Variant.Outlined"
+                               Date="_date" DateChanged="@(d => _date = d)" />
+            </div>
+
+            <MudTextField @bind-Value="_description" Label="What was done" Required="true"
+                          RequiredError="Say what was done." Variant="Variant.Outlined" Class="mb-4" />
+
+            <div class="d-flex gap-3 mb-4">
+                <MudNumericField T="decimal" @bind-Value="_cost" Label="Cost"
+                                 Variant="Variant.Outlined" HideSpinButtons="true" />
+                <MudNumericField T="int?" @bind-Value="_odometer" Label="Odometer"
+                                 Variant="Variant.Outlined" HideSpinButtons="true"
+                                 HelperText="@(LastOdometer is null ? null : $"Last recorded {LastOdometer:N0}")" />
+            </div>
+
+            <div class="d-flex gap-3 mb-4">
+                <MudTextField @bind-Value="_vendor" Label="Vendor" Variant="Variant.Outlined" />
+                <MudTextField @bind-Value="_invoice" Label="Invoice number" Variant="Variant.Outlined" />
+            </div>
+
+            @if (_kind is ServiceKind.Insurance or ServiceKind.Registration or ServiceKind.Routine)
+            {
+                <MudDatePicker Label="Next due" Variant="Variant.Outlined"
+                               Date="_nextDue" DateChanged="@(d => _nextDue = d)"
+                               HelperText="Feeds the reminder list on the fleet page." />
+            }
+        </MudForm>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int VehicleId { get; set; }
+    [Parameter] public string Registration { get; set; } = "";
+    [Parameter] public int? LastOdometer { get; set; }
+
+    private MudForm? _form;
+    private ServiceKind _kind = ServiceKind.Routine;
+    private DateTime? _date;
+    private DateTime? _nextDue;
+    private string _description = "";
+    private string? _vendor;
+    private string? _invoice;
+    private decimal _cost;
+    private int? _odometer;
+    private string? _error;
+    private bool _busy;
+
+    protected override void OnInitialized() =>
+        _date = Clock.Today.ToDateTime(TimeOnly.MinValue);
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        if (_form is not null)
+        {
+            await _form.Validate();
+            if (!_form.IsValid) return;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await Fleet.AddServiceAsync(new VehicleService
+            {
+                VehicleId = VehicleId,
+                Date = DateOnly.FromDateTime(_date ?? DateTime.Today),
+                Kind = _kind,
+                Description = _description,
+                Vendor = _vendor,
+                InvoiceNumber = _invoice,
+                Cost = _cost,
+                Odometer = _odometer,
+                NextDueDate = _nextDue is null ? null : DateOnly.FromDateTime(_nextDue.Value)
+            });
+
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Service recorded.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

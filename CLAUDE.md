@@ -21,7 +21,9 @@ office yet.
 | **HR module** | employees + leave, wired to the approval engine; **11 tests green** |
 | **Finance module** | chart of accounts, vouchers, payment requests, reports; **18 tests green** |
 | **Inventory module** | items, stock, purchasing, sales; **19 tests green** |
-| Other modules | not started — each is now a repeat of the same pattern |
+| **Fleet module** | vehicles, servicing, running costs, expiry reminders |
+| **Gate Pass module** | inward/outward passes, returns; **12 tests green** |
+| Repair, Tender | not started — each is a repeat of the same pattern |
 
 **The old app at `/home/pc/vb/acc` stays live in the office until this reaches parity,
 module by module.** There is no cutover date and there must not be a big-bang switch.
@@ -173,6 +175,15 @@ money.
   company to a purchase by unloading a van.
 - **An item with stock or history can never be deleted** — only deactivated. Same
   reason as Finance's accounts: it keeps the soft-delete filter from hiding movements.
+
+## Gate Pass — why it exists
+
+The module is a segregation-of-duties control, not a form. **Whoever raises a pass
+cannot clear it through the gate** — enforced in `GatePassService.ClearAsync`, not
+in the UI, because the UI is the easy half to bypass. A cleared pass also becomes
+uneditable and uncancellable: security is holding a printed copy, and a record that
+can still change proves nothing about what actually left. Returnable passes stay
+open until the last item is ticked back, since partial returns are the normal case.
 
 ## Conventions
 

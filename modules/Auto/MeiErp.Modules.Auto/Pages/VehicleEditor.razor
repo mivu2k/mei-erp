@@ -1,0 +1,106 @@
+@inject IFleetService Fleet
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <div class="d-flex gap-3 mb-4">
+                <MudTextField @bind-Value="_model.Registration" Label="Registration" Required="true"
+                              RequiredError="Enter the registration number." Variant="Variant.Outlined" />
+                <MudSelect T="VehicleStatus" @bind-Value="_model.Status" Label="Status"
+                           Variant="Variant.Outlined">
+                    @foreach (var s in Enum.GetValues<VehicleStatus>())
+                    {
+                        <MudSelectItem Value="@s">@s</MudSelectItem>
+                    }
+                </MudSelect>
+            </div>
+
+            <div class="d-flex gap-3 mb-4">
+                <MudTextField @bind-Value="_model.Make" Label="Make" Required="true"
+                              RequiredError="Enter the make." Variant="Variant.Outlined" />
+                <MudTextField @bind-Value="_model.Model" Label="Model" Variant="Variant.Outlined" />
+                <MudNumericField T="int?" @bind-Value="_model.Year" Label="Year"
+                                 Variant="Variant.Outlined" HideSpinButtons="true" />
+            </div>
+
+            <MudTextField @bind-Value="_model.AssignedTo" Label="Assigned to"
+                          Variant="Variant.Outlined" Class="mb-4"
+                          HelperText="Whoever normally drives it." />
+
+            <div class="d-flex gap-3 mb-4">
+                <MudDatePicker Label="Registration expires" Variant="Variant.Outlined"
+                               Date="_registrationExpiry" DateChanged="@(d => _registrationExpiry = d)" />
+                <MudDatePicker Label="Insurance expires" Variant="Variant.Outlined"
+                               Date="_insuranceExpiry" DateChanged="@(d => _insuranceExpiry = d)" />
+            </div>
+
+            @if (_model.Id != 0 && _model.CurrentOdometer is not null)
+            {
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                    Odometer <b>@_model.CurrentOdometer.Value.ToString("N0")</b> — updated by service
+                    records, so it only ever moves forward.
+                </MudAlert>
+            }
+        </MudForm>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int? VehicleId { get; set; }
+
+    private MudForm? _form;
+    private Vehicle _model = new();
+    private DateTime? _registrationExpiry;
+    private DateTime? _insuranceExpiry;
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _model = VehicleId is null
+            ? new Vehicle { Status = VehicleStatus.Active }
+            : await Fleet.GetAsync(VehicleId.Value) ?? new Vehicle();
+
+        _registrationExpiry = _model.RegistrationExpiry?.ToDateTime(TimeOnly.MinValue);
+        _insuranceExpiry = _model.InsuranceExpiry?.ToDateTime(TimeOnly.MinValue);
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        if (_form is not null)
+        {
+            await _form.Validate();
+            if (!_form.IsValid) return;
+        }
+
+        _busy = true;
+        try
+        {
+            _model.RegistrationExpiry = _registrationExpiry is null
+                ? null : DateOnly.FromDateTime(_registrationExpiry.Value);
+            _model.InsuranceExpiry = _insuranceExpiry is null
+                ? null : DateOnly.FromDateTime(_insuranceExpiry.Value);
+
+            var result = await Fleet.SaveAsync(_model);
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Saved.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

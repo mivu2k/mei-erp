@@ -3,8 +3,14 @@
     <Project Path="host/MeiErp.Host/MeiErp.Host.csproj" />
   </Folder>
   <Folder Name="/modules/" />
+  <Folder Name="/modules/Auto/">
+    <Project Path="modules/Auto/MeiErp.Modules.Auto/MeiErp.Modules.Auto.csproj" />
+  </Folder>
   <Folder Name="/modules/Finance/">
     <Project Path="modules/Finance/MeiErp.Modules.Finance/MeiErp.Modules.Finance.csproj" />
+  </Folder>
+  <Folder Name="/modules/GatePass/">
+    <Project Path="modules/GatePass/MeiErp.Modules.GatePass/MeiErp.Modules.GatePass.csproj" />
   </Folder>
   <Folder Name="/modules/Hr/">
     <Project Path="modules/Hr/MeiErp.Modules.Hr/MeiErp.Modules.Hr.csproj" />
@@ -20,6 +26,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/MeiErp.Modules.Finance.Tests/MeiErp.Modules.Finance.Tests.csproj" />
+    <Project Path="tests/MeiErp.Modules.GatePass.Tests/MeiErp.Modules.GatePass.Tests.csproj" />
     <Project Path="tests/MeiErp.Modules.Hr.Tests/MeiErp.Modules.Hr.Tests.csproj" />
     <Project Path="tests/MeiErp.Modules.Inventory.Tests/MeiErp.Modules.Inventory.Tests.csproj" />
     <Project Path="tests/MeiErp.Platform.Identity.Tests/MeiErp.Platform.Identity.Tests.csproj" />

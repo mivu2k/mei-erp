@@ -1,0 +1,162 @@
+@inject IGatePassService Gate
+@inject IClock Clock
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <div class="d-flex gap-3 mb-4">
+            <MudSelect T="PassDirection" @bind-Value="_direction" Label="Direction"
+                       Variant="Variant.Outlined">
+                <MudSelectItem Value="PassDirection.Outward">Outward — goods leaving</MudSelectItem>
+                <MudSelectItem Value="PassDirection.Inward">Inward — goods arriving</MudSelectItem>
+            </MudSelect>
+            <MudDatePicker Label="Date" Variant="Variant.Outlined"
+                           Date="_date" DateChanged="@(d => _date = d)" />
+        </div>
+
+        <MudTextField @bind-Value="_partyName" Label="To / from" Required="true"
+                      Variant="Variant.Outlined" Class="mb-4"
+                      HelperText="Who the goods are going to, or coming from." />
+
+        <div class="d-flex gap-3 mb-4">
+            <MudTextField @bind-Value="_vehicle" Label="Vehicle number" Variant="Variant.Outlined" />
+            <MudTextField @bind-Value="_driver" Label="Driver" Variant="Variant.Outlined" />
+        </div>
+
+        <MudSwitch T="bool" @bind-Value="_returnable" Color="Color.Primary"
+                   Label="These goods are expected back" />
+
+        @if (_returnable)
+        {
+            <MudDatePicker Label="Expected back" Variant="Variant.Outlined" Class="mb-4"
+                           Date="_expectedBack" DateChanged="@(d => _expectedBack = d)"
+                           HelperText="Without a date the pass will never show as overdue." />
+        }
+
+        <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Items</MudText>
+
+        <MudTable T="ItemRow" Items="_items" Dense="true" Elevation="0" Bordered="true">
+            <HeaderContent>
+                <MudTh>Description</MudTh>
+                <MudTh Style="width:100px">Quantity</MudTh>
+                <MudTh Style="width:90px">Unit</MudTh>
+                <MudTh Style="width:48px"></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>
+                    <MudTextField @bind-Value="context.Description" Variant="Variant.Text"
+                                  Margin="Margin.Dense" Placeholder="What is going out" />
+                </MudTd>
+                <MudTd>
+                    <MudNumericField T="decimal" @bind-Value="context.Quantity"
+                                     Variant="Variant.Text" Margin="Margin.Dense" HideSpinButtons="true" />
+                </MudTd>
+                <MudTd>
+                    <MudTextField @bind-Value="context.Unit" Variant="Variant.Text" Margin="Margin.Dense" />
+                </MudTd>
+                <MudTd>
+                    <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small"
+                                   OnClick="@(() => Remove(context))" />
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+
+        <MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="AddItem" Class="mt-2">Add item</MudButton>
+
+        <MudTextField @bind-Value="_purpose" Label="Purpose" Lines="2"
+                      Variant="Variant.Outlined" Class="mt-4" />
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int? PassId { get; set; }
+
+    private sealed class ItemRow
+    {
+        public string Description { get; set; } = "";
+        public decimal Quantity { get; set; } = 1;
+        public string Unit { get; set; } = "each";
+    }
+
+    private PassDirection _direction = PassDirection.Outward;
+    private DateTime? _date;
+    private DateTime? _expectedBack;
+    private string _partyName = "";
+    private string? _vehicle;
+    private string? _driver;
+    private string? _purpose;
+    private bool _returnable;
+    private List<ItemRow> _items = [];
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _date = Clock.Today.ToDateTime(TimeOnly.MinValue);
+
+        if (PassId is not null)
+        {
+            var existing = await Gate.GetAsync(PassId.Value);
+            if (existing is not null)
+            {
+                _direction = existing.Direction;
+                _date = existing.Date.ToDateTime(TimeOnly.MinValue);
+                _partyName = existing.PartyName;
+                _vehicle = existing.VehicleNumber;
+                _driver = existing.DriverName;
+                _purpose = existing.Purpose;
+                _returnable = existing.IsReturnable;
+                _expectedBack = existing.ExpectedBack?.ToDateTime(TimeOnly.MinValue);
+                _items = [.. existing.Items.Select(i => new ItemRow
+                {
+                    Description = i.Description, Quantity = i.Quantity, Unit = i.Unit
+                })];
+            }
+        }
+
+        if (_items.Count == 0) _items.Add(new ItemRow());
+    }
+
+    private void AddItem() => _items.Add(new ItemRow());
+
+    private void Remove(ItemRow row)
+    {
+        _items.Remove(row);
+        if (_items.Count == 0) _items.Add(new ItemRow());
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var result = await Gate.SaveAsync(new PassInput(
+                PassId, _direction, DateOnly.FromDateTime(_date ?? DateTime.Today),
+                _partyName, _returnable,
+                _expectedBack is null ? null : DateOnly.FromDateTime(_expectedBack.Value),
+                _vehicle, _driver, _purpose,
+                [.. _items.Where(i => !string.IsNullOrWhiteSpace(i.Description))
+                          .Select(i => new PassItemInput(i.Description, i.Quantity, i.Unit, null))]));
+
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add($"{result.Value.Number} raised.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

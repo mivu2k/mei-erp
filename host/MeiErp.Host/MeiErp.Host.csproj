@@ -14,6 +14,8 @@
     <ProjectReference Include="..\..\modules\Hr\MeiErp.Modules.Hr\MeiErp.Modules.Hr.csproj" />
     <ProjectReference Include="..\..\modules\Finance\MeiErp.Modules.Finance\MeiErp.Modules.Finance.csproj" />
     <ProjectReference Include="..\..\modules\Inventory\MeiErp.Modules.Inventory\MeiErp.Modules.Inventory.csproj" />
+    <ProjectReference Include="..\..\modules\Auto\MeiErp.Modules.Auto\MeiErp.Modules.Auto.csproj" />
+    <ProjectReference Include="..\..\modules\GatePass\MeiErp.Modules.GatePass\MeiErp.Modules.GatePass.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,0 +1,107 @@
+@inject IGatePassService Gate
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        @if (_pass is null)
+        {
+            <MudProgressLinear Indeterminate="true" />
+        }
+        else
+        {
+            <MudText Typo="Typo.body2" Class="mb-4">
+                Receiving back against <b>@_pass.Number</b> from @_pass.PartyName.
+                The pass stays open until the last item is ticked back.
+            </MudText>
+
+            <MudTable T="ReturnRow" Items="_rows" Dense="true" Elevation="0" Bordered="true">
+                <HeaderContent>
+                    <MudTh>Item</MudTh>
+                    <MudTh Style="width:100px">Still out</MudTh>
+                    <MudTh Style="width:120px">Returning</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.Description</MudTd>
+                    <MudTd style="text-align:right">@context.Outstanding.ToString("0.##")</MudTd>
+                    <MudTd>
+                        <MudNumericField T="decimal" @bind-Value="context.Returning"
+                                         Variant="Variant.Text" Margin="Margin.Dense"
+                                         HideSpinButtons="true" Min="0" Max="context.Outstanding" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveAsync" Disabled="_busy">Record return</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int PassId { get; set; }
+
+    private sealed class ReturnRow
+    {
+        public int ItemId { get; set; }
+        public string Description { get; set; } = "";
+        public decimal Outstanding { get; set; }
+        public decimal Returning { get; set; }
+    }
+
+    private Pass? _pass;
+    private List<ReturnRow> _rows = [];
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _pass = await Gate.GetAsync(PassId);
+        if (_pass is null) return;
+
+        _rows = [.. _pass.Items
+            .Where(i => i.Outstanding > 0)
+            .Select(i => new ReturnRow
+            {
+                ItemId = i.Id,
+                Description = i.Description,
+                Outstanding = i.Outstanding,
+                Returning = i.Outstanding
+            })];
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var lines = _rows.Where(r => r.Returning > 0).ToList();
+            if (lines.Count == 0)
+            {
+                _error = "Nothing has been entered as returned.";
+                return;
+            }
+
+            var result = await Gate.ReceiveBackAsync(PassId,
+                [.. lines.Select(r => new ReturnLine(r.ItemId, r.Returning))]);
+
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add(result.Value.IsFullyReturned
+                ? "Everything is back. The pass is closed."
+                : "Partial return recorded. The pass stays open.", Severity.Success);
+
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}
