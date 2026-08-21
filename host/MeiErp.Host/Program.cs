@@ -2,6 +2,7 @@ using MeiErp.Host.Components;
 using MeiErp.Host.Services;
 using MeiErp.Modules.Finance;
 using MeiErp.Modules.Hr;
+using MeiErp.Modules.Inventory;
 using MeiErp.Platform.Identity;
 using MeiErp.Platform.Kernel;
 using MeiErp.Platform.Workflow;
@@ -55,11 +56,13 @@ builder.Services.AddSingleton<IClock>(_ =>
 builder.Services.AddSingleton<IModuleCatalog>(_ => new ModuleCatalog(
 [
     HrModule.Descriptor,
-    FinanceModule.Descriptor
+    FinanceModule.Descriptor,
+    InventoryModule.Descriptor
 ]));
 
 builder.Services.AddHrModule(builder.Configuration);
 builder.Services.AddFinanceModule(builder.Configuration);
+builder.Services.AddInventoryModule(builder.Configuration);
 
 // ---------------------------------------------------------------- identity
 builder.Services
@@ -180,7 +183,8 @@ app.MapRazorComponents<App>()
    // Routes.razor. Missing either is a silent routing failure.
    .AddAdditionalAssemblies(
        typeof(HrModule).Assembly,
-       typeof(FinanceModule).Assembly);
+       typeof(FinanceModule).Assembly,
+       typeof(InventoryModule).Assembly);
 
 app.MapAuthEndpoints();
 
@@ -188,5 +192,6 @@ app.MapAuthEndpoints();
 await app.Services.SeedPlatformAsync();
 await app.Services.SeedHrAsync();
 await app.Services.SeedFinanceAsync();
+await app.Services.SeedInventoryAsync();
 
 app.Run();

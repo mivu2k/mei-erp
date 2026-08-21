@@ -1,0 +1,84 @@
+@page "/inventory/parties"
+@attribute [Authorize(Policy = InventoryModule.PartiesManage)]
+@rendermode InteractiveServer
+@inject ICatalogService Catalog
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Customers &amp; suppliers</PageTitle>
+
+<div class="d-flex align-center mb-1">
+    <div>
+        <MudText Typo="Typo.h5">Customers &amp; suppliers</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            One record per company. The same company is often both.
+        </MudText>
+    </div>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+        New party
+    </MudButton>
+</div>
+
+<MudPaper Outlined="true" Elevation="0" Class="mt-4">
+    <MudDataGrid T="Party" Items="_rows" Dense="true" Hover="true" Elevation="0"
+                 Loading="_loading" Filterable="false" RowsPerPage="25">
+        <Columns>
+            <PropertyColumn Property="@(p => p.Code)" Title="Code" />
+            <PropertyColumn Property="@(p => p.Name)" Title="Name" />
+            <TemplateColumn Title="Type">
+                <CellTemplate>
+                    @if (context.Item.IsCustomer)
+                    {
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                 Color="Color.Info">Customer</MudChip>
+                    }
+                    @if (context.Item.IsSupplier)
+                    {
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                 Color="Color.Secondary">Supplier</MudChip>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            <PropertyColumn Property="@(p => p.Phone)" Title="Phone" />
+            <TemplateColumn Title="" Sortable="false">
+                <CellTemplate>
+                    <div class="d-flex justify-end">
+                        <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small"
+                                       OnClick="@(() => Edit(context.Item))" />
+                    </div>
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+        <NoRecordsContent>
+            <MudText Class="pa-8 text-center mud-text-secondary">
+                No customers or suppliers yet. Add one before raising an order.
+            </MudText>
+        </NoRecordsContent>
+    </MudDataGrid>
+</MudPaper>
+
+@code {
+    private IReadOnlyList<Party> _rows = [];
+    private bool _loading = true;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _rows = await Catalog.PartiesAsync(null, null);
+        _loading = false;
+    }
+
+    private async Task Edit(Party? row)
+    {
+        var parameters = new DialogParameters<PartyEditor> { { x => x.Existing, row } };
+        var dialog = await Dialogs.ShowAsync<PartyEditor>(
+            row is null ? "New party" : "Edit party", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+}

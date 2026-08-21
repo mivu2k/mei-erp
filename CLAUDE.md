@@ -20,7 +20,8 @@ office yet.
 | `Platform.Messaging` | not started |
 | **HR module** | employees + leave, wired to the approval engine; **11 tests green** |
 | **Finance module** | chart of accounts, vouchers, payment requests, reports; **18 tests green** |
-| Other modules | not started — each is now a repeat of the HR/Finance pattern |
+| **Inventory module** | items, stock, purchasing, sales; **19 tests green** |
+| Other modules | not started — each is now a repeat of the same pattern |
 
 **The old app at `/home/pc/vb/acc` stays live in the office until this reaches parity,
 module by module.** There is no cutover date and there must not be a big-bang switch.
@@ -147,6 +148,31 @@ money.
 - **Approval authorises spend; it does not move money.** The voucher is posted when
   someone actually pays, which is what lets an approved request wait for funds
   without the books claiming it was settled.
+
+## Inventory — the rules that must not be relaxed
+
+- **`StockService` is the only thing that moves stock.** Every change writes a
+  `StockMovement` and updates the running quantity together. A figure changeable
+  from two places is a figure nobody can trust; the edit screen cannot touch it,
+  and there is a test proving an edit that tries is ignored.
+- **The movement history is append-only and is the truth.** `Item.QuantityOnHand`
+  is a cache; `RebuildQuantitiesAsync` recomputes it from movements when it drifts.
+- **The average is weighted by quantity, not by price.** 90 at 100 plus 10 at 200
+  is 110, not 150 — a naive mean overstates stock value by a third.
+- **Issuing does not move the average.** Only purchases change what stock is carried at.
+- **A delivery snapshots the cost it went out at.** Reading the average live would
+  silently rewrite last month's margin every time somebody bought at a new price.
+- **Stock never goes negative** — it is a lie that surfaces during a count.
+- **An adjustment needs a reason.** An unexplained one is indistinguishable from theft.
+- **Confirming a sales order reserves nothing.** A soft reservation the stock figure
+  does not honour is worse than none: two orders can still be promised the same unit
+  while both look safe. Short lines are backorders, caught at delivery.
+- **A delivery checks every line before moving any of it**, so a refusal leaves no
+  half-posted note to unpick by hand.
+- **Goods cannot be received against an unapproved order**, or someone commits the
+  company to a purchase by unloading a van.
+- **An item with stock or history can never be deleted** — only deactivated. Same
+  reason as Finance's accounts: it keeps the soft-delete filter from hiding movements.
 
 ## Conventions
 

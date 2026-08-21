@@ -9,6 +9,9 @@
   <Folder Name="/modules/Hr/">
     <Project Path="modules/Hr/MeiErp.Modules.Hr/MeiErp.Modules.Hr.csproj" />
   </Folder>
+  <Folder Name="/modules/Inventory/">
+    <Project Path="modules/Inventory/MeiErp.Modules.Inventory/MeiErp.Modules.Inventory.csproj" />
+  </Folder>
   <Folder Name="/platform/">
     <Project Path="platform/MeiErp.Platform.Identity/MeiErp.Platform.Identity.csproj" />
     <Project Path="platform/MeiErp.Platform.Kernel/MeiErp.Platform.Kernel.csproj" />
@@ -18,6 +21,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/MeiErp.Modules.Finance.Tests/MeiErp.Modules.Finance.Tests.csproj" />
     <Project Path="tests/MeiErp.Modules.Hr.Tests/MeiErp.Modules.Hr.Tests.csproj" />
+    <Project Path="tests/MeiErp.Modules.Inventory.Tests/MeiErp.Modules.Inventory.Tests.csproj" />
     <Project Path="tests/MeiErp.Platform.Identity.Tests/MeiErp.Platform.Identity.Tests.csproj" />
     <Project Path="tests/MeiErp.Platform.Persistence.Tests/MeiErp.Platform.Persistence.Tests.csproj" />
     <Project Path="tests/MeiErp.Platform.Workflow.Tests/MeiErp.Platform.Workflow.Tests.csproj" />

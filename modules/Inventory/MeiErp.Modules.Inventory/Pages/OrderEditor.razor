@@ -1,0 +1,229 @@
+@inject IPurchasingService Purchasing
+@inject ISalesService Sales
+@inject ICatalogService Catalog
+@inject IClock Clock
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <div class="d-flex gap-3 mb-4">
+            <MudSelect T="int" @bind-Value="_partyId"
+                       Label="@(IsPurchase ? "Supplier" : "Customer")"
+                       Variant="Variant.Outlined" Style="min-width:260px">
+                @foreach (var p in _parties)
+                {
+                    <MudSelectItem T="int" Value="@p.Id">@p.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <MudDatePicker Label="Date" Variant="Variant.Outlined"
+                           Date="_date" DateChanged="@(d => _date = d)" />
+        </div>
+
+        <MudTable T="LineRow" Items="_lines" Dense="true" Elevation="0" Bordered="true">
+            <HeaderContent>
+                <MudTh>Item</MudTh>
+                <MudTh Style="width:120px">Quantity</MudTh>
+                <MudTh Style="width:140px">@(IsPurchase ? "Unit cost" : "Unit price")</MudTh>
+                <MudTh Style="width:120px">Total</MudTh>
+                <MudTh Style="width:48px"></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>
+                    <MudSelect T="int" @bind-Value="context.ItemId" @bind-Value:after="OnItemChanged"
+                               Variant="Variant.Text" Margin="Margin.Dense" Dense="true">
+                        @foreach (var i in _items)
+                        {
+                            <MudSelectItem T="int" Value="@i.Id">@i.Code — @i.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudTd>
+                <MudTd>
+                    <MudNumericField T="decimal" @bind-Value="context.Quantity"
+                                     @bind-Value:after="Recalculate"
+                                     Variant="Variant.Text" Margin="Margin.Dense" HideSpinButtons="true" />
+                </MudTd>
+                <MudTd>
+                    <MudNumericField T="decimal" @bind-Value="context.Price"
+                                     @bind-Value:after="Recalculate"
+                                     Variant="Variant.Text" Margin="Margin.Dense" HideSpinButtons="true" />
+                </MudTd>
+                <MudTd Style="text-align:right;font-variant-numeric:tabular-nums">
+                    @((context.Quantity * context.Price).ToString("N2"))
+                </MudTd>
+                <MudTd>
+                    <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small"
+                                   OnClick="@(() => Remove(context))" />
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+
+        <div class="d-flex align-center mt-2">
+            <MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="AddLine">Add line</MudButton>
+            <MudSpacer />
+            <MudText Typo="Typo.h6">@_total.ToString("N2")</MudText>
+        </div>
+
+        @if (!IsPurchase && _shortLines.Count > 0)
+        {
+            @* Warned, not blocked. Confirming reserves nothing, so a short line
+               is a backorder rather than an error - but the person taking the
+               order should know before they promise a date. *@
+            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mt-3">
+                Not enough stock for @string.Join(", ", _shortLines).
+                The order can still be taken; it becomes a backorder.
+            </MudAlert>
+        }
+
+        <MudTextField @bind-Value="_notes" Label="Notes" Lines="2"
+                      Variant="Variant.Outlined" Class="mt-4" />
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int? OrderId { get; set; }
+    [Parameter] public bool IsPurchase { get; set; }
+
+    private sealed class LineRow
+    {
+        public int ItemId { get; set; }
+        public decimal Quantity { get; set; }
+        public decimal Price { get; set; }
+    }
+
+    private int _partyId;
+    private DateTime? _date;
+    private string? _notes;
+    private List<LineRow> _lines = [];
+    private IReadOnlyList<Item> _items = [];
+    private IReadOnlyList<Party> _parties = [];
+    private List<string> _shortLines = [];
+    private decimal _total;
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _items = await Catalog.ItemsAsync(null, includeInactive: false);
+        _parties = await Catalog.PartiesAsync(
+            customers: IsPurchase ? null : true,
+            suppliers: IsPurchase ? true : null);
+
+        _date = Clock.Today.ToDateTime(TimeOnly.MinValue);
+
+        if (OrderId is not null)
+        {
+            if (IsPurchase)
+            {
+                var order = await Purchasing.GetOrderAsync(OrderId.Value);
+                if (order is not null)
+                {
+                    _partyId = order.PartyId;
+                    _date = order.Date.ToDateTime(TimeOnly.MinValue);
+                    _notes = order.Notes;
+                    _lines = [.. order.Lines.Select(l => new LineRow
+                    {
+                        ItemId = l.ItemId, Quantity = l.Quantity, Price = l.UnitCost
+                    })];
+                }
+            }
+            else
+            {
+                var order = await Sales.GetOrderAsync(OrderId.Value);
+                if (order is not null)
+                {
+                    _partyId = order.PartyId;
+                    _date = order.Date.ToDateTime(TimeOnly.MinValue);
+                    _notes = order.Notes;
+                    _lines = [.. order.Lines.Select(l => new LineRow
+                    {
+                        ItemId = l.ItemId, Quantity = l.Quantity, Price = l.UnitPrice
+                    })];
+                }
+            }
+        }
+
+        if (_lines.Count == 0) _lines.Add(new LineRow());
+        if (_partyId == 0 && _parties.Count > 0) _partyId = _parties[0].Id;
+
+        Recalculate();
+    }
+
+    private void AddLine() => _lines.Add(new LineRow());
+
+    private void Remove(LineRow row)
+    {
+        _lines.Remove(row);
+        if (_lines.Count == 0) _lines.Add(new LineRow());
+        Recalculate();
+    }
+
+    /// <summary>Defaults the price from the item, so the common case needs no typing.</summary>
+    private void OnItemChanged()
+    {
+        foreach (var line in _lines.Where(l => l.ItemId != 0 && l.Price == 0))
+        {
+            var item = _items.FirstOrDefault(i => i.Id == line.ItemId);
+            if (item is null) continue;
+            line.Price = IsPurchase ? (item.LastCost ?? item.AverageCost) : item.SellingPrice;
+        }
+
+        Recalculate();
+    }
+
+    private void Recalculate()
+    {
+        _total = _lines.Sum(l => l.Quantity * l.Price);
+
+        _shortLines = IsPurchase
+            ? []
+            : [.. _lines.Where(l => l.ItemId != 0 && l.Quantity > 0)
+                        .Select(l => new { Line = l, Item = _items.FirstOrDefault(i => i.Id == l.ItemId) })
+                        .Where(x => x.Item is not null && x.Item.QuantityOnHand < x.Line.Quantity)
+                        .Select(x => x.Item!.Name)];
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var date = DateOnly.FromDateTime(_date ?? DateTime.Today);
+            var lines = _lines.Where(l => l.ItemId != 0 && l.Quantity > 0).ToList();
+
+            if (IsPurchase)
+            {
+                var result = await Purchasing.SaveOrderAsync(new PurchaseOrderInput(
+                    OrderId, _partyId, date, _notes,
+                    [.. lines.Select(l => new PurchaseOrderLineInput(l.ItemId, l.Quantity, l.Price))]));
+
+                if (result.Failed) { _error = result.Error; return; }
+            }
+            else
+            {
+                var result = await Sales.SaveOrderAsync(new SalesOrderInput(
+                    OrderId, _partyId, date, _notes,
+                    [.. lines.Select(l => new SalesOrderLineInput(l.ItemId, l.Quantity, l.Price))]));
+
+                if (result.Failed) { _error = result.Error; return; }
+            }
+
+            Snackbar.Add("Saved.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

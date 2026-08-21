@@ -103,7 +103,7 @@ public sealed class AdminServiceTests : IAsyncLifetime
         catch { /* a stray throwaway database is harmless */ }
     }
 
-    private async Task<string> AddUserAsync(
+    private static async Task<string> AddUserAsync(
         IServiceScope scope, string name, string email, bool superAdmin = false)
     {
         var admin = scope.ServiceProvider.GetRequiredService<IAdminService>();

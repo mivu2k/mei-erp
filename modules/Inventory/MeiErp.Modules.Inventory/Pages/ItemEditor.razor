@@ -1,0 +1,88 @@
+@inject ICatalogService Catalog
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <div class="d-flex gap-3 mb-4">
+                <MudTextField @bind-Value="_model.Code" Label="Code" Required="true"
+                              RequiredError="Give it a code." Variant="Variant.Outlined" />
+                <MudTextField @bind-Value="_model.Unit" Label="Unit" Variant="Variant.Outlined" />
+            </div>
+
+            <MudTextField @bind-Value="_model.Name" Label="Name" Required="true"
+                          RequiredError="Give it a name." Variant="Variant.Outlined" Class="mb-4" />
+
+            <div class="d-flex gap-3 mb-4">
+                <MudNumericField T="decimal" @bind-Value="_model.SellingPrice" Label="Selling price"
+                                 Variant="Variant.Outlined" HideSpinButtons="true" />
+                <MudNumericField T="decimal" @bind-Value="_model.ReorderLevel" Label="Reorder level"
+                                 Variant="Variant.Outlined" HideSpinButtons="true"
+                                 HelperText="Flag it when stock falls this low." />
+            </div>
+
+            @if (_model.Id != 0)
+            {
+                @* Read-only on purpose: these are derived from stock movements,
+                   and letting a form set them would make the ledger and the
+                   running figure disagree with no way to tell which is right. *@
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                    On hand <b>@_model.QuantityOnHand.ToString("0.##")</b> ·
+                    average cost <b>@_model.AverageCost.ToString("N2")</b>.
+                    These come from stock movements and cannot be typed in here.
+                </MudAlert>
+            }
+
+            <MudSwitch T="bool" @bind-Value="_model.IsActive" Color="Color.Primary" Label="Active" />
+        </MudForm>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int? ItemId { get; set; }
+
+    private MudForm? _form;
+    private Item _model = new();
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _model = ItemId is null
+            ? new Item { IsActive = true, Unit = "each" }
+            : await Catalog.GetItemAsync(ItemId.Value) ?? new Item();
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        if (_form is not null)
+        {
+            await _form.Validate();
+            if (!_form.IsValid) return;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await Catalog.SaveItemAsync(_model);
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Saved.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

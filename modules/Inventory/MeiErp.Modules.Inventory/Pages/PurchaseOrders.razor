@@ -1,0 +1,138 @@
+@page "/inventory/purchase-orders"
+@attribute [Authorize(Policy = InventoryModule.PurchasingManage)]
+@rendermode InteractiveServer
+@inject IPurchasingService Purchasing
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Purchase orders</PageTitle>
+
+<div class="d-flex align-center mb-1">
+    <div>
+        <MudText Typo="Typo.h5">Purchase orders</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            An order is a commitment. Stock moves only when the goods arrive and a receipt is posted.
+        </MudText>
+    </div>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+        New order
+    </MudButton>
+</div>
+
+<MudPaper Outlined="true" Elevation="0" Class="mt-4">
+    <MudDataGrid T="PurchaseOrder" Items="_rows" Dense="true" Hover="true" Elevation="0"
+                 Loading="_loading" Filterable="false" RowsPerPage="25">
+        <Columns>
+            <PropertyColumn Property="@(o => o.Number)" Title="Number" />
+            <TemplateColumn Title="Date">
+                <CellTemplate>@context.Item.Date.ToString("d MMM yyyy")</CellTemplate>
+            </TemplateColumn>
+            <PropertyColumn Property="@(o => o.PartyName)" Title="Supplier" />
+            <TemplateColumn Title="Lines">
+                <CellTemplate>@context.Item.Lines.Count</CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Value" HeaderClass="text-right" CellClass="text-right">
+                <CellTemplate>
+                    <span style="font-variant-numeric:tabular-nums">@context.Item.Total.ToString("N2")</span>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Status">
+                <CellTemplate>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                             Color="@Colour(context.Item.Status)">@context.Item.Status</MudChip>
+                    @if (context.Item.DecisionComment is not null)
+                    {
+                        <MudTooltip Text="@context.Item.DecisionComment">
+                            <MudIcon Icon="@Icons.Material.Outlined.Comment" Size="Size.Small"
+                                     Class="ml-1 mud-text-secondary" />
+                        </MudTooltip>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="" Sortable="false">
+                <CellTemplate>
+                    <div class="d-flex justify-end gap-1">
+                        @if (context.Item.Status is PurchaseOrderStatus.Draft
+                                                 or PurchaseOrderStatus.Returned)
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Text"
+                                       OnClick="@(() => Edit(context.Item))">Edit</MudButton>
+                            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                                       OnClick="@(() => Submit(context.Item))">Submit</MudButton>
+                        }
+                        else if (context.Item.Status is PurchaseOrderStatus.Approved
+                                                     or PurchaseOrderStatus.PartiallyReceived)
+                        {
+                            <AuthorizeView Policy="@InventoryModule.ReceiptPost" Context="perms">
+                                <Authorized>
+                                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
+                                               OnClick="@(() => Receive(context.Item))">Receive</MudButton>
+                                </Authorized>
+                            </AuthorizeView>
+                        }
+                    </div>
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+        <NoRecordsContent>
+            <MudText Class="pa-8 text-center mud-text-secondary">No purchase orders yet.</MudText>
+        </NoRecordsContent>
+    </MudDataGrid>
+</MudPaper>
+
+@code {
+    private IReadOnlyList<PurchaseOrder> _rows = [];
+    private bool _loading = true;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _rows = await Purchasing.ListOrdersAsync(null);
+        _loading = false;
+    }
+
+    private static Color Colour(PurchaseOrderStatus status) => status switch
+    {
+        PurchaseOrderStatus.Received => Color.Success,
+        PurchaseOrderStatus.Approved => Color.Info,
+        PurchaseOrderStatus.PartiallyReceived => Color.Info,
+        PurchaseOrderStatus.Rejected => Color.Error,
+        PurchaseOrderStatus.Returned => Color.Warning,
+        _ => Color.Default
+    };
+
+    private async Task Edit(PurchaseOrder? row)
+    {
+        var parameters = new DialogParameters<OrderEditor>
+        {
+            { x => x.OrderId, row?.Id },
+            { x => x.IsPurchase, true }
+        };
+        var dialog = await Dialogs.ShowAsync<OrderEditor>(
+            row is null ? "New purchase order" : "Edit order", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+
+    private async Task Submit(PurchaseOrder row)
+    {
+        var result = await Purchasing.SubmitOrderAsync(row.Id);
+        if (result.Failed) Snackbar.Add(result.Error!, Severity.Error);
+        else Snackbar.Add("Sent for approval.", Severity.Success);
+        await LoadAsync();
+    }
+
+    private async Task Receive(PurchaseOrder row)
+    {
+        var parameters = new DialogParameters<ReceiveDialog> { { x => x.OrderId, row.Id } };
+        var dialog = await Dialogs.ShowAsync<ReceiveDialog>("Receive goods", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+}

@@ -1,0 +1,73 @@
+@inject IStockService Stock
+@inject IClock Clock
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-4">
+            The system says <b>@SystemQuantity.ToString("0.##")</b> of @ItemName.
+            Enter what was actually counted.
+        </MudText>
+
+        <MudNumericField T="decimal" @bind-Value="_counted" Label="Counted quantity"
+                         Variant="Variant.Outlined" HideSpinButtons="true" Class="mb-4" />
+
+        @if (_counted != SystemQuantity)
+        {
+            <MudAlert Severity="@(_counted < SystemQuantity ? Severity.Warning : Severity.Info)"
+                      Variant="Variant.Outlined" Dense="true" Class="mb-4">
+                @{
+                    var difference = _counted - SystemQuantity;
+                }
+                This will @(difference > 0 ? "add" : "remove")
+                <b>@Math.Abs(difference).ToString("0.##")</b>
+                and write a movement recording the correction.
+            </MudAlert>
+        }
+
+        <MudTextField @bind-Value="_reason" Label="Why does it differ?" Lines="2"
+                      Variant="Variant.Outlined" Immediate="true"
+                      HelperText="An unexplained adjustment is indistinguishable from theft." />
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   Disabled="@(_busy || string.IsNullOrWhiteSpace(_reason))"
+                   OnClick="SaveAsync">Record count</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int ItemId { get; set; }
+    [Parameter] public string ItemName { get; set; } = "";
+    [Parameter] public decimal SystemQuantity { get; set; }
+
+    private decimal _counted;
+    private string _reason = "";
+    private string? _error;
+    private bool _busy;
+
+    protected override void OnInitialized() => _counted = SystemQuantity;
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var result = await Stock.AdjustToAsync(ItemId, _counted, Clock.Today, _reason);
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Stock corrected.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

@@ -1,0 +1,139 @@
+@page "/inventory"
+@page "/inventory/items"
+@attribute [Authorize(Policy = InventoryModule.ItemsView)]
+@rendermode InteractiveServer
+@inject ICatalogService Catalog
+@inject IStockService Stock
+@inject IClock Clock
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Items</PageTitle>
+
+<div class="d-flex align-center mb-1">
+    <div>
+        <MudText Typo="Typo.h5">Items</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            Stock moves only through receipts, deliveries and counts — never by editing this list.
+        </MudText>
+    </div>
+    <MudSpacer />
+    <AuthorizeView Policy="@InventoryModule.ItemsManage" Context="perms">
+        <Authorized>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+                New item
+            </MudButton>
+        </Authorized>
+    </AuthorizeView>
+</div>
+
+<MudPaper Outlined="true" Elevation="0" Class="mt-4">
+    <MudToolBar Dense="true">
+        <MudTextField @bind-Value="_search" @bind-Value:after="LoadAsync"
+                      Placeholder="Search name or code" DebounceInterval="300"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                      Variant="Variant.Text" Margin="Margin.Dense" Class="mt-0" />
+        <MudSpacer />
+        <MudSwitch T="bool" @bind-Value="_includeInactive" @bind-Value:after="LoadAsync"
+                   Color="Color.Primary" Label="Include inactive" />
+    </MudToolBar>
+
+    <MudDataGrid T="Item" Items="_rows" Dense="true" Hover="true" Elevation="0"
+                 Loading="_loading" Filterable="false" RowsPerPage="25">
+        <Columns>
+            <PropertyColumn Property="@(i => i.Code)" Title="Code" />
+            <TemplateColumn Title="Item" SortBy="@(i => i.Name)">
+                <CellTemplate>
+                    <MudText Typo="Typo.body2"><b>@context.Item.Name</b></MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        @context.Item.Category?.Name
+                    </MudText>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="On hand" HeaderClass="text-right" CellClass="text-right">
+                <CellTemplate>
+                    <span style="font-variant-numeric:tabular-nums">
+                        @context.Item.QuantityOnHand.ToString("0.##") @context.Item.Unit
+                    </span>
+                    @if (context.Item.ReorderLevel > 0
+                         && context.Item.QuantityOnHand <= context.Item.ReorderLevel)
+                    {
+                        <MudTooltip Text="@($"At or below the reorder level of {context.Item.ReorderLevel:0.##}")">
+                            <MudIcon Icon="@Icons.Material.Filled.Warning" Size="Size.Small"
+                                     Color="Color.Warning" Class="ml-1" />
+                        </MudTooltip>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Price" HeaderClass="text-right" CellClass="text-right">
+                <CellTemplate>
+                    <span style="font-variant-numeric:tabular-nums">
+                        @context.Item.SellingPrice.ToString("N2")
+                    </span>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="" Sortable="false">
+                <CellTemplate>
+                    <div class="d-flex justify-end gap-1">
+                        <AuthorizeView Policy="@InventoryModule.StockAdjust" Context="perms">
+                            <Authorized>
+                                <MudButton Size="Size.Small" Variant="Variant.Text"
+                                           OnClick="@(() => Count(context.Item))">Count</MudButton>
+                            </Authorized>
+                        </AuthorizeView>
+                        <AuthorizeView Policy="@InventoryModule.ItemsManage" Context="perms">
+                            <Authorized>
+                                <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small"
+                                               OnClick="@(() => Edit(context.Item))" />
+                            </Authorized>
+                        </AuthorizeView>
+                    </div>
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+        <NoRecordsContent>
+            <MudText Class="pa-8 text-center mud-text-secondary">No items yet.</MudText>
+        </NoRecordsContent>
+    </MudDataGrid>
+</MudPaper>
+
+@code {
+    private IReadOnlyList<Item> _rows = [];
+    private string? _search;
+    private bool _includeInactive;
+    private bool _loading = true;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _rows = await Catalog.ItemsAsync(_search, _includeInactive);
+        _loading = false;
+    }
+
+    private async Task Edit(Item? row)
+    {
+        var parameters = new DialogParameters<ItemEditor> { { x => x.ItemId, row?.Id } };
+        var dialog = await Dialogs.ShowAsync<ItemEditor>(
+            row is null ? "New item" : "Edit item", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+
+    private async Task Count(Item row)
+    {
+        var parameters = new DialogParameters<StockCount>
+        {
+            { x => x.ItemId, row.Id },
+            { x => x.ItemName, row.Name },
+            { x => x.SystemQuantity, row.QuantityOnHand }
+        };
+        var dialog = await Dialogs.ShowAsync<StockCount>("Stock count", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+}
