@@ -1,0 +1,141 @@
+@page "/tender/projects"
+@attribute [Authorize(Policy = TenderModule.ProjectsView)]
+@rendermode InteractiveServer
+@inject ITenderService Work
+@inject IClock Clock
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Projects</PageTitle>
+
+<div class="d-flex align-center mb-1">
+    <div>
+        <MudText Typo="Typo.h5">Projects</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            Progress is averaged from the tasks, never typed in.
+        </MudText>
+    </div>
+    <MudSpacer />
+    <AuthorizeView Policy="@TenderModule.ProjectsManage" Context="perms">
+        <Authorized>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+                New project
+            </MudButton>
+        </Authorized>
+    </AuthorizeView>
+</div>
+
+@if (_overdue.Count > 0)
+{
+    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mt-4">
+        <b>@_overdue.Count</b> @(_overdue.Count == 1 ? "task is" : "tasks are") past their due date
+        on projects still running.
+    </MudAlert>
+}
+
+<MudPaper Outlined="true" Elevation="0" Class="mt-4">
+    <MudDataGrid T="Project" Items="_rows" Dense="true" Hover="true" Elevation="0"
+                 Loading="_loading" Filterable="false" RowsPerPage="25">
+        <Columns>
+            <PropertyColumn Property="@(p => p.Code)" Title="Code" />
+            <TemplateColumn Title="Project">
+                <CellTemplate>
+                    <MudText Typo="Typo.body2"><b>@context.Item.Name</b></MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">@context.Item.ClientName</MudText>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Progress" Style="width:180px">
+                <CellTemplate>
+                    <div class="d-flex align-center gap-2">
+                        <MudProgressLinear Color="Color.Primary" Rounded="true" Size="Size.Small"
+                                           Value="@context.Item.ProgressPercent" Class="flex-grow-1" />
+                        <MudText Typo="Typo.caption" Style="font-variant-numeric:tabular-nums">
+                            @context.Item.ProgressPercent%
+                        </MudText>
+                    </div>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        @context.Item.Tasks.Count(t => t.Status == ProjectTaskStatus.Completed)
+                        of @context.Item.Tasks.Count(t => t.Status != ProjectTaskStatus.Cancelled) tasks
+                    </MudText>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Due">
+                <CellTemplate>@context.Item.TargetEndDate?.ToString("d MMM yyyy")</CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Status">
+                <CellTemplate>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                             Color="@(context.Item.Status switch {
+                                 ProjectStatus.Completed => Color.Success,
+                                 ProjectStatus.Active => Color.Info,
+                                 ProjectStatus.OnHold => Color.Warning,
+                                 ProjectStatus.Cancelled => Color.Error,
+                                 _ => Color.Default })">
+                        @context.Item.Status
+                    </MudChip>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="" Sortable="false">
+                <CellTemplate>
+                    <div class="d-flex justify-end gap-1">
+                        <AuthorizeView Policy="@TenderModule.TasksManage" Context="perms">
+                            <Authorized>
+                                <MudButton Size="Size.Small" Variant="Variant.Text"
+                                           OnClick="@(() => Board(context.Item))">Tasks</MudButton>
+                            </Authorized>
+                        </AuthorizeView>
+                        <AuthorizeView Policy="@TenderModule.ProjectsManage" Context="perms">
+                            <Authorized>
+                                <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small"
+                                               OnClick="@(() => Edit(context.Item))" />
+                            </Authorized>
+                        </AuthorizeView>
+                    </div>
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+        <NoRecordsContent>
+            <MudText Class="pa-8 text-center mud-text-secondary">No projects yet.</MudText>
+        </NoRecordsContent>
+    </MudDataGrid>
+</MudPaper>
+
+@code {
+    private IReadOnlyList<Project> _rows = [];
+    private IReadOnlyList<ProjectTask> _overdue = [];
+    private bool _loading = true;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _rows = await Work.ListProjectsAsync(null);
+        _overdue = await Work.OverdueTasksAsync();
+        _loading = false;
+    }
+
+    private async Task Edit(Project? row)
+    {
+        var parameters = new DialogParameters<ProjectEditor> { { x => x.ProjectId, row?.Id } };
+        var dialog = await Dialogs.ShowAsync<ProjectEditor>(
+            row is null ? "New project" : "Edit project", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+
+    private async Task Board(Project row)
+    {
+        var parameters = new DialogParameters<TaskBoard>
+        {
+            { x => x.ProjectId, row.Id },
+            { x => x.ProjectName, row.Name }
+        };
+        var dialog = await Dialogs.ShowAsync<TaskBoard>("Tasks", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+}

@@ -1,0 +1,114 @@
+@inject IRepairService Workshop
+@inject IClock Clock
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <MudSelect T="int" @bind-Value="_customerId" Label="Customer" Variant="Variant.Outlined"
+                       Class="mb-4">
+                @foreach (var c in _customers)
+                {
+                    <MudSelectItem T="int" Value="@c.Id">@c.Name @(c.Phone is null ? "" : $"({c.Phone})")</MudSelectItem>
+                }
+            </MudSelect>
+
+            <div class="d-flex gap-3 mb-4">
+                <MudTextField @bind-Value="_deviceType" Label="Device" Required="true"
+                              RequiredError="What kind of device is it?" Variant="Variant.Outlined" />
+                <MudDatePicker Label="Received on" Variant="Variant.Outlined"
+                               Date="_received" DateChanged="@(d => _received = d)" />
+            </div>
+
+            <div class="d-flex gap-3 mb-4">
+                <MudTextField @bind-Value="_make" Label="Make" Variant="Variant.Outlined" />
+                <MudTextField @bind-Value="_model" Label="Model" Variant="Variant.Outlined" />
+                <MudTextField @bind-Value="_serial" Label="Serial number" Variant="Variant.Outlined" />
+            </div>
+
+            <MudTextField @bind-Value="_fault" Label="Reported fault" Required="true" Lines="3"
+                          RequiredError="Record what the customer says is wrong."
+                          Variant="Variant.Outlined" Class="mb-4"
+                          HelperText="In the customer's words — the diagnosis comes later." />
+
+            <MudDatePicker Label="Promised by" Variant="Variant.Outlined"
+                           Date="_promised" DateChanged="@(d => _promised = d)" />
+        </MudForm>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int? JobId { get; set; }
+
+    private MudForm? _form;
+    private IReadOnlyList<Customer> _customers = [];
+    private int _customerId;
+    private DateTime? _received;
+    private DateTime? _promised;
+    private string _deviceType = "";
+    private string? _make, _model, _serial;
+    private string _fault = "";
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _customers = await Workshop.CustomersAsync(null);
+        _received = Clock.Today.ToDateTime(TimeOnly.MinValue);
+
+        if (JobId is not null)
+        {
+            var job = await Workshop.GetAsync(JobId.Value);
+            if (job is not null)
+            {
+                _customerId = job.CustomerId;
+                _received = job.ReceivedOn.ToDateTime(TimeOnly.MinValue);
+                _deviceType = job.DeviceType;
+                _make = job.Make; _model = job.Model; _serial = job.SerialNumber;
+                _fault = job.ReportedFault;
+                _promised = job.PromisedOn?.ToDateTime(TimeOnly.MinValue);
+            }
+        }
+        else if (_customers.Count > 0)
+        {
+            _customerId = _customers[0].Id;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        if (_form is not null)
+        {
+            await _form.Validate();
+            if (!_form.IsValid) return;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await Workshop.SaveAsync(new JobInput(
+                JobId, _customerId, DateOnly.FromDateTime(_received ?? DateTime.Today),
+                _deviceType, _make, _model, _serial, _fault,
+                _promised is null ? null : DateOnly.FromDateTime(_promised.Value)));
+
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add($"{result.Value.Number} booked in.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

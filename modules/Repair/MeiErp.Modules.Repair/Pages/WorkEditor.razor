@@ -1,0 +1,164 @@
+@inject IRepairService Workshop
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        @if (_job is null)
+        {
+            <MudProgressLinear Indeterminate="true" />
+        }
+        else
+        {
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">
+                <b>@_job.DeviceType</b> @_job.Make @_job.Model — @_job.CustomerName
+            </MudText>
+
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mb-4">
+                <b>Reported:</b> @_job.ReportedFault
+            </MudAlert>
+
+            <MudTextField @bind-Value="_diagnosis" Label="Diagnosis" Lines="3"
+                          Variant="Variant.Outlined" Class="mb-4"
+                          HelperText="What you found. This is narrative — it prices nothing." />
+
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Parts and labour</MudText>
+
+            <MudTable T="ItemRow" Items="_items" Dense="true" Elevation="0" Bordered="true">
+                <HeaderContent>
+                    <MudTh Style="width:110px">Kind</MudTh>
+                    <MudTh>Description</MudTh>
+                    <MudTh Style="width:80px">Qty</MudTh>
+                    <MudTh Style="width:110px">Price</MudTh>
+                    <MudTh Style="width:90px">Billable</MudTh>
+                    <MudTh Style="width:48px"></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>
+                        <MudSelect T="WorkItemKind" @bind-Value="context.Kind"
+                                   Variant="Variant.Text" Margin="Margin.Dense" Dense="true">
+                            @foreach (var k in Enum.GetValues<WorkItemKind>())
+                            {
+                                <MudSelectItem Value="@k">@k</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudTd>
+                    <MudTd>
+                        <MudTextField @bind-Value="context.Description" Variant="Variant.Text"
+                                      Margin="Margin.Dense" Placeholder="What was done" />
+                    </MudTd>
+                    <MudTd>
+                        <MudNumericField T="decimal" @bind-Value="context.Quantity"
+                                         @bind-Value:after="Recalculate"
+                                         Variant="Variant.Text" Margin="Margin.Dense" HideSpinButtons="true" />
+                    </MudTd>
+                    <MudTd>
+                        <MudNumericField T="decimal" @bind-Value="context.UnitPrice"
+                                         @bind-Value:after="Recalculate"
+                                         Variant="Variant.Text" Margin="Margin.Dense"
+                                         HideSpinButtons="true" Disabled="@(!context.IsBillable)" />
+                    </MudTd>
+                    <MudTd>
+                        <MudSwitch T="bool" @bind-Value="context.IsBillable"
+                                   @bind-Value:after="Recalculate" Color="Color.Primary" />
+                    </MudTd>
+                    <MudTd>
+                        <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small"
+                                       OnClick="@(() => Remove(context))" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+
+            <div class="d-flex align-center mt-2">
+                <MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="AddItem">Add line</MudButton>
+                <MudSpacer />
+                <MudText Typo="Typo.h6">@_total.ToString("N2")</MudText>
+            </div>
+
+            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-1">
+                Non-billable lines are recorded but never priced, so warranty and goodwill work
+                cannot reach a quotation by accident.
+            </MudText>
+        }
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int JobId { get; set; }
+
+    private sealed class ItemRow
+    {
+        public WorkItemKind Kind { get; set; } = WorkItemKind.Part;
+        public string Description { get; set; } = "";
+        public decimal Quantity { get; set; } = 1;
+        public decimal UnitPrice { get; set; }
+        public decimal? UnitCost { get; set; }
+        public bool IsBillable { get; set; } = true;
+    }
+
+    private Job? _job;
+    private List<ItemRow> _items = [];
+    private string? _diagnosis;
+    private decimal _total;
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _job = await Workshop.GetAsync(JobId);
+        if (_job is null) return;
+
+        _diagnosis = _job.Diagnosis;
+        _items = [.. _job.WorkItems.Select(w => new ItemRow
+        {
+            Kind = w.Kind, Description = w.Description, Quantity = w.Quantity,
+            UnitPrice = w.UnitPrice, UnitCost = w.UnitCost, IsBillable = w.IsBillable
+        })];
+
+        if (_items.Count == 0) _items.Add(new ItemRow());
+        Recalculate();
+    }
+
+    private void AddItem() => _items.Add(new ItemRow());
+
+    private void Remove(ItemRow row)
+    {
+        _items.Remove(row);
+        if (_items.Count == 0) _items.Add(new ItemRow());
+        Recalculate();
+    }
+
+    private void Recalculate() =>
+        _total = _items.Where(i => i.IsBillable).Sum(i => i.Quantity * i.UnitPrice);
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var result = await Workshop.SetWorkItemsAsync(JobId,
+                [.. _items.Where(i => !string.IsNullOrWhiteSpace(i.Description))
+                          .Select(i => new WorkItemInput(
+                              i.Kind, i.Description, i.Quantity, i.UnitPrice, i.UnitCost, i.IsBillable))]);
+
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Saved.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

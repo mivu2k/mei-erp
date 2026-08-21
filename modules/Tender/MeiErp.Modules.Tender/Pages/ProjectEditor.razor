@@ -1,0 +1,92 @@
+@inject ITenderService Work
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <div class="d-flex gap-3 mb-4">
+                <MudTextField @bind-Value="_model.Code" Label="Code" Variant="Variant.Outlined"
+                              HelperText="Left blank, one is generated." />
+                <MudSelect T="ProjectStatus" @bind-Value="_model.Status" Label="Status"
+                           Variant="Variant.Outlined">
+                    @foreach (var s in Enum.GetValues<ProjectStatus>())
+                    {
+                        <MudSelectItem Value="@s">@s</MudSelectItem>
+                    }
+                </MudSelect>
+            </div>
+
+            <MudTextField @bind-Value="_model.Name" Label="Name" Required="true"
+                          RequiredError="Give it a name." Variant="Variant.Outlined" Class="mb-4" />
+
+            <MudTextField @bind-Value="_model.ClientName" Label="Client"
+                          Variant="Variant.Outlined" Class="mb-4" />
+
+            <div class="d-flex gap-3 mb-4">
+                <MudDatePicker Label="Starts" Variant="Variant.Outlined"
+                               Date="_start" DateChanged="@(d => _start = d)" />
+                <MudDatePicker Label="Target end" Variant="Variant.Outlined"
+                               Date="_end" DateChanged="@(d => _end = d)" />
+            </div>
+
+            <MudNumericField T="decimal?" @bind-Value="_model.ContractValue" Label="Contract value"
+                             Variant="Variant.Outlined" HideSpinButtons="true" />
+        </MudForm>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int? ProjectId { get; set; }
+
+    private MudForm? _form;
+    private Project _model = new();
+    private DateTime? _start, _end;
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _model = ProjectId is null
+            ? new Project { Status = ProjectStatus.Planned }
+            : await Work.GetProjectAsync(ProjectId.Value) ?? new Project();
+
+        _start = _model.StartDate?.ToDateTime(TimeOnly.MinValue);
+        _end = _model.TargetEndDate?.ToDateTime(TimeOnly.MinValue);
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        if (_form is not null)
+        {
+            await _form.Validate();
+            if (!_form.IsValid) return;
+        }
+
+        _busy = true;
+        try
+        {
+            _model.StartDate = _start is null ? null : DateOnly.FromDateTime(_start.Value);
+            _model.TargetEndDate = _end is null ? null : DateOnly.FromDateTime(_end.Value);
+
+            var result = await Work.SaveProjectAsync(_model);
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Saved.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

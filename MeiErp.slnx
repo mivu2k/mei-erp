@@ -18,6 +18,12 @@
   <Folder Name="/modules/Inventory/">
     <Project Path="modules/Inventory/MeiErp.Modules.Inventory/MeiErp.Modules.Inventory.csproj" />
   </Folder>
+  <Folder Name="/modules/Repair/">
+    <Project Path="modules/Repair/MeiErp.Modules.Repair/MeiErp.Modules.Repair.csproj" />
+  </Folder>
+  <Folder Name="/modules/Tender/">
+    <Project Path="modules/Tender/MeiErp.Modules.Tender/MeiErp.Modules.Tender.csproj" />
+  </Folder>
   <Folder Name="/platform/">
     <Project Path="platform/MeiErp.Platform.Identity/MeiErp.Platform.Identity.csproj" />
     <Project Path="platform/MeiErp.Platform.Kernel/MeiErp.Platform.Kernel.csproj" />
@@ -29,6 +35,8 @@
     <Project Path="tests/MeiErp.Modules.GatePass.Tests/MeiErp.Modules.GatePass.Tests.csproj" />
     <Project Path="tests/MeiErp.Modules.Hr.Tests/MeiErp.Modules.Hr.Tests.csproj" />
     <Project Path="tests/MeiErp.Modules.Inventory.Tests/MeiErp.Modules.Inventory.Tests.csproj" />
+    <Project Path="tests/MeiErp.Modules.Repair.Tests/MeiErp.Modules.Repair.Tests.csproj" />
+    <Project Path="tests/MeiErp.Modules.Tender.Tests/MeiErp.Modules.Tender.Tests.csproj" />
     <Project Path="tests/MeiErp.Platform.Identity.Tests/MeiErp.Platform.Identity.Tests.csproj" />
     <Project Path="tests/MeiErp.Platform.Persistence.Tests/MeiErp.Platform.Persistence.Tests.csproj" />
     <Project Path="tests/MeiErp.Platform.Workflow.Tests/MeiErp.Platform.Workflow.Tests.csproj" />

@@ -1,0 +1,177 @@
+@page "/tender"
+@page "/tender/tenders"
+@attribute [Authorize(Policy = TenderModule.TendersView)]
+@rendermode InteractiveServer
+@inject ITenderService Bids
+@inject IClock Clock
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Tenders</PageTitle>
+
+<div class="d-flex align-center mb-1">
+    <div>
+        <MudText Typo="Typo.h5">Tenders</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            Bids, and the money lodged against them.
+        </MudText>
+    </div>
+    <MudSpacer />
+    <AuthorizeView Policy="@TenderModule.TendersManage" Context="perms">
+        <Authorized>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+                New tender
+            </MudButton>
+        </Authorized>
+    </AuthorizeView>
+</div>
+
+@if (_outstanding.Count > 0)
+{
+    @* Guarantees are real money sitting with someone else. Surfaced rather
+       than left in a report nobody opens. *@
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-4">
+        <b>@_outstanding.Sum(g => g.Amount).ToString("N2")</b> is lodged across
+        @_outstanding.Count @(_outstanding.Count == 1 ? "guarantee" : "guarantees") and not yet released.
+        @{
+            var expired = _outstanding.Count(g => g.IsExpiredUnreleased(Clock.Today));
+        }
+        @if (expired > 0)
+        {
+            <text> <b>@expired</b> of them have expired without being released — chase those first.</text>
+        }
+    </MudAlert>
+}
+
+<MudPaper Outlined="true" Elevation="0" Class="mt-4">
+    <MudDataGrid T="TenderRecord" Items="_rows" Dense="true" Hover="true" Elevation="0"
+                 Loading="_loading" Filterable="false" RowsPerPage="25">
+        <Columns>
+            <PropertyColumn Property="@(t => t.Reference)" Title="Reference" />
+            <TemplateColumn Title="Tender">
+                <CellTemplate>
+                    <MudText Typo="Typo.body2"><b>@context.Item.Title</b></MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">@context.Item.ClientName</MudText>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Deadline">
+                <CellTemplate>
+                    @if (context.Item.SubmissionDeadline is not null)
+                    {
+                        <span>@context.Item.SubmissionDeadline.Value.ToString("d MMM yyyy")</span>
+                        @if (context.Item.IsDeadlineNear(Clock.Today))
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Warning"
+                                     Variant="Variant.Filled" Class="ml-1">soon</MudChip>
+                        }
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Value" HeaderClass="text-right" CellClass="text-right">
+                <CellTemplate>
+                    <span style="font-variant-numeric:tabular-nums">
+                        @(context.Item.Items.Count > 0
+                            ? context.Item.ItemsTotal.ToString("N2")
+                            : context.Item.EstimatedValue?.ToString("N2") ?? "—")
+                    </span>
+                    @if (context.Item.VarianceFromEstimate is { } variance && variance != 0)
+                    {
+                        @* Seeing the priced lines disagree with the estimate is
+                           how a mispriced line gets caught before submission. *@
+                        <MudTooltip Text="@($"The priced lines differ from the estimate by {variance:N2}")">
+                            <MudIcon Icon="@Icons.Material.Filled.Warning" Size="Size.Small"
+                                     Color="Color.Warning" Class="ml-1" />
+                        </MudTooltip>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Guarantees" HeaderClass="text-right" CellClass="text-right">
+                <CellTemplate>
+                    @{
+                        var out_ = context.Item.Guarantees.Where(g => g.IsOutstanding).Sum(g => g.Amount);
+                    }
+                    <span style="font-variant-numeric:tabular-nums">
+                        @(out_ == 0 ? "—" : out_.ToString("N2"))
+                    </span>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Status">
+                <CellTemplate>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                             Color="@Colour(context.Item.Status)">@context.Item.Status</MudChip>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="" Sortable="false">
+                <CellTemplate>
+                    <div class="d-flex justify-end gap-1">
+                        <AuthorizeView Policy="@TenderModule.GuaranteesManage" Context="perms">
+                            <Authorized>
+                                <MudButton Size="Size.Small" Variant="Variant.Text"
+                                           OnClick="@(() => Guarantees(context.Item))">Guarantees</MudButton>
+                            </Authorized>
+                        </AuthorizeView>
+                        <AuthorizeView Policy="@TenderModule.TendersManage" Context="perms">
+                            <Authorized>
+                                <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small"
+                                               OnClick="@(() => Edit(context.Item))" />
+                            </Authorized>
+                        </AuthorizeView>
+                    </div>
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+        <NoRecordsContent>
+            <MudText Class="pa-8 text-center mud-text-secondary">No tenders yet.</MudText>
+        </NoRecordsContent>
+    </MudDataGrid>
+</MudPaper>
+
+@code {
+    private IReadOnlyList<TenderRecord> _rows = [];
+    private IReadOnlyList<Guarantee> _outstanding = [];
+    private bool _loading = true;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _rows = await Bids.ListTendersAsync(null);
+        _outstanding = await Bids.OutstandingGuaranteesAsync();
+        _loading = false;
+    }
+
+    private static Color Colour(TenderStatus status) => status switch
+    {
+        TenderStatus.Won => Color.Success,
+        TenderStatus.Submitted => Color.Info,
+        TenderStatus.Opened => Color.Info,
+        TenderStatus.Lost => Color.Error,
+        TenderStatus.Cancelled => Color.Default,
+        _ => Color.Default
+    };
+
+    private async Task Edit(TenderRecord? row)
+    {
+        var parameters = new DialogParameters<TenderEditor> { { x => x.TenderId, row?.Id } };
+        var dialog = await Dialogs.ShowAsync<TenderEditor>(
+            row is null ? "New tender" : "Edit tender", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+
+    private async Task Guarantees(TenderRecord row)
+    {
+        var parameters = new DialogParameters<GuaranteeDialog>
+        {
+            { x => x.TenderId, row.Id },
+            { x => x.TenderTitle, row.Title }
+        };
+        var dialog = await Dialogs.ShowAsync<GuaranteeDialog>("Guarantees", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+}

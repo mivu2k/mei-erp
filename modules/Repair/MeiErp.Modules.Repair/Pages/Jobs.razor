@@ -1,0 +1,185 @@
+@page "/repair"
+@page "/repair/jobs"
+@attribute [Authorize(Policy = RepairModule.JobsView)]
+@rendermode InteractiveServer
+@inject IRepairService Workshop
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Repair jobs</PageTitle>
+
+<div class="d-flex align-center mb-1">
+    <div>
+        <MudText Typo="Typo.h5">Repair jobs</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            A job moves through the pipeline in order — it cannot be typed into any state.
+        </MudText>
+    </div>
+    <MudSpacer />
+    <AuthorizeView Policy="@RepairModule.JobsManage" Context="perms">
+        <Authorized>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+                Take in a device
+            </MudButton>
+        </Authorized>
+    </AuthorizeView>
+</div>
+
+<MudPaper Outlined="true" Elevation="0" Class="mt-4">
+    <MudToolBar Dense="true">
+        <MudSelect T="JobStatus?" @bind-Value="_status" @bind-Value:after="LoadAsync"
+                   Label="Status" Clearable="true" Variant="Variant.Text"
+                   Margin="Margin.Dense" Class="mt-0" Style="max-width:200px">
+            @foreach (var s in Enum.GetValues<JobStatus>())
+            {
+                <MudSelectItem T="JobStatus?" Value="@s">@s</MudSelectItem>
+            }
+        </MudSelect>
+        <MudTextField @bind-Value="_search" @bind-Value:after="LoadAsync"
+                      Placeholder="Job number, customer or serial" DebounceInterval="300"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                      Variant="Variant.Text" Margin="Margin.Dense" Class="mt-0 ml-4" />
+    </MudToolBar>
+
+    <MudDataGrid T="Job" Items="_rows" Dense="true" Hover="true" Elevation="0"
+                 Loading="_loading" Filterable="false" RowsPerPage="25">
+        <Columns>
+            <PropertyColumn Property="@(j => j.Number)" Title="Job" />
+            <TemplateColumn Title="Device">
+                <CellTemplate>
+                    <MudText Typo="Typo.body2">
+                        <b>@context.Item.DeviceType</b> @context.Item.Make @context.Item.Model
+                    </MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        @context.Item.CustomerName
+                        @if (context.Item.SerialNumber is not null)
+                        {
+                            <text> · @context.Item.SerialNumber</text>
+                        }
+                    </MudText>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Received">
+                <CellTemplate>@context.Item.ReceivedOn.ToString("d MMM")</CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Status">
+                <CellTemplate>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                             Color="@Colour(context.Item.Status)">@context.Item.Status</MudChip>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Value" HeaderClass="text-right" CellClass="text-right">
+                <CellTemplate>
+                    <span style="font-variant-numeric:tabular-nums">
+                        @(context.Item.Total == 0 ? "—" : context.Item.Total.ToString("N2"))
+                    </span>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="" Sortable="false">
+                <CellTemplate>
+                    <div class="d-flex justify-end gap-1">
+                        <AuthorizeView Policy="@RepairModule.JobsManage" Context="perms">
+                            <Authorized>
+                                <MudButton Size="Size.Small" Variant="Variant.Text"
+                                           OnClick="@(() => Work(context.Item))">Work</MudButton>
+                            </Authorized>
+                        </AuthorizeView>
+
+                        @if (context.Item.Status is JobStatus.Completed)
+                        {
+                            <AuthorizeView Policy="@RepairModule.JobsDeliver" Context="perms">
+                                <Authorized>
+                                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
+                                               OnClick="@(() => Deliver(context.Item))">Deliver</MudButton>
+                                </Authorized>
+                            </AuthorizeView>
+                        }
+                        else if (JobWorkflow.Next(context.Item.Status).Count > 0)
+                        {
+                            <MudMenu Icon="@Icons.Material.Filled.MoreVert" Dense="true"
+                                     AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                                @foreach (var next in JobWorkflow.Next(context.Item.Status)
+                                                                 .Where(n => n != JobStatus.Delivered))
+                                {
+                                    <MudMenuItem OnClick="@(() => Move(context.Item, next))">
+                                        Move to @next
+                                    </MudMenuItem>
+                                }
+                            </MudMenu>
+                        }
+                    </div>
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+        <NoRecordsContent>
+            <MudText Class="pa-8 text-center mud-text-secondary">No jobs on the bench.</MudText>
+        </NoRecordsContent>
+    </MudDataGrid>
+</MudPaper>
+
+@code {
+    private IReadOnlyList<Job> _rows = [];
+    private JobStatus? _status;
+    private string? _search;
+    private bool _loading = true;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _rows = await Workshop.ListAsync(_status, _search);
+        _loading = false;
+    }
+
+    private static Color Colour(JobStatus status) => status switch
+    {
+        JobStatus.Delivered => Color.Success,
+        JobStatus.Completed => Color.Info,
+        JobStatus.InProgress => Color.Primary,
+        JobStatus.AwaitingApproval => Color.Warning,
+        JobStatus.Cancelled => Color.Error,
+        _ => Color.Default
+    };
+
+    private async Task Edit(Job? row)
+    {
+        var parameters = new DialogParameters<JobEditor> { { x => x.JobId, row?.Id } };
+        var dialog = await Dialogs.ShowAsync<JobEditor>(
+            row is null ? "Take in a device" : "Edit job", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+
+    private async Task Work(Job row)
+    {
+        var parameters = new DialogParameters<WorkEditor> { { x => x.JobId, row.Id } };
+        var dialog = await Dialogs.ShowAsync<WorkEditor>($"Work on {row.Number}", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+
+    private async Task Move(Job row, JobStatus to)
+    {
+        var result = await Workshop.MoveAsync(row.Id, to, null);
+        if (result.Failed) Snackbar.Add(result.Error!, Severity.Error);
+        else Snackbar.Add($"{row.Number} moved to {to}.", Severity.Success);
+        await LoadAsync();
+    }
+
+    private async Task Deliver(Job row)
+    {
+        var parameters = new DialogParameters<DeliverJob>
+        {
+            { x => x.JobId, row.Id },
+            { x => x.JobNumber, row.Number }
+        };
+        var dialog = await Dialogs.ShowAsync<DeliverJob>("Hand back the device", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+}

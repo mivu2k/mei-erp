@@ -1,0 +1,96 @@
+@inject ITenderService Bids
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <div class="d-flex gap-3 mb-4">
+                <MudTextField @bind-Value="_model.Reference" Label="Reference" Required="true"
+                              RequiredError="Give it a reference." Variant="Variant.Outlined" />
+                <MudSelect T="TenderStatus" @bind-Value="_model.Status" Label="Status"
+                           Variant="Variant.Outlined">
+                    @foreach (var s in Enum.GetValues<TenderStatus>())
+                    {
+                        <MudSelectItem Value="@s">@s</MudSelectItem>
+                    }
+                </MudSelect>
+            </div>
+
+            <MudTextField @bind-Value="_model.Title" Label="Title" Required="true"
+                          RequiredError="Give it a title." Variant="Variant.Outlined" Class="mb-4" />
+
+            <MudTextField @bind-Value="_model.ClientName" Label="Client"
+                          Variant="Variant.Outlined" Class="mb-4" />
+
+            <div class="d-flex gap-3 mb-4">
+                <MudDatePicker Label="Published" Variant="Variant.Outlined"
+                               Date="_published" DateChanged="@(d => _published = d)" />
+                <MudDatePicker Label="Submission deadline" Variant="Variant.Outlined"
+                               Date="_deadline" DateChanged="@(d => _deadline = d)" />
+            </div>
+
+            <MudNumericField T="decimal?" @bind-Value="_model.EstimatedValue" Label="Estimated value"
+                             Variant="Variant.Outlined" HideSpinButtons="true" Class="mb-4"
+                             HelperText="Kept apart from the priced lines on purpose — the two disagreeing is a useful signal." />
+
+            <MudTextField @bind-Value="_model.Notes" Label="Notes" Lines="3"
+                          Variant="Variant.Outlined" />
+        </MudForm>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int? TenderId { get; set; }
+
+    private MudForm? _form;
+    private TenderRecord _model = new();
+    private DateTime? _published, _deadline;
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _model = TenderId is null
+            ? new TenderRecord { Status = TenderStatus.Identified }
+            : await Bids.GetTenderAsync(TenderId.Value) ?? new TenderRecord();
+
+        _published = _model.PublishedOn?.ToDateTime(TimeOnly.MinValue);
+        _deadline = _model.SubmissionDeadline?.ToDateTime(TimeOnly.MinValue);
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        if (_form is not null)
+        {
+            await _form.Validate();
+            if (!_form.IsValid) return;
+        }
+
+        _busy = true;
+        try
+        {
+            _model.PublishedOn = _published is null ? null : DateOnly.FromDateTime(_published.Value);
+            _model.SubmissionDeadline = _deadline is null ? null : DateOnly.FromDateTime(_deadline.Value);
+
+            var result = await Bids.SaveTenderAsync(_model);
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Saved.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

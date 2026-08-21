@@ -1,0 +1,50 @@
+@inject IRepairService Workshop
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-4">
+            Handing back <b>@JobNumber</b>. The delivery note is signed against the name below.
+        </MudText>
+
+        <MudTextField @bind-Value="_collectedBy" Label="Collected by" Immediate="true"
+                      Variant="Variant.Outlined" AutoFocus="true" />
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Success"
+                   Disabled="@(_busy || string.IsNullOrWhiteSpace(_collectedBy))"
+                   OnClick="SaveAsync">Hand back</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int JobId { get; set; }
+    [Parameter] public string JobNumber { get; set; } = "";
+
+    private string _collectedBy = "";
+    private string? _error;
+    private bool _busy;
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var result = await Workshop.DeliverAsync(JobId, _collectedBy);
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Delivered.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

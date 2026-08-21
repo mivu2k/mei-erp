@@ -5,9 +5,14 @@ apps behind a shared login. Read this before exploring the tree.
 
 ## Status
 
-**Foundation stage.** The spine is being built before any business module, which is
-the whole reason this is a rebuild rather than a refactor. Nothing here is in the
-office yet.
+**All seven modules are in and the app runs**, with 116 tests green and no build
+warnings. Nothing is in the office yet — the old app stays live until this reaches
+parity feature by feature.
+
+What is deliberately *not* built yet: printing (QuestPDF documents), the shared
+report platform, notifications and email, and the outbox event bus that would let
+Inventory and Repair post to Finance's ledger automatically. Those are the next
+pieces, and the sections below describe how they are meant to fit.
 
 | Piece | State |
 |---|---|
@@ -23,7 +28,8 @@ office yet.
 | **Inventory module** | items, stock, purchasing, sales; **19 tests green** |
 | **Fleet module** | vehicles, servicing, running costs, expiry reminders |
 | **Gate Pass module** | inward/outward passes, returns; **12 tests green** |
-| Repair, Tender | not started — each is a repeat of the same pattern |
+| **Repair module** | jobs as a state machine, work items, delivery; **9 tests green** |
+| **Tender & Projects** | bids, guarantees, projects, task board; **12 tests green** |
 
 **The old app at `/home/pc/vb/acc` stays live in the office until this reaches parity,
 module by module.** There is no cutover date and there must not be a big-bang switch.

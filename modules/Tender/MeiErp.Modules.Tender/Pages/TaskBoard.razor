@@ -1,0 +1,141 @@
+@inject ITenderService Work
+@inject IClock Clock
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">@ProjectName</MudText>
+
+        @if (_project is not null)
+        {
+            @foreach (var task in _project.Tasks.OrderBy(t => t.DueDate ?? DateOnly.MaxValue))
+            {
+                <MudPaper Outlined="true" Elevation="0" Class="pa-3 mb-2">
+                    <div class="d-flex align-center gap-3">
+                        <MudCheckBox T="bool" Color="Color.Primary" Dense="true"
+                                     Value="@(task.Status == ProjectTaskStatus.Completed)"
+                                     ValueChanged="@(v => ToggleAsync(task, v))" />
+                        <div class="flex-grow-1">
+                            <MudText Typo="Typo.body2"
+                                     Style="@(task.Status == ProjectTaskStatus.Completed ? "text-decoration:line-through" : "")">
+                                @task.Title
+                            </MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                @task.Status
+                                @if (task.DueDate is not null)
+                                {
+                                    <text> · due @task.DueDate.Value.ToString("d MMM")</text>
+                                }
+                                @if (task.AssigneeName is not null)
+                                {
+                                    <text> · @task.AssigneeName</text>
+                                }
+                            </MudText>
+                        </div>
+
+                        @if (task.IsOverdue(Clock.Today))
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Error"
+                                     Variant="Variant.Filled">overdue</MudChip>
+                        }
+
+                        <MudNumericField T="int" Value="task.PercentComplete"
+                                         ValueChanged="@(v => SetPercentAsync(task, v))"
+                                         Label="%" Variant="Variant.Text" Margin="Margin.Dense"
+                                         HideSpinButtons="true" Style="max-width:70px" />
+
+                        <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small"
+                                       Color="Color.Error" OnClick="@(() => DeleteAsync(task))" />
+                    </div>
+                </MudPaper>
+            }
+        }
+
+        <MudDivider Class="my-4" />
+
+        <div class="d-flex gap-3">
+            <MudTextField @bind-Value="_newTitle" Label="New task" Variant="Variant.Outlined"
+                          Margin="Margin.Dense" Immediate="true" />
+            <MudDatePicker Label="Due" Variant="Variant.Outlined" Margin="Margin.Dense"
+                           Date="_newDue" DateChanged="@(d => _newDue = d)" Style="max-width:180px" />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       Disabled="@string.IsNullOrWhiteSpace(_newTitle)"
+                       OnClick="AddAsync">Add</MudButton>
+        </div>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Close(DialogResult.Ok(true)))">Done</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int ProjectId { get; set; }
+    [Parameter] public string ProjectName { get; set; } = "";
+
+    private Project? _project;
+    private string _newTitle = "";
+    private DateTime? _newDue;
+    private string? _error;
+
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    private async Task ReloadAsync() => _project = await Work.GetProjectAsync(ProjectId);
+
+    private async Task AddAsync()
+    {
+        _error = null;
+
+        var result = await Work.SaveTaskAsync(new ProjectTask
+        {
+            ProjectId = ProjectId,
+            Title = _newTitle,
+            DueDate = _newDue is null ? null : DateOnly.FromDateTime(_newDue.Value),
+            Status = ProjectTaskStatus.NotStarted
+        });
+
+        if (result.Failed) { _error = result.Error; return; }
+
+        _newTitle = "";
+        _newDue = null;
+        await ReloadAsync();
+    }
+
+    /// <summary>
+    /// Ticking a task done goes through the service, which reconciles the
+    /// percentage and the completion date - so a "done" task can never read
+    /// as 40%.
+    /// </summary>
+    private async Task ToggleAsync(ProjectTask task, bool done)
+    {
+        task.Status = done ? ProjectTaskStatus.Completed : ProjectTaskStatus.InProgress;
+
+        var result = await Work.SaveTaskAsync(task);
+        if (result.Failed) Snackbar.Add(result.Error!, Severity.Error);
+
+        await ReloadAsync();
+    }
+
+    private async Task SetPercentAsync(ProjectTask task, int percent)
+    {
+        task.PercentComplete = percent;
+
+        var result = await Work.SaveTaskAsync(task);
+        if (result.Failed) Snackbar.Add(result.Error!, Severity.Error);
+
+        await ReloadAsync();
+    }
+
+    private async Task DeleteAsync(ProjectTask task)
+    {
+        var result = await Work.DeleteTaskAsync(task.Id);
+        if (result.Failed) Snackbar.Add(result.Error!, Severity.Error);
+        await ReloadAsync();
+    }
+}

@@ -4,6 +4,8 @@ using MeiErp.Modules.Finance;
 using MeiErp.Modules.Auto;
 using MeiErp.Modules.GatePass;
 using MeiErp.Modules.Hr;
+using MeiErp.Modules.Repair;
+using MeiErp.Modules.Tender;
 using MeiErp.Modules.Inventory;
 using MeiErp.Platform.Identity;
 using MeiErp.Platform.Kernel;
@@ -61,7 +63,9 @@ builder.Services.AddSingleton<IModuleCatalog>(_ => new ModuleCatalog(
     FinanceModule.Descriptor,
     InventoryModule.Descriptor,
     AutoModule.Descriptor,
-    GatePassModule.Descriptor
+    GatePassModule.Descriptor,
+    RepairModule.Descriptor,
+    TenderModule.Descriptor
 ]));
 
 builder.Services.AddHrModule(builder.Configuration);
@@ -69,6 +73,8 @@ builder.Services.AddFinanceModule(builder.Configuration);
 builder.Services.AddInventoryModule(builder.Configuration);
 builder.Services.AddAutoModule(builder.Configuration);
 builder.Services.AddGatePassModule(builder.Configuration);
+builder.Services.AddRepairModule(builder.Configuration);
+builder.Services.AddTenderModule(builder.Configuration);
 
 // ---------------------------------------------------------------- identity
 builder.Services
@@ -192,7 +198,9 @@ app.MapRazorComponents<App>()
        typeof(FinanceModule).Assembly,
        typeof(InventoryModule).Assembly,
        typeof(AutoModule).Assembly,
-       typeof(GatePassModule).Assembly);
+       typeof(GatePassModule).Assembly,
+       typeof(RepairModule).Assembly,
+       typeof(TenderModule).Assembly);
 
 app.MapAuthEndpoints();
 
@@ -203,5 +211,7 @@ await app.Services.SeedFinanceAsync();
 await app.Services.SeedInventoryAsync();
 await app.Services.SeedAutoAsync();
 await app.Services.SeedGatePassAsync();
+await app.Services.SeedRepairAsync();
+await app.Services.SeedTenderAsync();
 
 app.Run();

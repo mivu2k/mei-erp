@@ -1,0 +1,145 @@
+@inject ITenderService Bids
+@inject IClock Clock
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">@TenderTitle</MudText>
+
+        @if (_tender is not null && _tender.Guarantees.Count > 0)
+        {
+            <MudSimpleTable Dense="true" Style="overflow-x:auto" Class="mb-4">
+                <thead>
+                    <tr><th>Kind</th><th>Instrument</th><th style="text-align:right">Amount</th>
+                        <th>Expires</th><th></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var g in _tender.Guarantees.OrderBy(g => g.ReleasedOn is null ? 0 : 1))
+                    {
+                        <tr>
+                            <td>@g.Kind</td>
+                            <td>@g.InstrumentNumber @(g.BankName is null ? "" : $"({g.BankName})")</td>
+                            <td style="text-align:right;font-variant-numeric:tabular-nums">
+                                @g.Amount.ToString("N2")
+                            </td>
+                            <td>
+                                @g.ExpiresOn?.ToString("d MMM yy")
+                                @if (g.IsExpiredUnreleased(Clock.Today))
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Error"
+                                             Variant="Variant.Filled">expired</MudChip>
+                                }
+                            </td>
+                            <td style="text-align:right">
+                                @if (g.IsOutstanding)
+                                {
+                                    <MudButton Size="Size.Small" Variant="Variant.Text"
+                                               OnClick="@(() => Release(g))">Release</MudButton>
+                                }
+                                else
+                                {
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                        released @g.ReleasedOn?.ToString("d MMM yy")
+                                    </MudText>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        }
+
+        <MudText Typo="Typo.subtitle2" Class="mb-2">Lodge a new one</MudText>
+
+        <div class="d-flex gap-3 mb-3">
+            <MudSelect T="GuaranteeKind" @bind-Value="_kind" Label="Kind" Variant="Variant.Outlined"
+                       Margin="Margin.Dense">
+                @foreach (var k in Enum.GetValues<GuaranteeKind>())
+                {
+                    <MudSelectItem Value="@k">@k</MudSelectItem>
+                }
+            </MudSelect>
+            <MudNumericField T="decimal" @bind-Value="_amount" Label="Amount"
+                             Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" />
+        </div>
+
+        <div class="d-flex gap-3 mb-3">
+            <MudTextField @bind-Value="_instrument" Label="Instrument number"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudTextField @bind-Value="_bank" Label="Bank" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </div>
+
+        <div class="d-flex gap-3">
+            <MudDatePicker Label="Issued" Variant="Variant.Outlined" Margin="Margin.Dense"
+                           Date="_issued" DateChanged="@(d => _issued = d)" />
+            <MudDatePicker Label="Expires" Variant="Variant.Outlined" Margin="Margin.Dense"
+                           Date="_expires" DateChanged="@(d => _expires = d)" />
+        </div>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Close(DialogResult.Ok(true)))">Done</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="AddAsync" Disabled="_busy">Lodge guarantee</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int TenderId { get; set; }
+    [Parameter] public string TenderTitle { get; set; } = "";
+
+    private TenderRecord? _tender;
+    private GuaranteeKind _kind = GuaranteeKind.Emd;
+    private decimal _amount;
+    private string? _instrument, _bank;
+    private DateTime? _issued, _expires;
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _tender = await Bids.GetTenderAsync(TenderId);
+        _issued = Clock.Today.ToDateTime(TimeOnly.MinValue);
+    }
+
+    private async Task AddAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var result = await Bids.AddGuaranteeAsync(new Guarantee
+            {
+                TenderRecordId = TenderId,
+                Kind = _kind,
+                Amount = _amount,
+                InstrumentNumber = _instrument,
+                BankName = _bank,
+                IssuedOn = DateOnly.FromDateTime(_issued ?? DateTime.Today),
+                ExpiresOn = _expires is null ? null : DateOnly.FromDateTime(_expires.Value)
+            });
+
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Guarantee lodged.", Severity.Success);
+            _amount = 0; _instrument = null;
+            _tender = await Bids.GetTenderAsync(TenderId);
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task Release(Guarantee g)
+    {
+        var result = await Bids.ReleaseGuaranteeAsync(g.Id, Clock.Today);
+        if (result.Failed) Snackbar.Add(result.Error!, Severity.Error);
+        else Snackbar.Add("Released.", Severity.Success);
+
+        _tender = await Bids.GetTenderAsync(TenderId);
+    }
+}
