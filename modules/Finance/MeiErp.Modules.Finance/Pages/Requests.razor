@@ -1,0 +1,158 @@
+@page "/finance/requests"
+@attribute [Authorize(Policy = FinanceModule.RequestsRaise)]
+@rendermode InteractiveServer
+@inject IPaymentRequestService Payments
+@inject IAccountService Chart
+@inject IClock Clock
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Payment requests</PageTitle>
+
+<div class="d-flex align-center mb-1">
+    <div>
+        <MudText Typo="Typo.h5">Payment requests</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            Approval authorises the spend. The voucher is posted when it is actually paid.
+        </MudText>
+    </div>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+        New request
+    </MudButton>
+</div>
+
+<MudPaper Outlined="true" Elevation="0" Class="mt-4">
+    <MudToolBar Dense="true">
+        <MudSwitch T="bool" @bind-Value="_mineOnly" @bind-Value:after="LoadAsync"
+                   Color="Color.Primary" Label="Only mine" />
+    </MudToolBar>
+
+    <MudDataGrid T="PaymentRequest" Items="_rows" Dense="true" Hover="true" Elevation="0"
+                 Loading="_loading" Filterable="false" RowsPerPage="25">
+        <Columns>
+            <PropertyColumn Property="@(r => r.Reference)" Title="Reference" />
+            <TemplateColumn Title="For">
+                <CellTemplate>
+                    <MudText Typo="Typo.body2"><b>@context.Item.Title</b></MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        @context.Item.RequestedByName
+                        @if (context.Item.PayeeName is not null)
+                        {
+                            <text> → @context.Item.PayeeName</text>
+                        }
+                    </MudText>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Amount" HeaderClass="text-right" CellClass="text-right">
+                <CellTemplate>
+                    <span style="font-variant-numeric: tabular-nums">
+                        @context.Item.Amount.ToString("N2")
+                    </span>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Charged to">
+                <CellTemplate>@context.Item.ExpenseAccount?.Name</CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Status">
+                <CellTemplate>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                             Color="@Colour(context.Item.Status)">
+                        @context.Item.Status
+                    </MudChip>
+                    @if (context.Item.DecisionComment is not null)
+                    {
+                        <MudTooltip Text="@context.Item.DecisionComment">
+                            <MudIcon Icon="@Icons.Material.Outlined.Comment" Size="Size.Small"
+                                     Class="ml-1 mud-text-secondary" />
+                        </MudTooltip>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="" Sortable="false">
+                <CellTemplate>
+                    <div class="d-flex justify-end gap-1">
+                        @if (context.Item.Status is PaymentRequestStatus.Draft
+                                                 or PaymentRequestStatus.Returned)
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Text"
+                                       OnClick="@(() => Edit(context.Item))">Edit</MudButton>
+                            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                                       OnClick="@(() => Submit(context.Item))">Submit</MudButton>
+                        }
+                        else if (context.Item.Status is PaymentRequestStatus.Approved)
+                        {
+                            <AuthorizeView Policy="@FinanceModule.RequestsPay" Context="perms">
+                                <Authorized>
+                                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
+                                               OnClick="@(() => Pay(context.Item))">Pay</MudButton>
+                                </Authorized>
+                            </AuthorizeView>
+                        }
+                    </div>
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+        <NoRecordsContent>
+            <MudText Class="pa-8 text-center mud-text-secondary">No payment requests yet.</MudText>
+        </NoRecordsContent>
+    </MudDataGrid>
+</MudPaper>
+
+@code {
+    private IReadOnlyList<PaymentRequest> _rows = [];
+    private bool _mineOnly;
+    private bool _loading = true;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _rows = await Payments.ListAsync(null, _mineOnly);
+        _loading = false;
+    }
+
+    private static Color Colour(PaymentRequestStatus status) => status switch
+    {
+        PaymentRequestStatus.Paid => Color.Success,
+        PaymentRequestStatus.Approved => Color.Info,
+        PaymentRequestStatus.Pending => Color.Default,
+        PaymentRequestStatus.Rejected => Color.Error,
+        PaymentRequestStatus.Returned => Color.Warning,
+        _ => Color.Default
+    };
+
+    private async Task Edit(PaymentRequest? row)
+    {
+        var parameters = new DialogParameters<RequestEditor> { { x => x.RequestId, row?.Id } };
+        var dialog = await Dialogs.ShowAsync<RequestEditor>(
+            row is null ? "New request" : "Edit request", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+
+    private async Task Submit(PaymentRequest row)
+    {
+        var result = await Payments.SubmitAsync(row.Id);
+        if (result.Failed) Snackbar.Add(result.Error!, Severity.Error);
+        else Snackbar.Add("Sent for approval.", Severity.Success);
+        await LoadAsync();
+    }
+
+    private async Task Pay(PaymentRequest row)
+    {
+        var parameters = new DialogParameters<PayDialog>
+        {
+            { x => x.RequestId, row.Id },
+            { x => x.Amount, row.Amount },
+            { x => x.Title, row.Title }
+        };
+        var dialog = await Dialogs.ShowAsync<PayDialog>("Pay request", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+}

@@ -19,7 +19,8 @@ office yet.
 | `Platform.Reporting` | not started |
 | `Platform.Messaging` | not started |
 | **HR module** | employees + leave, wired to the approval engine; **11 tests green** |
-| Other modules | not started — each is now a repeat of the HR pattern |
+| **Finance module** | chart of accounts, vouchers, payment requests, reports; **18 tests green** |
+| Other modules | not started — each is now a repeat of the HR/Finance pattern |
 
 **The old app at `/home/pc/vb/acc` stays live in the office until this reaches parity,
 module by module.** There is no cutover date and there must not be a big-bang switch.
@@ -122,6 +123,30 @@ escalation, or return-for-correction.
 Migration order when the modules land: **leave requests first** — highest volume,
 simplest, nothing financial at risk. Prove the engine there before anything that moves
 money.
+
+## Finance — the rules that must not be relaxed
+
+- **Everything posts to the ledger.** No module writes financial state directly;
+  they call `PostSystemVoucherAsync`. That is the guarantee the books balance.
+- **An unbalanced entry is refused**, including one handed over by another module.
+  One bad caller must not be able to corrupt the ledger.
+- **A posted voucher is immutable.** The correction path is reverse (an equal and
+  opposite entry, original untouched) or duplicate-as-draft. Editing a posted entry
+  makes every report printed before it a lie.
+- **Only leaves can be posted to.** A heading with its own balance double-counts
+  itself against its children in every report.
+- **Nothing posts into a closed year**, so a signed-off trial balance stays signed off.
+- **An account with entries can never be deleted** — only deactivated. This is what
+  stops Account's soft-delete filter hiding voucher lines and silently unbalancing
+  the trial balance; there is a test pinning it, and a note in `FinanceDbContext`.
+- **The balance sheet carries profit-not-yet-closed as its own line.** Without it the
+  sheet fails to balance for the whole of every year until year-end.
+- **A ledger row names the contra head, not its own.** "Cash" on every row of the cash
+  ledger tells the reader nothing; a multi-line voucher reads "Split — N heads"
+  rather than inventing a single head.
+- **Approval authorises spend; it does not move money.** The voucher is posted when
+  someone actually pays, which is what lets an approved request wait for funds
+  without the books claiming it was settled.
 
 ## Conventions
 

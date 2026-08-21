@@ -1,0 +1,150 @@
+@page "/finance/vouchers"
+@attribute [Authorize(Policy = FinanceModule.VouchersView)]
+@rendermode InteractiveServer
+@inject IVoucherService Books
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Vouchers</PageTitle>
+
+<div class="d-flex align-center mb-1">
+    <div>
+        <MudText Typo="Typo.h5">Vouchers</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            Every entry in the books. A posted voucher cannot be edited — only reversed.
+        </MudText>
+    </div>
+    <MudSpacer />
+    <AuthorizeView Policy="@FinanceModule.VouchersPost" Context="perms">
+        <Authorized>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+                New entry
+            </MudButton>
+        </Authorized>
+    </AuthorizeView>
+</div>
+
+<MudPaper Outlined="true" Elevation="0" Class="mt-4">
+    <MudToolBar Dense="true">
+        <MudSelect T="VoucherStatus?" @bind-Value="_status" @bind-Value:after="LoadAsync"
+                   Label="Status" Clearable="true" Variant="Variant.Text"
+                   Margin="Margin.Dense" Class="mt-0" Style="max-width:180px">
+            @foreach (var s in Enum.GetValues<VoucherStatus>())
+            {
+                <MudSelectItem T="VoucherStatus?" Value="@s">@s</MudSelectItem>
+            }
+        </MudSelect>
+        <MudTextField @bind-Value="_search" @bind-Value:after="LoadAsync"
+                      Placeholder="Search number or narration" DebounceInterval="300"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                      Variant="Variant.Text" Margin="Margin.Dense" Class="mt-0 ml-4" />
+    </MudToolBar>
+
+    <MudDataGrid T="Voucher" Items="_rows" Dense="true" Hover="true" Elevation="0"
+                 Loading="_loading" Filterable="false" RowsPerPage="25">
+        <Columns>
+            <PropertyColumn Property="@(v => v.Number)" Title="Number" />
+            <TemplateColumn Title="Date">
+                <CellTemplate>@context.Item.Date.ToString("d MMM yyyy")</CellTemplate>
+            </TemplateColumn>
+            <PropertyColumn Property="@(v => v.Type)" Title="Type" />
+            <PropertyColumn Property="@(v => v.Narration)" Title="Narration" />
+            <TemplateColumn Title="Amount" HeaderClass="text-right" CellClass="text-right">
+                <CellTemplate>
+                    <span style="font-variant-numeric: tabular-nums">
+                        @context.Item.TotalDebit.ToString("N2")
+                    </span>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Status">
+                <CellTemplate>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                             Color="@(context.Item.Status switch {
+                                 VoucherStatus.Posted => Color.Success,
+                                 VoucherStatus.Reversed => Color.Warning,
+                                 _ => Color.Default })">
+                        @context.Item.Status
+                    </MudChip>
+                    @if (context.Item.SourceModule is not null)
+                    {
+                        <MudTooltip Text="@($"Raised automatically by {context.Item.SourceModule} ({context.Item.SourceReference})")">
+                            <MudIcon Icon="@Icons.Material.Outlined.AutoAwesome" Size="Size.Small"
+                                     Class="ml-1 mud-text-secondary" />
+                        </MudTooltip>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="" Sortable="false">
+                <CellTemplate>
+                    <div class="d-flex justify-end gap-1">
+                        @if (context.Item.Status == VoucherStatus.Draft)
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Text"
+                                       OnClick="@(() => Edit(context.Item))">Edit</MudButton>
+                            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                                       OnClick="@(() => Post(context.Item))">Post</MudButton>
+                        }
+                        else if (context.Item.Status == VoucherStatus.Posted)
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Warning"
+                                       OnClick="@(() => Reverse(context.Item))">Reverse</MudButton>
+                        }
+                    </div>
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+    </MudDataGrid>
+</MudPaper>
+
+@code {
+    private IReadOnlyList<Voucher> _rows = [];
+    private VoucherStatus? _status;
+    private string? _search;
+    private bool _loading = true;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _rows = await Books.ListAsync(new VoucherFilter(Status: _status, Search: _search));
+        _loading = false;
+    }
+
+    private async Task Edit(Voucher? row)
+    {
+        var parameters = new DialogParameters<VoucherEditor> { { x => x.VoucherId, row?.Id } };
+        var dialog = await Dialogs.ShowAsync<VoucherEditor>(
+            row is null ? "New entry" : "Edit entry", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+
+    private async Task Post(Voucher row)
+    {
+        var result = await Books.PostAsync(row.Id);
+        if (result.Failed) Snackbar.Add(result.Error!, Severity.Error);
+        else Snackbar.Add($"{row.Number} posted.", Severity.Success);
+        await LoadAsync();
+    }
+
+    private async Task Reverse(Voucher row)
+    {
+        var parameters = new DialogParameters<ReasonPrompt>
+        {
+            { x => x.Prompt, "Why is this being reversed?" }
+        };
+        var dialog = await Dialogs.ShowAsync<ReasonPrompt>("Reverse entry", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+
+        var answer = await dialog.Result;
+        if (answer!.Canceled) return;
+
+        var result = await Books.ReverseAsync(row.Id, (string)answer.Data!);
+        if (result.Failed) Snackbar.Add(result.Error!, Severity.Error);
+        else Snackbar.Add($"Reversed by {result.Value.Number}. The original is unchanged.", Severity.Success);
+        await LoadAsync();
+    }
+}

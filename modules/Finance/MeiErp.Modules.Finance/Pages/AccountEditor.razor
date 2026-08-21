@@ -1,0 +1,92 @@
+@inject IAccountService Accounts
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <div class="d-flex gap-3 mb-4">
+                <MudTextField @bind-Value="_model.Code" Label="Code" Required="true"
+                              RequiredError="Give it a code." Variant="Variant.Outlined" />
+                <MudSelect T="AccountType" @bind-Value="_model.Type" Label="Type"
+                           Variant="Variant.Outlined">
+                    @foreach (var t in Enum.GetValues<AccountType>())
+                    {
+                        <MudSelectItem Value="@t">@t</MudSelectItem>
+                    }
+                </MudSelect>
+            </div>
+
+            <MudTextField @bind-Value="_model.Name" Label="Name" Required="true"
+                          RequiredError="Give it a name." Variant="Variant.Outlined" Class="mb-4" />
+
+            <MudSelect T="int?" @bind-Value="_model.ParentId" Label="Sits under"
+                       Variant="Variant.Outlined" Clearable="true" Class="mb-4">
+                @foreach (var a in _all.Where(a => a.Id != _model.Id))
+                {
+                    <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudSwitch T="bool" @bind-Value="_model.IsPostable" Color="Color.Primary"
+                       Label="Entries can be posted to this account" />
+            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-2">
+                Turn this off for a heading that only groups other accounts. A heading with its
+                own balance would be counted twice in every report.
+            </MudText>
+
+            <MudSwitch T="bool" @bind-Value="_model.IsActive" Color="Color.Primary"
+                       Label="Active" />
+        </MudForm>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int? AccountId { get; set; }
+
+    private MudForm? _form;
+    private Account _model = new();
+    private IReadOnlyList<Account> _all = [];
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _all = await Accounts.ListAsync(includeInactive: true);
+        _model = AccountId is null
+            ? new Account { IsPostable = true, IsActive = true }
+            : await Accounts.GetAsync(AccountId.Value) ?? new Account();
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        if (_form is not null)
+        {
+            await _form.Validate();
+            if (!_form.IsValid) return;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await Accounts.SaveAsync(_model);
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Saved.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

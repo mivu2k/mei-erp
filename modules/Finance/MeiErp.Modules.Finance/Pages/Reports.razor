@@ -1,0 +1,317 @@
+@page "/finance/reports"
+@attribute [Authorize(Policy = FinanceModule.ReportsView)]
+@rendermode InteractiveServer
+@inject IFinanceReports Statements
+@inject IAccountService Chart
+@inject IClock Clock
+
+<PageTitle>Financial reports</PageTitle>
+
+<MudText Typo="Typo.h5">Reports</MudText>
+<MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+    Posted entries only. A draft is not in the books.
+</MudText>
+
+<MudTabs Elevation="0" Outlined="true" ApplyEffectsToContainer="true" PanelClass="pa-4">
+
+    <MudTabPanel Text="Trial balance" OnClick="LoadTrialBalanceAsync">
+        <div class="d-flex align-center gap-3 mb-4">
+            <MudDatePicker Label="As at" Variant="Variant.Outlined" Margin="Margin.Dense"
+                           Date="_asAt" DateChanged="@(async d => { _asAt = d; await LoadTrialBalanceAsync(); })" />
+            @if (_trial is not null)
+            {
+                <MudSpacer />
+                @if (_trial.IsBalanced)
+                {
+                    <MudChip T="string" Color="Color.Success" Variant="Variant.Outlined"
+                             Icon="@Icons.Material.Filled.CheckCircle">Balanced</MudChip>
+                }
+                else
+                {
+                    @* If this ever shows, something reached the ledger without a
+                       balanced voucher. Surfaced rather than hidden. *@
+                    <MudChip T="string" Color="Color.Error" Variant="Variant.Filled">
+                        Out by @Math.Abs(_trial.TotalDebit - _trial.TotalCredit).ToString("N2")
+                    </MudChip>
+                }
+            }
+        </div>
+
+        @if (_trial is not null)
+        {
+            <MudSimpleTable Dense="true" Hover="true" Striped="false" Style="overflow-x:auto">
+                <thead>
+                    <tr>
+                        <th>Code</th><th>Account</th>
+                        <th style="text-align:right">Debit</th>
+                        <th style="text-align:right">Credit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _trial.Rows)
+                    {
+                        <tr>
+                            <td>@row.Code</td>
+                            <td>@row.Name</td>
+                            <td style="text-align:right;font-variant-numeric:tabular-nums">
+                                @(row.Debit == 0 ? "" : row.Debit.ToString("N2"))
+                            </td>
+                            <td style="text-align:right;font-variant-numeric:tabular-nums">
+                                @(row.Credit == 0 ? "" : row.Credit.ToString("N2"))
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot>
+                    <tr style="font-weight:600;border-top:2px solid var(--mud-palette-lines-default)">
+                        <td colspan="2">Total</td>
+                        <td style="text-align:right;font-variant-numeric:tabular-nums">
+                            @_trial.TotalDebit.ToString("N2")
+                        </td>
+                        <td style="text-align:right;font-variant-numeric:tabular-nums">
+                            @_trial.TotalCredit.ToString("N2")
+                        </td>
+                    </tr>
+                </tfoot>
+            </MudSimpleTable>
+        }
+    </MudTabPanel>
+
+    <MudTabPanel Text="Income statement" OnClick="LoadIncomeAsync">
+        <div class="d-flex gap-3 mb-4">
+            <MudDatePicker Label="From" Variant="Variant.Outlined" Margin="Margin.Dense"
+                           Date="_from" DateChanged="@(async d => { _from = d; await LoadIncomeAsync(); })" />
+            <MudDatePicker Label="To" Variant="Variant.Outlined" Margin="Margin.Dense"
+                           Date="_to" DateChanged="@(async d => { _to = d; await LoadIncomeAsync(); })" />
+        </div>
+
+        @if (_income is not null)
+        {
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudText Typo="Typo.subtitle1" Class="mb-2">Income</MudText>
+                    @foreach (var line in _income.Income)
+                    {
+                        <div class="d-flex justify-space-between py-1">
+                            <span>@line.Code — @line.Name</span>
+                            <span style="font-variant-numeric:tabular-nums">@line.Amount.ToString("N2")</span>
+                        </div>
+                    }
+                    <MudDivider Class="my-2" />
+                    <div class="d-flex justify-space-between" style="font-weight:600">
+                        <span>Total income</span>
+                        <span style="font-variant-numeric:tabular-nums">@_income.TotalIncome.ToString("N2")</span>
+                    </div>
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudText Typo="Typo.subtitle1" Class="mb-2">Expenses</MudText>
+                    @foreach (var line in _income.Expenses)
+                    {
+                        <div class="d-flex justify-space-between py-1">
+                            <span>@line.Code — @line.Name</span>
+                            <span style="font-variant-numeric:tabular-nums">@line.Amount.ToString("N2")</span>
+                        </div>
+                    }
+                    <MudDivider Class="my-2" />
+                    <div class="d-flex justify-space-between" style="font-weight:600">
+                        <span>Total expenses</span>
+                        <span style="font-variant-numeric:tabular-nums">@_income.TotalExpenses.ToString("N2")</span>
+                    </div>
+                </MudItem>
+            </MudGrid>
+
+            <MudPaper Outlined="true" Elevation="0" Class="pa-4 mt-4">
+                <div class="d-flex justify-space-between">
+                    <MudText Typo="Typo.h6">
+                        @(_income.NetProfit >= 0 ? "Net profit" : "Net loss")
+                    </MudText>
+                    <MudText Typo="Typo.h6"
+                             Color="@(_income.NetProfit >= 0 ? Color.Success : Color.Error)">
+                        @Math.Abs(_income.NetProfit).ToString("N2")
+                    </MudText>
+                </div>
+            </MudPaper>
+        }
+    </MudTabPanel>
+
+    <MudTabPanel Text="Balance sheet" OnClick="LoadBalanceSheetAsync">
+        <MudDatePicker Label="As at" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-4"
+                       Date="_asAt" DateChanged="@(async d => { _asAt = d; await LoadBalanceSheetAsync(); })" />
+
+        @if (_sheet is not null)
+        {
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudText Typo="Typo.subtitle1" Class="mb-2">Assets</MudText>
+                    @foreach (var line in _sheet.Assets)
+                    {
+                        <div class="d-flex justify-space-between py-1">
+                            <span>@line.Name</span>
+                            <span style="font-variant-numeric:tabular-nums">@line.Amount.ToString("N2")</span>
+                        </div>
+                    }
+                    <MudDivider Class="my-2" />
+                    <div class="d-flex justify-space-between" style="font-weight:600">
+                        <span>Total assets</span>
+                        <span style="font-variant-numeric:tabular-nums">@_sheet.TotalAssets.ToString("N2")</span>
+                    </div>
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudText Typo="Typo.subtitle1" Class="mb-2">Liabilities and equity</MudText>
+                    @foreach (var line in _sheet.Liabilities.Concat(_sheet.Equity))
+                    {
+                        <div class="d-flex justify-space-between py-1">
+                            <span>@line.Name</span>
+                            <span style="font-variant-numeric:tabular-nums">@line.Amount.ToString("N2")</span>
+                        </div>
+                    }
+                    @if (_sheet.RetainedThisPeriod != 0)
+                    {
+                        @* Earned but not yet closed into equity. Without this line
+                           the sheet fails to balance all year until year-end. *@
+                        <div class="d-flex justify-space-between py-1">
+                            <span><i>Profit for the period (not yet closed)</i></span>
+                            <span style="font-variant-numeric:tabular-nums">
+                                @_sheet.RetainedThisPeriod.ToString("N2")
+                            </span>
+                        </div>
+                    }
+                    <MudDivider Class="my-2" />
+                    <div class="d-flex justify-space-between" style="font-weight:600">
+                        <span>Total funding</span>
+                        <span style="font-variant-numeric:tabular-nums">@_sheet.TotalFunding.ToString("N2")</span>
+                    </div>
+                </MudItem>
+            </MudGrid>
+
+            @if (!_sheet.IsBalanced)
+            {
+                <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">
+                    Assets and funding differ by
+                    @Math.Abs(_sheet.TotalAssets - _sheet.TotalFunding).ToString("N2").
+                    Something has reached the ledger without a balanced entry.
+                </MudAlert>
+            }
+        }
+    </MudTabPanel>
+
+    <MudTabPanel Text="Account ledger" OnClick="LoadLedgerAsync">
+        <div class="d-flex gap-3 mb-4">
+            <MudSelect T="int?" @bind-Value="_ledgerAccountId"
+                       @bind-Value:after="LoadLedgerAsync"
+                       Label="Account" Variant="Variant.Outlined" Margin="Margin.Dense"
+                       Style="min-width:280px">
+                @foreach (var a in _postable)
+                {
+                    <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <MudDatePicker Label="From" Variant="Variant.Outlined" Margin="Margin.Dense"
+                           Date="_from" DateChanged="@(async d => { _from = d; await LoadLedgerAsync(); })" />
+            <MudDatePicker Label="To" Variant="Variant.Outlined" Margin="Margin.Dense"
+                           Date="_to" DateChanged="@(async d => { _to = d; await LoadLedgerAsync(); })" />
+        </div>
+
+        @if (_ledger is not null)
+        {
+            <MudSimpleTable Dense="true" Hover="true" Style="overflow-x:auto">
+                <thead>
+                    <tr>
+                        <th>Date</th><th>Voucher</th><th>Narration</th>
+                        <th>Contra</th>
+                        <th style="text-align:right">Debit</th>
+                        <th style="text-align:right">Credit</th>
+                        <th style="text-align:right">Balance</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr style="font-style:italic">
+                        <td colspan="6">Opening balance</td>
+                        <td style="text-align:right;font-variant-numeric:tabular-nums">
+                            @_ledger.OpeningBalance.ToString("N2")
+                        </td>
+                    </tr>
+                    @foreach (var row in _ledger.Rows)
+                    {
+                        <tr>
+                            <td>@row.Date.ToString("d MMM")</td>
+                            <td>@row.VoucherNumber</td>
+                            <td>@row.Narration</td>
+                            @* The account's own name is on every row and says
+                               nothing; the contra head is what the reader wants. *@
+                            <td>@row.ContraAccounts</td>
+                            <td style="text-align:right;font-variant-numeric:tabular-nums">
+                                @(row.Debit == 0 ? "" : row.Debit.ToString("N2"))
+                            </td>
+                            <td style="text-align:right;font-variant-numeric:tabular-nums">
+                                @(row.Credit == 0 ? "" : row.Credit.ToString("N2"))
+                            </td>
+                            <td style="text-align:right;font-variant-numeric:tabular-nums">
+                                @row.RunningBalance.ToString("N2")
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot>
+                    <tr style="font-weight:600;border-top:2px solid var(--mud-palette-lines-default)">
+                        <td colspan="6">Closing balance</td>
+                        <td style="text-align:right;font-variant-numeric:tabular-nums">
+                            @_ledger.ClosingBalance.ToString("N2")
+                        </td>
+                    </tr>
+                </tfoot>
+            </MudSimpleTable>
+        }
+    </MudTabPanel>
+
+</MudTabs>
+
+@code {
+    private DateTime? _asAt;
+    private DateTime? _from;
+    private DateTime? _to;
+    private int? _ledgerAccountId;
+
+    private TrialBalance? _trial;
+    private IncomeStatement? _income;
+    private BalanceSheet? _sheet;
+    private AccountLedger? _ledger;
+    private IReadOnlyList<Account> _postable = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var today = Clock.Today;
+        _asAt = today.ToDateTime(TimeOnly.MinValue);
+
+        // Defaults to this fiscal year so the first view is useful rather than empty.
+        var startYear = today.Month >= 7 ? today.Year : today.Year - 1;
+        _from = new DateOnly(startYear, 7, 1).ToDateTime(TimeOnly.MinValue);
+        _to = today.ToDateTime(TimeOnly.MinValue);
+
+        _postable = await Chart.PostableAsync();
+        await LoadTrialBalanceAsync();
+    }
+
+    private async Task LoadTrialBalanceAsync() =>
+        _trial = await Statements.TrialBalanceAsync(DateOnly.FromDateTime(_asAt ?? DateTime.Today));
+
+    private async Task LoadIncomeAsync() =>
+        _income = await Statements.IncomeStatementAsync(
+            DateOnly.FromDateTime(_from ?? DateTime.Today),
+            DateOnly.FromDateTime(_to ?? DateTime.Today));
+
+    private async Task LoadBalanceSheetAsync() =>
+        _sheet = await Statements.BalanceSheetAsync(DateOnly.FromDateTime(_asAt ?? DateTime.Today));
+
+    private async Task LoadLedgerAsync()
+    {
+        if (_ledgerAccountId is null) return;
+
+        _ledger = await Statements.LedgerAsync(
+            _ledgerAccountId.Value,
+            DateOnly.FromDateTime(_from ?? DateTime.Today),
+            DateOnly.FromDateTime(_to ?? DateTime.Today));
+    }
+}

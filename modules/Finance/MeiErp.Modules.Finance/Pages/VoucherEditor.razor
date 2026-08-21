@@ -1,0 +1,198 @@
+@inject IVoucherService Books
+@inject IAccountService Chart
+@inject IClock Clock
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <div class="d-flex gap-3 mb-4">
+            <MudSelect T="VoucherType" @bind-Value="_type" Label="Type" Variant="Variant.Outlined">
+                @foreach (var t in new[] { VoucherType.Journal, VoucherType.Payment,
+                                           VoucherType.Receipt, VoucherType.Contra })
+                {
+                    <MudSelectItem Value="@t">@t</MudSelectItem>
+                }
+            </MudSelect>
+            <MudDatePicker Label="Date" Variant="Variant.Outlined"
+                           Date="_date" DateChanged="@(d => _date = d)" />
+        </div>
+
+        <MudTextField @bind-Value="_narration" Label="Narration" Variant="Variant.Outlined"
+                      Class="mb-4" HelperText="What this entry is for, in plain words." />
+
+        <MudTable T="LineRow" Items="_lines" Dense="true" Hover="false" Elevation="0" Bordered="true">
+            <HeaderContent>
+                <MudTh>Account</MudTh>
+                <MudTh Style="width:150px">Debit</MudTh>
+                <MudTh Style="width:150px">Credit</MudTh>
+                <MudTh Style="width:48px"></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>
+                    <MudSelect T="int" @bind-Value="context.AccountId" Variant="Variant.Text"
+                               Margin="Margin.Dense" Dense="true">
+                        @foreach (var a in _accounts)
+                        {
+                            <MudSelectItem T="int" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudTd>
+                <MudTd>
+                    <MudNumericField T="decimal" @bind-Value="context.Debit"
+                                     @bind-Value:after="Recalculate"
+                                     Variant="Variant.Text" Margin="Margin.Dense" HideSpinButtons="true" />
+                </MudTd>
+                <MudTd>
+                    <MudNumericField T="decimal" @bind-Value="context.Credit"
+                                     @bind-Value:after="Recalculate"
+                                     Variant="Variant.Text" Margin="Margin.Dense" HideSpinButtons="true" />
+                </MudTd>
+                <MudTd>
+                    <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small"
+                                   OnClick="@(() => Remove(context))" />
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+
+        <MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="AddLine" Class="mt-2">Add line</MudButton>
+
+        @* The running difference, shown while typing. An entry that does not
+           balance is refused at posting, so saying so now saves a round trip. *@
+        <div class="d-flex mt-4 pa-3" style="background:var(--mud-palette-background-grey);border-radius:6px">
+            <MudText Typo="Typo.body2">
+                Debits <b>@_totalDebit.ToString("N2")</b>
+                &nbsp;·&nbsp; Credits <b>@_totalCredit.ToString("N2")</b>
+            </MudText>
+            <MudSpacer />
+            @if (_totalDebit == _totalCredit && _totalDebit > 0)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Success"><b>Balanced</b></MudText>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Color="Color.Error">
+                    <b>Out by @Math.Abs(_totalDebit - _totalCredit).ToString("N2")</b>
+                </MudText>
+            }
+        </div>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Text" OnClick="@(() => SaveAsync(false))" Disabled="_busy">
+            Save draft
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="@(() => SaveAsync(true))" Disabled="_busy">
+            Save &amp; post
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int? VoucherId { get; set; }
+
+    private sealed class LineRow
+    {
+        public int AccountId { get; set; }
+        public decimal Debit { get; set; }
+        public decimal Credit { get; set; }
+    }
+
+    private VoucherType _type = VoucherType.Journal;
+    private DateTime? _date;
+    private string _narration = "";
+    private List<LineRow> _lines = [];
+    private IReadOnlyList<Account> _accounts = [];
+    private decimal _totalDebit;
+    private decimal _totalCredit;
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Only postable accounts are offered. Posting to a heading is refused by
+        // the service anyway; not offering it avoids the round trip.
+        _accounts = await Chart.PostableAsync();
+        _date = Clock.Today.ToDateTime(TimeOnly.MinValue);
+
+        if (VoucherId is not null)
+        {
+            var existing = await Books.GetAsync(VoucherId.Value);
+            if (existing is not null)
+            {
+                _type = existing.Type;
+                _date = existing.Date.ToDateTime(TimeOnly.MinValue);
+                _narration = existing.Narration;
+                _lines = [.. existing.Lines.Select(l => new LineRow
+                {
+                    AccountId = l.AccountId, Debit = l.Debit, Credit = l.Credit
+                })];
+            }
+        }
+
+        // Two blank rows, because the smallest possible entry has two sides.
+        while (_lines.Count < 2) _lines.Add(new LineRow());
+
+        Recalculate();
+    }
+
+    private void AddLine() => _lines.Add(new LineRow());
+
+    private void Remove(LineRow row)
+    {
+        _lines.Remove(row);
+        if (_lines.Count < 2) _lines.Add(new LineRow());
+        Recalculate();
+    }
+
+    private void Recalculate()
+    {
+        _totalDebit = _lines.Sum(l => l.Debit);
+        _totalCredit = _lines.Sum(l => l.Credit);
+    }
+
+    private async Task SaveAsync(bool post)
+    {
+        _error = null;
+        _busy = true;
+
+        try
+        {
+            var saved = await Books.SaveDraftAsync(new VoucherInput(
+                VoucherId, _type,
+                DateOnly.FromDateTime(_date ?? DateTime.Today),
+                _narration,
+                [.. _lines.Where(l => l.AccountId != 0)
+                          .Select(l => new VoucherLineInput(l.AccountId, l.Debit, l.Credit))]));
+
+            if (saved.Failed) { _error = saved.Error; return; }
+
+            if (post)
+            {
+                var posted = await Books.PostAsync(saved.Value.Id);
+                if (posted.Failed)
+                {
+                    // The draft survives either way, so nothing typed is lost.
+                    _error = posted.Error + " It has been saved as a draft.";
+                    return;
+                }
+                Snackbar.Add($"{posted.Value.Number} posted.", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("Draft saved.", Severity.Success);
+            }
+
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

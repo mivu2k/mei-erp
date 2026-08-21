@@ -1,0 +1,107 @@
+@page "/finance"
+@page "/finance/accounts"
+@attribute [Authorize(Policy = FinanceModule.AccountsView)]
+@rendermode InteractiveServer
+@inject IAccountService Chart
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Chart of accounts</PageTitle>
+
+<div class="d-flex align-center mb-1">
+    <div>
+        <MudText Typo="Typo.h5">Chart of accounts</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            Only the accounts shown in black can be posted to. Headings just group them.
+        </MudText>
+    </div>
+    <MudSpacer />
+    <AuthorizeView Policy="@FinanceModule.AccountsManage" Context="perms">
+        <Authorized>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+                New account
+            </MudButton>
+        </Authorized>
+    </AuthorizeView>
+</div>
+
+<MudPaper Outlined="true" Elevation="0" Class="mt-4">
+    <MudDataGrid T="Account" Items="_rows" Dense="true" Hover="true" Elevation="0"
+                 Loading="_loading" Filterable="false" RowsPerPage="50" Groupable="false">
+        <Columns>
+            <PropertyColumn Property="@(a => a.Code)" Title="Code" />
+            <TemplateColumn Title="Account">
+                <CellTemplate>
+                    @if (context.Item.IsPostable)
+                    {
+                        <MudText Typo="Typo.body2">@context.Item.Name</MudText>
+                    }
+                    else
+                    {
+                        @* A heading reads differently because it behaves
+                           differently - you cannot post to it. *@
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                            <b>@context.Item.Name</b>
+                        </MudText>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            <PropertyColumn Property="@(a => a.Type)" Title="Type" />
+            <TemplateColumn Title="Balance" HeaderClass="text-right" CellClass="text-right">
+                <CellTemplate>
+                    @if (context.Item.IsPostable)
+                    {
+                        var balance = _balances.GetValueOrDefault(context.Item.Id);
+                        @* Shown on its natural side, so an expense and a
+                           liability both read as positive numbers. *@
+                        var shown = context.Item.IsDebitNatured ? balance : -balance;
+                        <span style="font-variant-numeric: tabular-nums">@shown.ToString("N2")</span>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="" Sortable="false">
+                <CellTemplate>
+                    <AuthorizeView Policy="@FinanceModule.AccountsManage" Context="perms">
+                        <Authorized>
+                            <div class="d-flex justify-end">
+                                <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small"
+                                               OnClick="@(() => Edit(context.Item))" />
+                            </div>
+                        </Authorized>
+                    </AuthorizeView>
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+    </MudDataGrid>
+</MudPaper>
+
+@code {
+    private IReadOnlyList<Account> _rows = [];
+    private Dictionary<int, decimal> _balances = [];
+    private bool _loading = true;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _rows = await Chart.ListAsync(includeInactive: true);
+
+        _balances = [];
+        foreach (var account in _rows.Where(a => a.IsPostable))
+            _balances[account.Id] = await Chart.BalanceAsync(account.Id);
+
+        _loading = false;
+    }
+
+    private async Task Edit(Account? row)
+    {
+        var parameters = new DialogParameters<AccountEditor> { { x => x.AccountId, row?.Id } };
+        var dialog = await Dialogs.ShowAsync<AccountEditor>(
+            row is null ? "New account" : "Edit account", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+}

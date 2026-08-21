@@ -1,5 +1,5 @@
 <Router AppAssembly="typeof(Program).Assembly"
-        AdditionalAssemblies="new[] { typeof(MeiErp.Modules.Hr.HrModule).Assembly }" NotFoundPage="typeof(Pages.NotFound)">
+        AdditionalAssemblies="new[] { typeof(MeiErp.Modules.Hr.HrModule).Assembly, typeof(MeiErp.Modules.Finance.FinanceModule).Assembly }" NotFoundPage="typeof(Pages.NotFound)">
     <Found Context="routeData">
         <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
             <NotAuthorized>

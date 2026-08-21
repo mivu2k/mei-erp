@@ -1,5 +1,6 @@
 using MeiErp.Host.Components;
 using MeiErp.Host.Services;
+using MeiErp.Modules.Finance;
 using MeiErp.Modules.Hr;
 using MeiErp.Platform.Identity;
 using MeiErp.Platform.Kernel;
@@ -53,10 +54,12 @@ builder.Services.AddSingleton<IClock>(_ =>
 // is no second place to register it.
 builder.Services.AddSingleton<IModuleCatalog>(_ => new ModuleCatalog(
 [
-    HrModule.Descriptor
+    HrModule.Descriptor,
+    FinanceModule.Descriptor
 ]));
 
 builder.Services.AddHrModule(builder.Configuration);
+builder.Services.AddFinanceModule(builder.Configuration);
 
 // ---------------------------------------------------------------- identity
 builder.Services
@@ -175,12 +178,15 @@ app.MapRazorComponents<App>()
    .AddInteractiveServerRenderMode()
    // A module's pages 404 unless its assembly is listed BOTH here and in
    // Routes.razor. Missing either is a silent routing failure.
-   .AddAdditionalAssemblies(typeof(HrModule).Assembly);
+   .AddAdditionalAssemblies(
+       typeof(HrModule).Assembly,
+       typeof(FinanceModule).Assembly);
 
 app.MapAuthEndpoints();
 
 // ---------------------------------------------------------------- start
 await app.Services.SeedPlatformAsync();
 await app.Services.SeedHrAsync();
+await app.Services.SeedFinanceAsync();
 
 app.Run();

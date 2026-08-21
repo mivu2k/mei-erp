@@ -1,0 +1,126 @@
+@inject IPaymentRequestService Requests
+@inject IAccountService Chart
+@inject IClock Clock
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <MudTextField @bind-Value="_title" Label="What is this for?" Required="true"
+                          RequiredError="Say what the money is for."
+                          Variant="Variant.Outlined" Class="mb-4" />
+
+            <div class="d-flex gap-3 mb-4">
+                <MudNumericField T="decimal" @bind-Value="_amount" Label="Amount" Required="true"
+                                 Variant="Variant.Outlined" HideSpinButtons="true"
+                                 HelperText="Larger amounts may need more signatures." />
+                <MudDatePicker Label="Needed by" Variant="Variant.Outlined"
+                               Date="_neededBy" DateChanged="@(d => _neededBy = d)" />
+            </div>
+
+            <MudTextField @bind-Value="_payee" Label="Pay to" Variant="Variant.Outlined"
+                          Class="mb-4" HelperText="The supplier or person receiving the money." />
+
+            <MudSelect T="int?" @bind-Value="_expenseAccountId" Label="Charge to"
+                       Variant="Variant.Outlined" Clearable="true" Class="mb-4">
+                @foreach (var a in _expenseHeads)
+                {
+                    <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudTextField @bind-Value="_description" Label="Details" Lines="3"
+                          Variant="Variant.Outlined" />
+        </MudForm>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Text" OnClick="@(() => SaveAsync(false))" Disabled="_busy">
+            Save draft
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="@(() => SaveAsync(true))" Disabled="_busy">
+            Save &amp; submit
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int? RequestId { get; set; }
+
+    private MudForm? _form;
+    private string _title = "";
+    private string? _description;
+    private decimal _amount;
+    private string? _payee;
+    private int? _expenseAccountId;
+    private DateTime? _neededBy;
+    private IReadOnlyList<Account> _expenseHeads = [];
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _expenseHeads = await Chart.PostableAsync(AccountType.Expense);
+        _neededBy = Clock.Today.AddDays(7).ToDateTime(TimeOnly.MinValue);
+
+        if (RequestId is not null)
+        {
+            var existing = await Requests.GetAsync(RequestId.Value);
+            if (existing is not null)
+            {
+                _title = existing.Title;
+                _description = existing.Description;
+                _amount = existing.Amount;
+                _payee = existing.PayeeName;
+                _expenseAccountId = existing.ExpenseAccountId;
+                _neededBy = existing.NeededBy.ToDateTime(TimeOnly.MinValue);
+            }
+        }
+    }
+
+    private async Task SaveAsync(bool submit)
+    {
+        _error = null;
+        if (_form is not null)
+        {
+            await _form.Validate();
+            if (!_form.IsValid) return;
+        }
+
+        _busy = true;
+        try
+        {
+            var saved = await Requests.SaveDraftAsync(new PaymentRequestInput(
+                RequestId, _title, _description, _amount, _expenseAccountId,
+                _payee, DateOnly.FromDateTime(_neededBy ?? DateTime.Today), null));
+
+            if (saved.Failed) { _error = saved.Error; return; }
+
+            if (submit)
+            {
+                var sent = await Requests.SubmitAsync(saved.Value.Id);
+                if (sent.Failed)
+                {
+                    _error = sent.Error + " Your draft has been saved.";
+                    return;
+                }
+                Snackbar.Add("Sent for approval.", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("Draft saved.", Severity.Success);
+            }
+
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}
