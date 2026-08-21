@@ -1,0 +1,11 @@
+@inject NavigationManager Nav
+
+@code {
+    // Sends an unauthenticated visitor to sign in, carrying where they were
+    // headed so they land there rather than on the dashboard.
+    protected override void OnInitialized()
+    {
+        var target = Nav.ToBaseRelativePath(Nav.Uri);
+        Nav.NavigateTo($"/sign-in?returnUrl=/{target}", forceLoad: true);
+    }
+}

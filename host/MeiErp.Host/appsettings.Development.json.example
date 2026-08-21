@@ -1,0 +1,12 @@
+{
+  "//": "Copy to appsettings.Development.json (gitignored) and fill in the password.",
+  "ConnectionStrings": {
+    "Platform": "Host=127.0.0.1;Database=mei_erp;Username=meierp;Password=CHANGE_ME"
+  },
+  "Seed": {
+    "CompanyName": "MEI",
+    "AdminEmail": "admin@mei.local",
+    "AdminName": "Administrator",
+    "AdminPassword": "CHANGE_ME_TOO"
+  }
+}

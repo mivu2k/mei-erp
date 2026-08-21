@@ -1,0 +1,95 @@
+@inject IModuleCatalog Catalog
+
+@*
+    One nav for the whole suite, not eight.
+
+    Every business module contributes its own section from the module catalog,
+    so adding a module never means editing this file. Each entry is gated on
+    that module's access policy - a person only ever sees what they can enter.
+*@
+
+<MudNavMenu Class="pt-4">
+
+    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Outlined.Dashboard">
+        Dashboard
+    </MudNavLink>
+
+    <MudNavLink Href="/approvals" Match="NavLinkMatch.Prefix"
+                Icon="@Icons.Material.Outlined.FactCheck">
+        My approvals
+    </MudNavLink>
+
+    @if (Catalog.All.Count > 0)
+    {
+        <MudDivider Class="my-2" />
+        <MudText Typo="Typo.overline" Class="px-4 mud-text-secondary">Modules</MudText>
+
+        @foreach (var module in Catalog.All)
+        {
+            <AuthorizeView Policy="@($"module:{module.Key}")" Context="moduleAccess">
+                <Authorized>
+                    <MudNavLink Href="@module.BasePath" Match="NavLinkMatch.Prefix"
+                                Icon="@ResolveIcon(module.Icon)">
+                        @module.Name
+                    </MudNavLink>
+                </Authorized>
+            </AuthorizeView>
+        }
+    }
+
+    <MudDivider Class="my-2" />
+    <MudText Typo="Typo.overline" Class="px-4 mud-text-secondary">Administration</MudText>
+
+    <AuthorizeView Policy="@PlatformPermissions.UsersManage" Context="admin">
+        <Authorized>
+            <MudNavLink Href="/admin/users" Icon="@Icons.Material.Outlined.People">Users</MudNavLink>
+        </Authorized>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@PlatformPermissions.RolesManage" Context="admin">
+        <Authorized>
+            <MudNavLink Href="/admin/roles" Icon="@Icons.Material.Outlined.AdminPanelSettings">
+                Roles &amp; permissions
+            </MudNavLink>
+        </Authorized>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@PlatformPermissions.DepartmentsManage" Context="admin">
+        <Authorized>
+            <MudNavLink Href="/admin/departments" Icon="@Icons.Material.Outlined.AccountTree">
+                Departments
+            </MudNavLink>
+        </Authorized>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@PlatformPermissions.WorkflowsManage" Context="admin">
+        <Authorized>
+            <MudNavLink Href="/admin/workflows" Icon="@Icons.Material.Outlined.AltRoute">
+                Approval workflows
+            </MudNavLink>
+        </Authorized>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@PlatformPermissions.CompanyManage" Context="admin">
+        <Authorized>
+            <MudNavLink Href="/admin/company" Icon="@Icons.Material.Outlined.Business">
+                Company profile
+            </MudNavLink>
+        </Authorized>
+    </AuthorizeView>
+
+</MudNavMenu>
+
+@code {
+    /// <summary>
+    /// A module names its icon as a string, because the catalog lives in the
+    /// Kernel and the Kernel must not depend on MudBlazor. Falls back to a
+    /// generic icon rather than throwing, so a typo in a module's descriptor
+    /// costs a wrong picture, not a broken nav.
+    /// </summary>
+    private static string ResolveIcon(string name)
+    {
+        var field = typeof(Icons.Material.Outlined).GetField(name);
+        return field?.GetValue(null) as string ?? Icons.Material.Outlined.Apps;
+    }
+}

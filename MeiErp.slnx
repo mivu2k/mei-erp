@@ -1,5 +1,9 @@
 <Solution>
+  <Folder Name="/host/">
+    <Project Path="host/MeiErp.Host/MeiErp.Host.csproj" />
+  </Folder>
   <Folder Name="/platform/">
+    <Project Path="platform/MeiErp.Platform.Identity/MeiErp.Platform.Identity.csproj" />
     <Project Path="platform/MeiErp.Platform.Kernel/MeiErp.Platform.Kernel.csproj" />
     <Project Path="platform/MeiErp.Platform.Persistence/MeiErp.Platform.Persistence.csproj" />
     <Project Path="platform/MeiErp.Platform.Workflow/MeiErp.Platform.Workflow.csproj" />

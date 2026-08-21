@@ -1,0 +1,65 @@
+@page "/"
+@attribute [Authorize]
+
+<PageTitle>Dashboard</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-1">@Greeting</MudText>
+<MudText Typo="Typo.body2" Class="mud-text-secondary mb-6">
+    @DateTime.Now.ToString("dddd, d MMMM yyyy")
+</MudText>
+
+<MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-6">
+    <MudText Typo="Typo.subtitle2">Foundation stage</MudText>
+    <MudText Typo="Typo.body2">
+        The platform spine is running: identity, permissions, departments and the approval
+        engine. Business modules are ported next and will appear in the nav as they land.
+    </MudText>
+</MudAlert>
+
+<MudGrid>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4" Outlined="true" Elevation="0">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">Awaiting you</MudText>
+            <MudText Typo="Typo.h4">0</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">approvals</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4" Outlined="true" Elevation="0">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">Raised by you</MudText>
+            <MudText Typo="Typo.h4">0</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">in progress</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4" Outlined="true" Elevation="0">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">Modules</MudText>
+            <MudText Typo="Typo.h4">@Catalog.All.Count</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">installed</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4" Outlined="true" Elevation="0">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">Overdue</MudText>
+            <MudText Typo="Typo.h4">0</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">past their SLA</MudText>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    [Inject] private IModuleCatalog Catalog { get; set; } = default!;
+    [Inject] private ICurrentUser User { get; set; } = default!;
+    [Inject] private IClock Clock { get; set; } = default!;
+
+    private string Greeting
+    {
+        get
+        {
+            var name = User.Name?.Split(' ').FirstOrDefault() ?? "there";
+            var hour = Clock.Now.Hour;
+            var part = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+            return $"{part}, {name}";
+        }
+    }
+}

@@ -1,0 +1,72 @@
+@page "/sign-in"
+@layout EmptyLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [AllowAnonymous]
+@inject ICompanyProfileService Company
+
+<PageTitle>Sign in</PageTitle>
+
+<div class="signin-page">
+    <div class="signin-card">
+        <div class="signin-brand">
+            <div class="signin-mark">@Initials</div>
+            <h1>@_companyName</h1>
+            <p>Enterprise resource planning</p>
+        </div>
+
+        @if (Error is not null)
+        {
+            <div class="signin-error" role="alert">@ErrorMessage</div>
+        }
+
+        @* A plain form post: setting an auth cookie needs a real HTTP response,
+           which an interactive circuit can no longer produce. *@
+        <form method="post" action="/auth/sign-in" class="signin-form">
+            <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+
+            <label for="email">Email</label>
+            <input id="email" name="email" type="email" autocomplete="username"
+                   required autofocus placeholder="you@mei.com.pk" />
+
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password"
+                   autocomplete="current-password" required />
+
+            <label class="signin-remember">
+                <input name="rememberMe" type="checkbox" value="true" />
+                <span>Keep me signed in on this computer</span>
+            </label>
+
+            <button type="submit">Sign in</button>
+        </form>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] private string? Error { get; set; }
+    [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
+
+    private string _companyName = "MEI";
+
+    private string Initials =>
+        string.Concat(_companyName
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Take(2)
+            .Select(w => char.ToUpperInvariant(w[0])));
+
+    /// <summary>
+    /// A wrong password and an unknown account give the same message on
+    /// purpose: distinguishing them tells an attacker which emails are real.
+    /// </summary>
+    private string ErrorMessage => Error switch
+    {
+        "locked" => "That account is locked for 15 minutes after too many failed attempts.",
+        _ => "That email and password do not match. Please try again."
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var profile = await Company.GetAsync();
+        _companyName = profile.Name;
+    }
+}

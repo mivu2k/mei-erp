@@ -1,0 +1,7 @@
+@page "/sign-out-now"
+@layout EmptyLayout
+
+@* A GET cannot sign out safely, so this posts the form on arrival. *@
+<form id="signout" method="post" action="/auth/sign-out"></form>
+<script>document.getElementById('signout').submit();</script>
+<p style="font-family:system-ui;padding:2rem">Signing out&hellip;</p>

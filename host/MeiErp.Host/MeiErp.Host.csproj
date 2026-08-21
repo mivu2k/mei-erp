@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>MeiErp.Host</RootNamespace>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <UserSecretsId>mei-erp-host</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\platform\MeiErp.Platform.Kernel\MeiErp.Platform.Kernel.csproj" />
+    <ProjectReference Include="..\..\platform\MeiErp.Platform.Identity\MeiErp.Platform.Identity.csproj" />
+    <ProjectReference Include="..\..\platform\MeiErp.Platform.Persistence\MeiErp.Platform.Persistence.csproj" />
+    <ProjectReference Include="..\..\platform\MeiErp.Platform.Workflow\MeiErp.Platform.Workflow.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MudBlazor" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" />
+    <PackageReference Include="Microsoft.AspNetCore.Diagnostics.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Serilog.Sinks.Console" />
+    <PackageReference Include="Serilog.Sinks.File" />
+  </ItemGroup>
+
+</Project>

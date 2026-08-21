@@ -1,0 +1,115 @@
+@inherits LayoutComponentBase
+
+<MudThemeProvider Theme="Theme" @bind-IsDarkMode="_dark" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<AuthorizeView>
+    <Authorized>
+        <MudLayout>
+            <MudAppBar Elevation="0" Class="border-b">
+                <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit"
+                               Edge="Edge.Start" OnClick="@(() => _navOpen = !_navOpen)" />
+                <MudText Typo="Typo.h6" Class="ml-2">MEI</MudText>
+
+                <MudSpacer />
+
+                @* One inbox across every module. A manager checks one queue, not eight. *@
+                <MudTooltip Text="Approvals waiting for you">
+                    <MudIconButton Icon="@Icons.Material.Outlined.FactCheck"
+                                   Color="Color.Inherit" Href="/approvals" />
+                </MudTooltip>
+
+                <MudTooltip Text="@(_dark ? "Light mode" : "Dark mode")">
+                    <MudIconButton Color="Color.Inherit"
+                                   Icon="@(_dark ? Icons.Material.Outlined.LightMode : Icons.Material.Outlined.DarkMode)"
+                                   OnClick="@(() => _dark = !_dark)" />
+                </MudTooltip>
+
+                <MudMenu Icon="@Icons.Material.Filled.AccountCircle" Color="Color.Inherit"
+                         AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                    <MudText Typo="Typo.body2" Class="px-4 py-2">
+                        <b>@context.User.FindFirst("full_name")?.Value</b>
+                    </MudText>
+                    <MudDivider />
+                    <MudMenuItem Href="/change-password">Change password</MudMenuItem>
+                    <MudDivider />
+                    <MudMenuItem Href="/sign-out-now">Sign out</MudMenuItem>
+                </MudMenu>
+            </MudAppBar>
+
+            <MudDrawer @bind-Open="_navOpen" Elevation="0" ClipMode="DrawerClipMode.Always"
+                       Variant="DrawerVariant.Persistent" Class="border-r">
+                <NavMenu />
+            </MudDrawer>
+
+            <MudMainContent Class="pt-16 px-4">
+                <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
+                    @Body
+                </MudContainer>
+            </MudMainContent>
+        </MudLayout>
+    </Authorized>
+
+    <NotAuthorized>
+        @* Sign-in and the other anonymous pages draw their own full-page layout. *@
+        @Body
+    </NotAuthorized>
+</AuthorizeView>
+
+<div id="blazor-error-ui" data-nosnippet>
+    Something went wrong.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    private bool _navOpen = true;
+    private bool _dark;
+
+    /// <summary>
+    /// A blue-grey ground rather than MudBlazor's default purple: this is a
+    /// system people stare at for eight hours, so the chrome stays quiet and
+    /// colour is reserved for meaning - overdue, approved, rejected.
+    /// </summary>
+    private static readonly MudTheme Theme = new()
+    {
+        PaletteLight = new PaletteLight
+        {
+            Primary = "#1D4E7C",
+            Secondary = "#A85D2E",
+            Success = "#2E6F52",
+            Warning = "#B4731A",
+            Error = "#9B3327",
+            Background = "#F4F6F8",
+            Surface = "#FFFFFF",
+            AppbarBackground = "#FFFFFF",
+            AppbarText = "#16202B",
+            DrawerBackground = "#FFFFFF",
+            TextPrimary = "#16202B",
+            TextSecondary = "#5B6975",
+            LinesDefault = "#DDE3E9"
+        },
+        PaletteDark = new PaletteDark
+        {
+            Primary = "#7FB0DE",
+            Secondary = "#D79765",
+            Success = "#71B893",
+            Warning = "#D9A441",
+            Error = "#DE8478",
+            Background = "#10161D",
+            Surface = "#18212B",
+            AppbarBackground = "#18212B",
+            DrawerBackground = "#18212B",
+            TextPrimary = "#E8EDF3",
+            TextSecondary = "#94A2AF",
+            LinesDefault = "#2B3743"
+        },
+        Typography = new Typography
+        {
+            Default = new DefaultTypography { FontFamily = ["Inter", "system-ui", "sans-serif"] }
+        },
+        LayoutProperties = new LayoutProperties { DefaultBorderRadius = "6px" }
+    };
+}
