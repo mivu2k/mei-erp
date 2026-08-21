@@ -273,7 +273,7 @@ public sealed class LedgerTests : IAsyncLifetime
         // And the pair cancels out.
         Assert.Equal(1000, contra.Lines.Single(l => l.AccountId == _salaries).Credit);
         Assert.Equal(
-            original.Lines.Sum(l => l.SignedAmount) + contra.Lines.Sum(l => l.SignedAmount), 0);
+            0, original.Lines.Sum(l => l.SignedAmount) + contra.Lines.Sum(l => l.SignedAmount));
     }
 
     [SkippableFact]
