@@ -70,7 +70,7 @@ public sealed class StockTests : IAsyncLifetime
     private InventoryDbContext NewDb() =>
         new(new DbContextOptionsBuilder<InventoryDbContext>().UseNpgsql(Connection).Options, _user, _clock);
 
-    private StockService NewStock(InventoryDbContext db) => new(db, _clock);
+    private static StockService NewStock(InventoryDbContext db) => new(db);
 
     private Task<Result<StockMovement>> Receive(StockService stock, decimal qty, decimal cost) =>
         stock.ReceiveAsync(_itemId, qty, cost, _clock.Today,

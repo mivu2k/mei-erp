@@ -80,7 +80,7 @@ public class FinanceDbContext(
             b.HasIndex(l => l.AccountId);
             b.HasIndex(l => l.PersonId);
 
-            b.Ignore(l => l.Signed);
+            b.Ignore(l => l.SignedAmount);
         });
 
         modelBuilder.Entity<PaymentRequest>(b =>

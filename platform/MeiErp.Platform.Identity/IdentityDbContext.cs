@@ -29,12 +29,12 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options)
     public DbSet<ApprovalAction> ApprovalActions => Set<ApprovalAction>();
     public DbSet<ApprovalDelegation> ApprovalDelegations => Set<ApprovalDelegation>();
 
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    protected override void OnModelCreating(ModelBuilder builder)
     {
-        base.OnModelCreating(modelBuilder);
-        modelBuilder.HasDefaultSchema(SchemaName);
+        base.OnModelCreating(builder);
+        builder.HasDefaultSchema(SchemaName);
 
-        modelBuilder.Entity<ApplicationUser>(b =>
+        builder.Entity<ApplicationUser>(b =>
         {
             b.Property(u => u.FullName).HasMaxLength(200).IsRequired();
             b.Property(u => u.EmployeeCode).HasMaxLength(50);
@@ -56,13 +56,13 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options)
             b.HasIndex(u => u.IsActive);
         });
 
-        modelBuilder.Entity<ApplicationRole>(b =>
+        builder.Entity<ApplicationRole>(b =>
         {
             b.Property(r => r.ModuleKey).HasMaxLength(50);
             b.HasIndex(r => r.ModuleKey);
         });
 
-        modelBuilder.Entity<UserModuleAccess>(b =>
+        builder.Entity<UserModuleAccess>(b =>
         {
             b.Property(a => a.ModuleKey).HasMaxLength(50).IsRequired();
             b.HasOne(a => a.User)
@@ -75,7 +75,7 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options)
             b.HasIndex(a => new { a.UserId, a.ModuleKey }).IsUnique();
         });
 
-        modelBuilder.Entity<Department>(b =>
+        builder.Entity<Department>(b =>
         {
             b.Property(d => d.Name).HasMaxLength(200).IsRequired();
             b.HasOne(d => d.Parent)
@@ -89,12 +89,12 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options)
              .OnDelete(DeleteBehavior.SetNull);
         });
 
-        ConfigureWorkflow(modelBuilder);
+        ConfigureWorkflow(builder);
     }
 
-    private static void ConfigureWorkflow(ModelBuilder modelBuilder)
+    private static void ConfigureWorkflow(ModelBuilder builder)
     {
-        modelBuilder.Entity<WorkflowDefinition>(b =>
+        builder.Entity<WorkflowDefinition>(b =>
         {
             b.Property(w => w.DocumentType).HasMaxLength(100).IsRequired();
             b.Property(w => w.Name).HasMaxLength(200).IsRequired();
@@ -116,7 +116,7 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options)
             b.HasQueryFilter(w => !w.IsDeleted);
         });
 
-        modelBuilder.Entity<ApprovalRequest>(b =>
+        builder.Entity<ApprovalRequest>(b =>
         {
             b.Property(r => r.ModuleKey).HasMaxLength(50).IsRequired();
             b.Property(r => r.DocumentType).HasMaxLength(100).IsRequired();
@@ -149,13 +149,13 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options)
             b.HasQueryFilter(r => !r.IsDeleted);
         });
 
-        modelBuilder.Entity<ApprovalDelegation>(b =>
+        builder.Entity<ApprovalDelegation>(b =>
         {
             b.HasIndex(d => new { d.FromUserId, d.FromDate, d.ToDate });
             b.HasQueryFilter(d => !d.IsDeleted);
         });
 
-        modelBuilder.Entity<ApprovalAction>(b =>
+        builder.Entity<ApprovalAction>(b =>
         {
             b.Property(a => a.Comment).HasMaxLength(2000);
             b.HasIndex(a => a.ActedByUserId);
@@ -165,10 +165,10 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options)
             b.HasQueryFilter(a => !a.Request!.IsDeleted);
         });
 
-        modelBuilder.Entity<ApprovalStepState>()
+        builder.Entity<ApprovalStepState>()
             .HasQueryFilter(s => !s.Request!.IsDeleted);
 
-        modelBuilder.Entity<WorkflowStep>()
+        builder.Entity<WorkflowStep>()
             .HasQueryFilter(s => !s.Definition!.IsDeleted);
     }
 }

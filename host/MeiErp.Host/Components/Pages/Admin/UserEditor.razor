@@ -44,7 +44,7 @@
 
                 <MudTextField @bind-Value="_password" Label="Temporary password"
                               InputType="InputType.Password" Required="true"
-                              Validation="ValidatePassword" Variant="Variant.Outlined"
+                              Validation="@(new Func<string, string?>(ValidatePassword))" Variant="Variant.Outlined"
                               HelperText="They must change it the first time they sign in." />
             }
         </MudForm>

@@ -183,9 +183,9 @@ public sealed class VoucherService(
     }
 
     public async Task<Result<Voucher>> PostSystemVoucherAsync(
-        SystemVoucher input, CancellationToken ct = default)
+        SystemVoucher voucher, CancellationToken ct = default)
     {
-        var validated = await ValidateLinesAsync(input.Date, input.Lines, ct);
+        var validated = await ValidateLinesAsync(voucher.Date, voucher.Lines, ct);
         if (validated.Failed) return Result.Fail<Voucher>(validated.Error!, validated.Code);
 
         var lines = validated.Value;
@@ -198,26 +198,26 @@ public sealed class VoucherService(
             // A module handing over an unbalanced entry is a bug in that module.
             // Refusing it here is what stops one bad caller corrupting the books.
             return Result.Fail<Voucher>(
-                $"{input.Module} tried to post an unbalanced entry: " +
+                $"{voucher.Module} tried to post an unbalanced entry: " +
                 $"debits {debit:N2}, credits {credit:N2}.",
                 "voucher.unbalanced");
         }
 
-        var period = await CheckPeriodOpenAsync(input.Date, ct);
+        var period = await CheckPeriodOpenAsync(voucher.Date, ct);
         if (period.Failed) return Result.Fail<Voucher>(period.Error!, period.Code);
 
-        var voucher = new Voucher
+        var entry = new Voucher
         {
-            Number = await NextNumberAsync(input.Type, ct),
-            Type = input.Type,
-            Date = input.Date,
-            Narration = input.Narration,
+            Number = await NextNumberAsync(voucher.Type, ct),
+            Type = voucher.Type,
+            Date = voucher.Date,
+            Narration = voucher.Narration,
             Lines = [.. lines],
 
-            SourceModule = input.Module,
-            SourceDocumentType = input.DocumentType,
-            SourceDocumentId = input.DocumentId,
-            SourceReference = input.DocumentReference,
+            SourceModule = voucher.Module,
+            SourceDocumentType = voucher.DocumentType,
+            SourceDocumentId = voucher.DocumentId,
+            SourceReference = voucher.DocumentReference,
 
             // System vouchers post immediately: there is no human to review a
             // draft, and a draft nobody posts is money missing from the books.
@@ -226,10 +226,10 @@ public sealed class VoucherService(
             PostedBy = currentUser.UserId ?? "system"
         };
 
-        db.Vouchers.Add(voucher);
+        db.Vouchers.Add(entry);
         await db.SaveChangesAsync(ct);
 
-        return Result.Success(voucher);
+        return Result.Success(entry);
     }
 
     public async Task<Result<Voucher>> ReverseAsync(

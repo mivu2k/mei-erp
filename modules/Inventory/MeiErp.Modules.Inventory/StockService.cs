@@ -42,7 +42,7 @@ public interface IStockService
     Task<int> RebuildQuantitiesAsync(CancellationToken ct = default);
 }
 
-public sealed class StockService(InventoryDbContext db, IClock clock) : IStockService
+public sealed class StockService(InventoryDbContext db) : IStockService
 {
     public async Task<Result<StockMovement>> ReceiveAsync(
         int itemId, decimal quantity, decimal unitCost, DateOnly date,

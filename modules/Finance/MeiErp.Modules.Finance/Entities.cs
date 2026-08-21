@@ -160,7 +160,7 @@ public class VoucherLine : Entity
     public string? PersonId { get; set; }
     public string? PersonName { get; set; }
 
-    public decimal Signed => Debit - Credit;
+    public decimal SignedAmount => Debit - Credit;
 }
 
 /// <summary>

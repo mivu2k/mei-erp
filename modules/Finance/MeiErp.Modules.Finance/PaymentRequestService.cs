@@ -241,7 +241,7 @@ public sealed class PaymentRequestService(
 /// later, when someone actually pays. Keeping those separate is what lets an
 /// approved request wait for funds without the books claiming it was settled.
 /// </summary>
-public sealed class PaymentRequestApprovalSink(FinanceDbContext db, IClock clock) : IApprovalSink
+public sealed class PaymentRequestApprovalSink(FinanceDbContext db) : IApprovalSink
 {
     public string DocumentType => PaymentRequestService.DocumentType;
 
