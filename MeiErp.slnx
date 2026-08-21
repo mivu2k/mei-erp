@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/platform/">
+    <Project Path="platform/MeiErp.Platform.Kernel/MeiErp.Platform.Kernel.csproj" />
+    <Project Path="platform/MeiErp.Platform.Workflow/MeiErp.Platform.Workflow.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MeiErp.Platform.Workflow.Tests/MeiErp.Platform.Workflow.Tests.csproj" />
+  </Folder>
+</Solution>

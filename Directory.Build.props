@@ -1,0 +1,35 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!--
+    Warnings that are errors, and why. Each one here has cost real debugging
+    time on the previous platform; none is stylistic.
+
+      RZ10012  a component rendered as an unknown HTML element. The page returns
+               200 with a section silently missing. Happened twice before.
+      BL0008   a Blazor component parameter is set outside its own component.
+      CS4014   an un-awaited async call - fire-and-forget that swallows failures.
+      CS8600+  nullability violations. Enabled from day one so they never pile up.
+  -->
+  <PropertyGroup>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <WarningsAsErrors>RZ10012;BL0008;CS4014;CS8600;CS8602;CS8603;CS8618</WarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Determinism and build hygiene">
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+  </PropertyGroup>
+
+</Project>

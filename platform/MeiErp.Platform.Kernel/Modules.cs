@@ -1,0 +1,106 @@
+namespace MeiErp.Platform.Kernel;
+
+/// <summary>
+/// What a module tells the platform about itself. A module registers one of
+/// these and the shell, the nav, the permission catalog, the report hub and the
+/// approval engine all pick it up - there is no second place to register.
+/// </summary>
+public sealed record ModuleDescriptor
+{
+    public required string Key { get; init; }
+    public required string Name { get; init; }
+    public required string Description { get; init; }
+
+    /// <summary>Route prefix the module's pages live under, e.g. "/finance".</summary>
+    public required string BasePath { get; init; }
+
+    /// <summary>MudBlazor icon name, resolved by the shell.</summary>
+    public required string Icon { get; init; }
+
+    public required string Color { get; init; }
+
+    public int SortOrder { get; init; }
+
+    /// <summary>
+    /// The database schema this module owns. One PostgreSQL database, one schema
+    /// per module: modules stay isolated, but a report can still join across
+    /// them and one backup covers everything.
+    /// </summary>
+    public required string Schema { get; init; }
+
+    /// <summary>Every permission this module defines, with a description for the admin screen.</summary>
+    public IReadOnlyList<PermissionDescriptor> Permissions { get; init; } = [];
+
+    /// <summary>Roles created on a fresh install so the module is usable out of the box.</summary>
+    public IReadOnlyList<RoleTemplate> RoleTemplates { get; init; } = [];
+
+    /// <summary>Document types this module can route through the approval engine.</summary>
+    public IReadOnlyList<ApprovableDocument> Approvables { get; init; } = [];
+}
+
+/// <param name="Key">Namespaced, e.g. "finance.vouchers.post".</param>
+/// <param name="Group">Groups rows in the permission matrix, e.g. "Vouchers".</param>
+/// <param name="Description">Written for whoever administers roles, not for a developer.</param>
+public sealed record PermissionDescriptor(string Key, string Group, string Description);
+
+/// <summary>A role shipped with the module, so a fresh install is not a blank permission matrix.</summary>
+public sealed record RoleTemplate(string Name, string Description, IReadOnlyList<string> Permissions);
+
+/// <summary>
+/// A document type that can carry an approval workflow. The engine needs to
+/// know it exists to offer it in the designer; the module supplies a callback
+/// that applies the decision to its own record.
+/// </summary>
+/// <param name="Key">Namespaced, e.g. "inventory.purchase-order".</param>
+/// <param name="Name">Shown in the workflow designer and the approvals inbox.</param>
+/// <param name="AmountLabel">What the routed amount means here, e.g. "Order value". Null when the flow has no amount.</param>
+public sealed record ApprovableDocument(string Key, string Name, string? AmountLabel = null);
+
+/// <summary>
+/// Every module the host has composed, resolved once at startup. Nothing
+/// queries the database to find out what modules exist.
+/// </summary>
+public interface IModuleCatalog
+{
+    IReadOnlyList<ModuleDescriptor> All { get; }
+
+    ModuleDescriptor? Find(string key);
+
+    /// <summary>Maps a request path back to the module that owns it.</summary>
+    ModuleDescriptor? FromPath(string? path);
+
+    /// <summary>Every permission across every module, for the admin matrix.</summary>
+    IReadOnlyList<PermissionDescriptor> AllPermissions { get; }
+
+    /// <summary>Every approvable document type across every module.</summary>
+    IReadOnlyList<ApprovableDocument> AllApprovables { get; }
+}
+
+/// <inheritdoc />
+public sealed class ModuleCatalog(IEnumerable<ModuleDescriptor> modules) : IModuleCatalog
+{
+    public IReadOnlyList<ModuleDescriptor> All { get; } =
+        modules.OrderBy(m => m.SortOrder).ThenBy(m => m.Name).ToArray();
+
+    public ModuleDescriptor? Find(string key) =>
+        All.FirstOrDefault(m => string.Equals(m.Key, key, StringComparison.OrdinalIgnoreCase));
+
+    public ModuleDescriptor? FromPath(string? path) =>
+        string.IsNullOrEmpty(path)
+            ? null
+            : All.FirstOrDefault(m =>
+                path.StartsWith(m.BasePath + "/", StringComparison.OrdinalIgnoreCase) ||
+                path.Equals(m.BasePath, StringComparison.OrdinalIgnoreCase));
+
+    public IReadOnlyList<PermissionDescriptor> AllPermissions { get; } =
+        modules.SelectMany(m => m.Permissions)
+               .DistinctBy(p => p.Key)
+               .OrderBy(p => p.Key)
+               .ToArray();
+
+    public IReadOnlyList<ApprovableDocument> AllApprovables { get; } =
+        modules.SelectMany(m => m.Approvables)
+               .DistinctBy(a => a.Key)
+               .OrderBy(a => a.Name)
+               .ToArray();
+}

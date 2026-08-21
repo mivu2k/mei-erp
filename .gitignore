@@ -1,0 +1,23 @@
+bin/
+obj/
+*.user
+*.suo
+.vs/
+.vscode/
+.idea/
+
+# Secrets never go in the repo. appsettings.Development.json is seeded from
+# the .example by ./dev.sh up; production config comes from environment
+# variables. This line is load-bearing, not housekeeping.
+appsettings.Development.json
+appsettings.Production.json
+*.env
+.env
+
+# Local runtime state
+logs/
+uploads/
+artifacts/
+.dev/
+TestResults/
+*.db
