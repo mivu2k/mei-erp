@@ -13,7 +13,7 @@ office yet.
 |---|---|
 | `Platform.Kernel` | done — entities, clock, result, module catalog |
 | `Platform.Workflow` | domain + router done, **20 tests green**; engine implementation next |
-| `Platform.Persistence` | not started |
+| `Platform.Persistence` | done — audit, soft delete, xmin, outbox, sequences; **5 integration tests green** |
 | `Platform.Identity` | not started |
 | `Platform.Notifications` | not started |
 | `Platform.Reporting` | not started |
@@ -144,10 +144,54 @@ dotnet test                                    # everything
 dotnet test tests/MeiErp.Platform.Workflow.Tests
 ```
 
+## The database
+
+PostgreSQL **18.6**, installed system-wide and running as a service. One database,
+one schema per module.
+
+```bash
+./dev.sh status    # is it up?
+./dev.sh db        # SQL shell
+./dev.sh reset     # drop and recreate (asks first)
+```
+
+Local dev credentials: role `meierp`, database `mei_erp`, on `127.0.0.1:5432`. The
+password lives in the gitignored `appsettings.Development.json`, never in the repo.
+One-time bootstrap on a fresh machine:
+
+```bash
+sudo -u postgres psql -c "CREATE ROLE meierp LOGIN PASSWORD '<pw>' CREATEDB;" \
+                      -c "CREATE DATABASE mei_erp OWNER meierp;"
+```
+
+`CREATEDB` matters: the integration tests each create and drop a throwaway database.
+Without it they skip, and **a skipping test suite reports green while asserting
+nothing** — the exact failure the previous platform shipped with. Verify by breaking
+the password on purpose: the suite must report *skipped*, not passed.
+
+## Persistence rules
+
+`ModuleDbContext` enforces these so no module has to remember them:
+
+- **Audit stamping** on insert and update. `CreatedUtc`/`CreatedBy` are frozen after
+  insert — without that, an update carrying a stale entity rewrites history.
+- **Soft delete** via a global query filter. `Remove()` becomes a flag update; every
+  query excludes deleted rows without a single service opting in.
+- **Concurrency via PostgreSQL's own `xmin`.** No token to re-stamp by hand, so no
+  way to forget to. A lost update raises `DbUpdateConcurrencyException` rather than
+  silently winning — there is a test that races two contexts to prove it.
+- **Money is `numeric(18,4)` everywhere**, applied by convention over every decimal
+  property. Left to hand-declaration, one property eventually becomes a float and a
+  trial balance stops balancing.
+- **The outbox table lives on every module context**, so an integration event is
+  written in the same transaction as the change that raised it.
+
+`DocumentSequence` locks its counter row with `FOR UPDATE` before reading it.
+Read-then-write without the lock is the classic duplicate-number bug: it passes every
+test, then two people press Save in the same second and both get PO-26-0042.
+
 ## Open decisions
 
-- **PostgreSQL is not installed yet.** `sudo apt install postgresql` (v18 available).
-  The provider choice is still cheap to reverse — nothing is wired to Npgsql yet.
 - Concurrent user count at peak is unconfirmed; under ~200 needs no capacity planning.
 - WhatsApp as a notification channel is planned as a *provider* behind
   `Platform.Notifications`, not a special case. Build the channel abstraction first.
