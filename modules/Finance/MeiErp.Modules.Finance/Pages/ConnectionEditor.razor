@@ -1,0 +1,89 @@
+@inject IUtilityService Utilities
+@inject IAccountService Chart
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <div class="d-flex gap-3 mb-3">
+                <MudTextField @bind-Value="_model.Name" Label="Name" Required="true"
+                              RequiredError="Give it a name." Variant="Variant.Outlined" />
+                <MudSelect T="UtilityKind" @bind-Value="_model.Kind" Label="Kind"
+                           Variant="Variant.Outlined">
+                    @foreach (var k in Enum.GetValues<UtilityKind>())
+                    {
+                        <MudSelectItem Value="@k">@k</MudSelectItem>
+                    }
+                </MudSelect>
+            </div>
+
+            <div class="d-flex gap-3 mb-3">
+                <MudTextField @bind-Value="_model.ConnectionNumber" Label="Meter / account no."
+                              Variant="Variant.Outlined" />
+                <MudTextField @bind-Value="_model.Provider" Label="Provider" Variant="Variant.Outlined" />
+            </div>
+
+            <MudTextField @bind-Value="_model.Location" Label="Location"
+                          Variant="Variant.Outlined" Class="mb-3" />
+
+            <MudSelect T="int" @bind-Value="_model.ExpenseAccountId" Label="Charge bills to"
+                       Variant="Variant.Outlined">
+                @foreach (var head in _heads)
+                {
+                    <MudSelectItem T="int" Value="@head.Id">@head.Code — @head.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudForm>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-3">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+
+    private MudForm? _form;
+    private UtilityConnection _model = new() { IsActive = true };
+    private IReadOnlyList<Account> _heads = [];
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _heads = await Chart.PostableAsync(AccountType.Expense);
+
+        // Utilities is the obvious default, so the common case needs no thought.
+        _model.ExpenseAccountId = _heads.FirstOrDefault(h => h.Code == "5520")?.Id
+                                  ?? _heads.FirstOrDefault()?.Id ?? 0;
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        if (_form is not null)
+        {
+            await _form.Validate();
+            if (!_form.IsValid) return;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await Utilities.SaveConnectionAsync(_model);
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Connection saved.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

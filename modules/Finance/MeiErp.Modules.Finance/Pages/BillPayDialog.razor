@@ -1,0 +1,70 @@
+@inject IUtilityService Utilities
+@inject IAccountService Chart
+@inject IClock Clock
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-3">
+            Paying <b>@Amount.ToString("N2")</b> for @Label.
+        </MudText>
+
+        <MudSelect T="int?" @bind-Value="_fromId" Label="Paid out of" Variant="Variant.Outlined"
+                   Class="mb-3">
+            @foreach (var head in _heads)
+            {
+                <MudSelectItem T="int?" Value="@head.Id">@head.Code — @head.Name</MudSelectItem>
+            }
+        </MudSelect>
+
+        <MudDatePicker Label="Payment date" Variant="Variant.Outlined"
+                       Date="_date" DateChanged="@(d => _date = d)" />
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-3">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Success"
+                   OnClick="SaveAsync" Disabled="@(_busy || _fromId is null)">Pay &amp; post</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int BillId { get; set; }
+    [Parameter] public decimal Amount { get; set; }
+    [Parameter] public string Label { get; set; } = "";
+
+    private IReadOnlyList<Account> _heads = [];
+    private int? _fromId;
+    private DateTime? _date;
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _heads = await Chart.PostableAsync(AccountType.Asset);
+        _date = Clock.Today.ToDateTime(TimeOnly.MinValue);
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var result = await Utilities.PayAsync(
+                BillId, _fromId!.Value, DateOnly.FromDateTime(_date ?? DateTime.Today));
+
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Paid and posted.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

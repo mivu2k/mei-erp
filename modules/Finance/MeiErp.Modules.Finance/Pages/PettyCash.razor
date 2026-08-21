@@ -1,0 +1,182 @@
+@page "/finance/petty-cash"
+@attribute [Authorize(Policy = FinanceModule.PettyCashManage)]
+@rendermode InteractiveServer
+@inject IPettyCashService Petty
+@inject IAccountService Chart
+@inject IClock Clock
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Petty cash</PageTitle>
+
+<div class="d-flex align-center mb-1">
+    <div>
+        <MudText Typo="Typo.h5">Petty cash</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            A fixed float per box. Spending draws it down; a top-up restores it.
+        </MudText>
+    </div>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add" OnClick="NewBox">New box</MudButton>
+</div>
+
+<MudGrid Class="mt-2">
+    @foreach (var box in _boxes)
+    {
+        var balance = _balances.GetValueOrDefault(box.Id);
+        var used = box.Float == 0 ? 0 : (double)((box.Float - balance) / box.Float * 100);
+
+        <MudItem xs="12" sm="6" md="4">
+            <MudPaper Outlined="true" Elevation="0" Class="pa-4">
+                <div class="d-flex align-center">
+                    <div>
+                        <MudText Typo="Typo.subtitle1"><b>@box.Name</b></MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                            @box.CustodianName
+                        </MudText>
+                    </div>
+                    <MudSpacer />
+                    <MudText Typo="Typo.h6" Style="font-variant-numeric:tabular-nums">
+                        @balance.ToString("N2")
+                    </MudText>
+                </div>
+
+                <MudProgressLinear Color="@(used > 80 ? Color.Warning : Color.Primary)"
+                                   Value="@used" Class="mt-3" Rounded="true" />
+
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                    @((box.Float - balance).ToString("N2")) spent of a
+                    @box.Float.ToString("N2") float
+                </MudText>
+
+                <div class="d-flex gap-2 mt-3">
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                               OnClick="@(() => Spend(box))">Record spend</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Text"
+                               OnClick="@(() => TopUp(box))">Top up</MudButton>
+                    <MudSpacer />
+                    <MudButton Size="Size.Small" Variant="Variant.Text"
+                               OnClick="@(() => Select(box))">Entries</MudButton>
+                </div>
+            </MudPaper>
+        </MudItem>
+    }
+</MudGrid>
+
+@if (_boxes.Count == 0 && !_loading)
+{
+    <MudPaper Outlined="true" Elevation="0" Class="pa-12 text-center mt-4">
+        <MudText Class="mud-text-secondary">
+            No petty cash boxes yet. Create one and give it a float.
+        </MudText>
+    </MudPaper>
+}
+
+@if (_selected is not null)
+{
+    <MudPaper Outlined="true" Elevation="0" Class="mt-6">
+        <MudToolBar Dense="true">
+            <MudText Typo="Typo.subtitle1"><b>@_selected.Name</b> — entries</MudText>
+            <MudSpacer />
+            <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small"
+                           OnClick="@(() => _selected = null)" />
+        </MudToolBar>
+
+        <MudSimpleTable Dense="true" Hover="true">
+            <thead>
+                <tr>
+                    <th>Date</th><th>Description</th><th>Head</th><th>Paid to</th>
+                    <th style="text-align:right">Out</th><th style="text-align:right">In</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var entry in _entries)
+                {
+                    <tr>
+                        <td>@entry.Date.ToString("d MMM yy")</td>
+                        <td>@entry.Description</td>
+                        <td>@entry.ExpenseAccount?.Name</td>
+                        <td>@entry.PaidTo</td>
+                        <td style="text-align:right;font-variant-numeric:tabular-nums">
+                            @(entry.Kind == PettyCashKind.Spend ? entry.Amount.ToString("N2") : "")
+                        </td>
+                        <td style="text-align:right;font-variant-numeric:tabular-nums">
+                            @(entry.Kind == PettyCashKind.TopUp ? entry.Amount.ToString("N2") : "")
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+
+        @if (_entries.Count == 0)
+        {
+            <MudText Class="pa-8 text-center mud-text-secondary">Nothing recorded yet.</MudText>
+        }
+    </MudPaper>
+}
+
+@code {
+    private IReadOnlyList<PettyCashBox> _boxes = [];
+    private Dictionary<int, decimal> _balances = [];
+    private PettyCashBox? _selected;
+    private IReadOnlyList<PettyCashEntry> _entries = [];
+    private bool _loading = true;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _boxes = await Petty.BoxesAsync();
+
+        _balances = [];
+        foreach (var box in _boxes)
+            _balances[box.Id] = await Petty.BalanceAsync(box.Id);
+
+        if (_selected is not null) await Select(_selected);
+        _loading = false;
+    }
+
+    private async Task Select(PettyCashBox box)
+    {
+        _selected = box;
+        _entries = await Petty.EntriesAsync(box.Id, null, null);
+    }
+
+    private async Task NewBox()
+    {
+        var dialog = await Dialogs.ShowAsync<PettyBoxEditor>("New petty cash box",
+            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+
+    private async Task Spend(PettyCashBox box)
+    {
+        var parameters = new DialogParameters<PettySpendDialog>
+        {
+            { x => x.BoxId, box.Id },
+            { x => x.BoxName, box.Name },
+            { x => x.Available, _balances.GetValueOrDefault(box.Id) }
+        };
+        var dialog = await Dialogs.ShowAsync<PettySpendDialog>("Record spend", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+
+    private async Task TopUp(PettyCashBox box)
+    {
+        var parameters = new DialogParameters<PettyTopUpDialog>
+        {
+            { x => x.BoxId, box.Id },
+            { x => x.BoxName, box.Name },
+            { x => x.Headroom, box.Float - _balances.GetValueOrDefault(box.Id) }
+        };
+        var dialog = await Dialogs.ShowAsync<PettyTopUpDialog>("Top up", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+}

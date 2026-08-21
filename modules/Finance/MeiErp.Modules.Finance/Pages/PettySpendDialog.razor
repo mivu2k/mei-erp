@@ -1,0 +1,103 @@
+@inject IPettyCashService Petty
+@inject IAccountService Chart
+@inject IClock Clock
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+            @BoxName holds <b>@Available.ToString("N2")</b>.
+        </MudText>
+
+        <MudForm @ref="_form">
+            <div class="d-flex gap-3 mb-3">
+                <MudNumericField T="decimal" @bind-Value="_amount" Label="Amount" Required="true"
+                                 Variant="Variant.Outlined" HideSpinButtons="true" />
+                <MudDatePicker Label="Date" Variant="Variant.Outlined"
+                               Date="_date" DateChanged="@(d => _date = d)" />
+            </div>
+
+            <MudTextField @bind-Value="_description" Label="What was it for?" Required="true"
+                          RequiredError="Say what the money was spent on."
+                          Variant="Variant.Outlined" Class="mb-3" />
+
+            <MudSelect T="int?" @bind-Value="_headId" Label="Charge to" Variant="Variant.Outlined"
+                       Class="mb-3">
+                @foreach (var head in _heads)
+                {
+                    <MudSelectItem T="int?" Value="@head.Id">@head.Code — @head.Name</MudSelectItem>
+                }
+            </MudSelect>
+
+            <div class="d-flex gap-3">
+                <MudTextField @bind-Value="_paidTo" Label="Paid to" Variant="Variant.Outlined" />
+                <MudTextField @bind-Value="_receipt" Label="Receipt number" Variant="Variant.Outlined" />
+            </div>
+        </MudForm>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-3">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveAsync" Disabled="@(_busy || _headId is null)">Record</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int BoxId { get; set; }
+    [Parameter] public string BoxName { get; set; } = "";
+    [Parameter] public decimal Available { get; set; }
+
+    private MudForm? _form;
+    private IReadOnlyList<Account> _heads = [];
+    private decimal _amount;
+    private DateTime? _date;
+    private string _description = "";
+    private string? _paidTo, _receipt;
+    private int? _headId;
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _heads = await Chart.PostableAsync(AccountType.Expense);
+        _date = Clock.Today.ToDateTime(TimeOnly.MinValue);
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        if (_form is not null)
+        {
+            await _form.Validate();
+            if (!_form.IsValid) return;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await Petty.SpendAsync(new PettyCashEntry
+            {
+                BoxId = BoxId,
+                Date = DateOnly.FromDateTime(_date ?? DateTime.Today),
+                Amount = _amount,
+                Description = _description,
+                ExpenseAccountId = _headId,
+                PaidTo = _paidTo,
+                ReceiptNumber = _receipt
+            });
+
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Recorded and posted.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

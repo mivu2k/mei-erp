@@ -1,0 +1,84 @@
+@inject IPettyCashService Petty
+@inject IAccountService Chart
+@inject IClock Clock
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+            @BoxName can take up to <b>@Headroom.ToString("N2")</b> before it is back at its float.
+        </MudText>
+
+        <div class="d-flex gap-3 mb-3">
+            <MudNumericField T="decimal" @bind-Value="_amount" Label="Amount"
+                             Variant="Variant.Outlined" HideSpinButtons="true" />
+            <MudDatePicker Label="Date" Variant="Variant.Outlined"
+                           Date="_date" DateChanged="@(d => _date = d)" />
+        </div>
+
+        <MudSelect T="int?" @bind-Value="_fromId" Label="Out of" Variant="Variant.Outlined"
+                   Class="mb-3" HelperText="Which bank or main cash head the money comes from.">
+            @foreach (var head in _heads)
+            {
+                <MudSelectItem T="int?" Value="@head.Id">@head.Code — @head.Name</MudSelectItem>
+            }
+        </MudSelect>
+
+        <MudTextField @bind-Value="_note" Label="Note" Variant="Variant.Outlined" />
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-3">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveAsync" Disabled="@(_busy || _fromId is null || _amount <= 0)">
+            Top up
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int BoxId { get; set; }
+    [Parameter] public string BoxName { get; set; } = "";
+    [Parameter] public decimal Headroom { get; set; }
+
+    private IReadOnlyList<Account> _heads = [];
+    private decimal _amount;
+    private DateTime? _date;
+    private int? _fromId;
+    private string? _note;
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _heads = await Chart.PostableAsync(AccountType.Asset);
+        _date = Clock.Today.ToDateTime(TimeOnly.MinValue);
+
+        // Defaults to restoring the float, which is the usual case.
+        _amount = Headroom > 0 ? Headroom : 0;
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var result = await Petty.TopUpAsync(
+                BoxId, _amount, _fromId!.Value,
+                DateOnly.FromDateTime(_date ?? DateTime.Today), _note);
+
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Topped up and posted.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

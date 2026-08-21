@@ -1,0 +1,119 @@
+@page "/finance/third-parties"
+@attribute [Authorize(Policy = FinanceModule.PartiesManage)]
+@rendermode InteractiveServer
+@inject IThirdPartyService Parties
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Third parties</PageTitle>
+
+<div class="d-flex align-center mb-1">
+    <div>
+        <MudText Typo="Typo.h5">Third parties</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            A party is a name and a side. Money is recorded here and posted as a real voucher.
+        </MudText>
+    </div>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+        New party
+    </MudButton>
+</div>
+
+<MudPaper Outlined="true" Elevation="0" Class="mt-4">
+    <MudDataGrid T="ThirdParty" Items="_rows" Dense="true" Hover="true" Elevation="0"
+                 Loading="_loading" Filterable="false" RowsPerPage="25">
+        <Columns>
+            <PropertyColumn Property="@(p => p.Name)" Title="Name" />
+            <TemplateColumn Title="Side">
+                <CellTemplate>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                             Color="@(context.Item.Side == ThirdPartySide.Receivable ? Color.Info : Color.Secondary)">
+                        @(context.Item.Side == ThirdPartySide.Receivable ? "Owes us" : "We owe")
+                    </MudChip>
+                </CellTemplate>
+            </TemplateColumn>
+            <PropertyColumn Property="@(p => p.Phone)" Title="Phone" />
+            <TemplateColumn Title="Account">
+                <CellTemplate>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        @context.Item.Account?.Code
+                    </MudText>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Outstanding" HeaderClass="text-right" CellClass="text-right">
+                <CellTemplate>
+                    @{
+                        var balance = _balances.GetValueOrDefault(context.Item.Id);
+                    }
+                    <span style="font-variant-numeric:tabular-nums"
+                          class="@(balance < 0 ? "mud-error-text" : "")">
+                        @balance.ToString("N2")
+                    </span>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="" Sortable="false">
+                <CellTemplate>
+                    <div class="d-flex justify-end gap-1">
+                        <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                                   OnClick="@(() => Pay(context.Item))">Add payment</MudButton>
+                        <MudButton Size="Size.Small" Variant="Variant.Text"
+                                   Href="@($"/finance/third-parties/{context.Item.Id}")">Statement</MudButton>
+                        <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small"
+                                       OnClick="@(() => Edit(context.Item))" />
+                    </div>
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+        <NoRecordsContent>
+            <MudText Class="pa-8 text-center mud-text-secondary">
+                No third parties yet.
+            </MudText>
+        </NoRecordsContent>
+    </MudDataGrid>
+</MudPaper>
+
+@code {
+    private IReadOnlyList<ThirdParty> _rows = [];
+    private Dictionary<int, decimal> _balances = [];
+    private bool _loading = true;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _rows = await Parties.ListAsync(includeInactive: false);
+
+        _balances = [];
+        foreach (var party in _rows)
+            _balances[party.Id] = await Parties.BalanceAsync(party.Id);
+
+        _loading = false;
+    }
+
+    private async Task Edit(ThirdParty? row)
+    {
+        var parameters = new DialogParameters<PartyEditor> { { x => x.PartyId, row?.Id } };
+        var dialog = await Dialogs.ShowAsync<PartyEditor>(
+            row is null ? "New party" : "Edit party", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+
+    private async Task Pay(ThirdParty row)
+    {
+        var parameters = new DialogParameters<PartyPaymentDialog>
+        {
+            { x => x.PartyId, row.Id },
+            { x => x.PartyName, row.Name },
+            { x => x.Side, row.Side }
+        };
+        var dialog = await Dialogs.ShowAsync<PartyPaymentDialog>("Record payment", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+}

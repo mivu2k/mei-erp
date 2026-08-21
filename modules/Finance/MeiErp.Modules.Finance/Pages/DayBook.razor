@@ -1,0 +1,128 @@
+@page "/finance/day-book"
+@attribute [Authorize(Policy = FinanceModule.VouchersView)]
+@rendermode InteractiveServer
+@inject IVoucherService Books
+@inject IClock Clock
+
+<PageTitle>Day book</PageTitle>
+
+<MudText Typo="Typo.h5">Day book</MudText>
+<MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+    Everything posted on one day, in the order it was entered.
+</MudText>
+
+<MudPaper Outlined="true" Elevation="0">
+    <MudToolBar Dense="true">
+        <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" Size="Size.Small"
+                       OnClick="@(() => Shift(-1))" />
+        <MudDatePicker Variant="Variant.Text" Margin="Margin.Dense" Class="mt-0 mx-2"
+                       Date="_date" DateChanged="@(async d => { _date = d; await LoadAsync(); })"
+                       Style="max-width:180px" />
+        <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small"
+                       OnClick="@(() => Shift(1))" />
+
+        <MudSpacer />
+
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            @_rows.Count @(_rows.Count == 1 ? "entry" : "entries")
+            · @_total.ToString("N2")
+        </MudText>
+    </MudToolBar>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Indeterminate="true" />
+    }
+    else if (_rows.Count == 0)
+    {
+        <MudText Class="pa-12 text-center mud-text-secondary">
+            Nothing was posted on @(_date?.ToString("d MMMM yyyy")).
+        </MudText>
+    }
+    else
+    {
+        <div style="overflow-x:auto">
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead>
+                    <tr>
+                        <th>Voucher</th><th>Type</th><th>Account</th><th>Narration</th>
+                        <th style="text-align:right">Debit</th>
+                        <th style="text-align:right">Credit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var voucher in _rows)
+                    {
+                        var first = true;
+
+                        @foreach (var line in voucher.Lines)
+                        {
+                            <tr>
+                                @* The voucher number appears once per entry, not
+                                   once per line - repeating it makes a day book
+                                   read as though every line were its own voucher. *@
+                                <td>@(first ? voucher.Number : "")</td>
+                                <td>@(first ? voucher.Type.ToString() : "")</td>
+                                <td>@line.AccountCode — @line.AccountName</td>
+                                <td>@(line.Narration ?? (first ? voucher.Narration : ""))</td>
+                                <td style="text-align:right;font-variant-numeric:tabular-nums">
+                                    @(line.Debit == 0 ? "" : line.Debit.ToString("N2"))
+                                </td>
+                                <td style="text-align:right;font-variant-numeric:tabular-nums">
+                                    @(line.Credit == 0 ? "" : line.Credit.ToString("N2"))
+                                </td>
+                            </tr>
+
+                            first = false;
+                        }
+                    }
+                </tbody>
+                <tfoot>
+                    <tr style="font-weight:600;border-top:2px solid var(--mud-palette-lines-default)">
+                        <td colspan="4">Total</td>
+                        <td style="text-align:right;font-variant-numeric:tabular-nums">
+                            @_total.ToString("N2")
+                        </td>
+                        <td style="text-align:right;font-variant-numeric:tabular-nums">
+                            @_total.ToString("N2")
+                        </td>
+                    </tr>
+                </tfoot>
+            </MudSimpleTable>
+        </div>
+    }
+</MudPaper>
+
+@code {
+    private IReadOnlyList<Voucher> _rows = [];
+    private DateTime? _date;
+    private decimal _total;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _date = Clock.Today.ToDateTime(TimeOnly.MinValue);
+        await LoadAsync();
+    }
+
+    private async Task Shift(int days)
+    {
+        _date = (_date ?? DateTime.Today).AddDays(days);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+
+        var day = DateOnly.FromDateTime(_date ?? DateTime.Today);
+
+        // Posted only. A draft is not in the books, and a day book that showed
+        // drafts would not reconcile with the trial balance.
+        _rows = await Books.ListAsync(new VoucherFilter(
+            From: day, To: day, Status: VoucherStatus.Posted, Take: 500));
+
+        _total = _rows.Sum(v => v.TotalDebit);
+        _loading = false;
+    }
+}

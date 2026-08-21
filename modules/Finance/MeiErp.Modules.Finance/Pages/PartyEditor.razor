@@ -1,0 +1,72 @@
+@inject IThirdPartyService Parties
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <MudTextField @bind-Value="_model.Name" Label="Name" Required="true"
+                          RequiredError="Give them a name." Variant="Variant.Outlined" Class="mb-4" />
+
+            <MudSelect T="ThirdPartySide" @bind-Value="_model.Side" Label="Side"
+                       Variant="Variant.Outlined" Class="mb-4"
+                       HelperText="Decides whether their account sits under Receivables or Payables.">
+                <MudSelectItem Value="ThirdPartySide.Receivable">They owe us</MudSelectItem>
+                <MudSelectItem Value="ThirdPartySide.Payable">We owe them</MudSelectItem>
+            </MudSelect>
+
+            <div class="d-flex gap-3 mb-4">
+                <MudTextField @bind-Value="_model.Phone" Label="Phone" Variant="Variant.Outlined" />
+                <MudTextField @bind-Value="_model.Cnic" Label="CNIC" Variant="Variant.Outlined" />
+            </div>
+
+            <MudTextField @bind-Value="_model.Notes" Label="Notes" Lines="2" Variant="Variant.Outlined" />
+        </MudForm>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int? PartyId { get; set; }
+
+    private MudForm? _form;
+    private ThirdParty _model = new();
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync() =>
+        _model = PartyId is null
+            ? new ThirdParty { IsActive = true }
+            : await Parties.GetAsync(PartyId.Value) ?? new ThirdParty();
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        if (_form is not null)
+        {
+            await _form.Validate();
+            if (!_form.IsValid) return;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await Parties.SaveAsync(_model);
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Saved.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

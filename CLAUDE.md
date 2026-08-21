@@ -191,6 +191,31 @@ uneditable and uncancellable: security is holding a printed copy, and a record t
 can still change proves nothing about what actually left. Returnable passes stay
 open until the last item is ticked back, since partial returns are the normal case.
 
+## The tracked-entity trap — this has bitten twice
+
+An edit screen loads an entity through a service and hands **that same instance**
+back to save. EF is tracking it, so inside the service `existing` and the incoming
+object are the *same reference*:
+
+```csharp
+var existing = await db.X.FirstOrDefaultAsync(...);   // same object as `input`
+if (existing.Side != input.Side) { ... }              // ALWAYS false
+input.Quantity = existing.Quantity;                   // preserves nothing
+```
+
+Both a guard and a field-preserving assignment written this way silently do
+nothing, and no test catches it unless the test goes through the same load-then-save
+path a real screen does. It got past review twice — once on `Item.QuantityOnHand`,
+once on `ThirdParty.Side`.
+
+**Read the previous value from the change tracker instead:**
+
+```csharp
+var before = db.Entry(existing).OriginalValues.GetValue<T>(nameof(X.Field));
+```
+
+That works whether or not the caller handed back the tracked instance.
+
 ## Conventions
 
 - **Never read the clock directly.** Inject `IClock`. `Today` is the *business* date;

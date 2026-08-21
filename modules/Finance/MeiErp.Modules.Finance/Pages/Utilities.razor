@@ -1,0 +1,165 @@
+@page "/finance/utilities"
+@attribute [Authorize(Policy = FinanceModule.UtilitiesManage)]
+@rendermode InteractiveServer
+@inject IUtilityService Meters
+@inject IAccountService Chart
+@inject IClock Clock
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Utilities</PageTitle>
+
+<div class="d-flex align-center mb-1">
+    <div>
+        <MudText Typo="Typo.h5">Utilities</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            Bills tracked per connection, so a jump in consumption shows against its own history.
+        </MudText>
+    </div>
+    <MudSpacer />
+    <MudButton Variant="Variant.Text" OnClick="NewConnection" Class="mr-2">New connection</MudButton>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Bill(null))"
+               Disabled="_connections.Count == 0">Enter a bill</MudButton>
+</div>
+
+@if (_overdue.Count > 0)
+{
+    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mt-4">
+        <b>@_overdue.Count</b> unpaid @(_overdue.Count == 1 ? "bill is" : "bills are") past due,
+        totalling @_overdue.Sum(b => b.Amount).ToString("N2").
+    </MudAlert>
+}
+
+<MudPaper Outlined="true" Elevation="0" Class="mt-4">
+    <MudToolBar Dense="true">
+        <MudSelect T="int?" @bind-Value="_connectionId" @bind-Value:after="LoadAsync"
+                   Label="Connection" Clearable="true" Variant="Variant.Text"
+                   Margin="Margin.Dense" Class="mt-0" Style="max-width:260px">
+            @foreach (var c in _connections)
+            {
+                <MudSelectItem T="int?" Value="@c.Id">@c.Name</MudSelectItem>
+            }
+        </MudSelect>
+        <MudSpacer />
+        <MudSwitch T="bool" @bind-Value="_unpaidOnly" @bind-Value:after="LoadAsync"
+                   Color="Color.Primary" Label="Unpaid only" />
+    </MudToolBar>
+
+    <MudDataGrid T="UtilityBill" Items="_bills" Dense="true" Hover="true" Elevation="0"
+                 Loading="_loading" Filterable="false" RowsPerPage="25">
+        <Columns>
+            <TemplateColumn Title="Connection">
+                <CellTemplate>
+                    <MudText Typo="Typo.body2"><b>@context.Item.Connection?.Name</b></MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        @context.Item.Connection?.ConnectionNumber
+                    </MudText>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Month">
+                <CellTemplate>@context.Item.BillingMonth.ToString("MMMM yyyy")</CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Units" HeaderClass="text-right" CellClass="text-right">
+                <CellTemplate>
+                    <span style="font-variant-numeric:tabular-nums">
+                        @(context.Item.Units?.ToString("0.##") ?? "—")
+                    </span>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Amount" HeaderClass="text-right" CellClass="text-right">
+                <CellTemplate>
+                    <span style="font-variant-numeric:tabular-nums">
+                        @context.Item.Amount.ToString("N2")
+                    </span>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Due">
+                <CellTemplate>
+                    @context.Item.DueOn.ToString("d MMM yy")
+                    @if (context.Item.IsOverdue(Clock.Today))
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Error"
+                                 Variant="Variant.Filled" Class="ml-1">overdue</MudChip>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Status">
+                <CellTemplate>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                             Color="@(context.Item.IsPaid ? Color.Success : Color.Default)">
+                        @(context.Item.IsPaid ? $"paid {context.Item.PaidOn:d MMM}" : "unpaid")
+                    </MudChip>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="" Sortable="false">
+                <CellTemplate>
+                    <div class="d-flex justify-end gap-1">
+                        @if (!context.Item.IsPaid)
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Text"
+                                       OnClick="@(() => Bill(context.Item))">Edit</MudButton>
+                            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
+                                       OnClick="@(() => Pay(context.Item))">Pay</MudButton>
+                        }
+                    </div>
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+        <NoRecordsContent>
+            <MudText Class="pa-8 text-center mud-text-secondary">No bills recorded yet.</MudText>
+        </NoRecordsContent>
+    </MudDataGrid>
+</MudPaper>
+
+@code {
+    private IReadOnlyList<UtilityConnection> _connections = [];
+    private IReadOnlyList<UtilityBill> _bills = [];
+    private IReadOnlyList<UtilityBill> _overdue = [];
+    private int? _connectionId;
+    private bool _unpaidOnly;
+    private bool _loading = true;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _connections = await Meters.ConnectionsAsync();
+        _bills = await Meters.BillsAsync(_connectionId, _unpaidOnly);
+        _overdue = await Meters.OverdueAsync();
+        _loading = false;
+    }
+
+    private async Task NewConnection()
+    {
+        var dialog = await Dialogs.ShowAsync<ConnectionEditor>("New connection",
+            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+
+    private async Task Bill(UtilityBill? row)
+    {
+        var parameters = new DialogParameters<BillEditor> { { x => x.BillId, row?.Id } };
+        var dialog = await Dialogs.ShowAsync<BillEditor>(
+            row is null ? "Enter a bill" : "Edit bill", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+
+    private async Task Pay(UtilityBill row)
+    {
+        var parameters = new DialogParameters<BillPayDialog>
+        {
+            { x => x.BillId, row.Id },
+            { x => x.Amount, row.Amount },
+            { x => x.Label, $"{row.Connection?.Name} — {row.BillingMonth:MMMM yyyy}" }
+        };
+        var dialog = await Dialogs.ShowAsync<BillPayDialog>("Pay bill", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+}

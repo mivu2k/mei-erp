@@ -1,0 +1,139 @@
+@page "/finance/third-parties/{PartyId:int}"
+@attribute [Authorize(Policy = FinanceModule.PartiesManage)]
+@rendermode InteractiveServer
+@inject IThirdPartyService Parties
+@inject IClock Clock
+@inject IDialogService Dialogs
+
+<PageTitle>Party statement</PageTitle>
+
+@if (_statement is null)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else
+{
+    <div class="d-flex align-center mb-1">
+        <div>
+            <MudText Typo="Typo.h5">@_statement.Name</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                @(_statement.Side == ThirdPartySide.Receivable ? "Owes us" : "We owe them")
+                · outstanding <b>@_statement.Closing.ToString("N2")</b>
+            </MudText>
+        </div>
+        <MudSpacer />
+        <MudButton Variant="Variant.Text" Href="/finance/third-parties" Class="mr-2">Back</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="Pay">Add payment</MudButton>
+    </div>
+
+    <MudPaper Outlined="true" Elevation="0" Class="mt-4">
+        <MudToolBar Dense="true">
+            <MudDatePicker Label="From" Variant="Variant.Text" Margin="Margin.Dense" Class="mt-0"
+                           Date="_from" DateChanged="@(async d => { _from = d; await LoadAsync(); })"
+                           Style="max-width:160px" />
+            <MudDatePicker Label="To" Variant="Variant.Text" Margin="Margin.Dense" Class="mt-0 ml-3"
+                           Date="_to" DateChanged="@(async d => { _to = d; await LoadAsync(); })"
+                           Style="max-width:160px" />
+        </MudToolBar>
+
+        <div style="overflow-x:auto">
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead>
+                    <tr>
+                        <th>Date</th><th>Voucher</th><th>Narration</th>
+                        <th>Through</th>
+                        <th style="text-align:right">Received</th>
+                        <th style="text-align:right">Paid</th>
+                        <th style="text-align:right">Balance</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr style="font-style:italic">
+                        <td colspan="6">Opening balance</td>
+                        <td style="text-align:right;font-variant-numeric:tabular-nums">
+                            @_statement.Opening.ToString("N2")
+                        </td>
+                    </tr>
+
+                    @foreach (var row in _statement.Rows)
+                    {
+                        <tr>
+                            <td>@row.Date.ToString("d MMM yy")</td>
+                            <td>@row.VoucherNumber</td>
+                            <td>@row.Narration</td>
+                            @* The party's own name is on every row and says
+                               nothing; where the money moved is the useful column. *@
+                            <td>@row.ContraName</td>
+                            <td style="text-align:right;font-variant-numeric:tabular-nums">
+                                @(row.Received == 0 ? "" : row.Received.ToString("N2"))
+                            </td>
+                            <td style="text-align:right;font-variant-numeric:tabular-nums">
+                                @(row.Paid == 0 ? "" : row.Paid.ToString("N2"))
+                            </td>
+                            <td style="text-align:right;font-variant-numeric:tabular-nums">
+                                @row.Balance.ToString("N2")
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot>
+                    <tr style="font-weight:600;border-top:2px solid var(--mud-palette-lines-default)">
+                        <td colspan="6">Closing balance</td>
+                        <td style="text-align:right;font-variant-numeric:tabular-nums">
+                            @_statement.Closing.ToString("N2")
+                        </td>
+                    </tr>
+                </tfoot>
+            </MudSimpleTable>
+        </div>
+
+        @if (_statement.Rows.Count == 0)
+        {
+            <MudText Class="pa-8 text-center mud-text-secondary">
+                Nothing moved in this period.
+            </MudText>
+        }
+    </MudPaper>
+}
+
+@code {
+    [Parameter] public int PartyId { get; set; }
+
+    private PartyStatement? _statement;
+    private DateTime? _from, _to;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var today = Clock.Today;
+        var startYear = today.Month >= 7 ? today.Year : today.Year - 1;
+
+        _from = new DateOnly(startYear, 7, 1).ToDateTime(TimeOnly.MinValue);
+        _to = today.ToDateTime(TimeOnly.MinValue);
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync() =>
+        _statement = await Parties.StatementAsync(
+            PartyId,
+            DateOnly.FromDateTime(_from ?? DateTime.Today),
+            DateOnly.FromDateTime(_to ?? DateTime.Today));
+
+    private async Task Pay()
+    {
+        if (_statement is null) return;
+
+        var parameters = new DialogParameters<PartyPaymentDialog>
+        {
+            { x => x.PartyId, PartyId },
+            { x => x.PartyName, _statement.Name },
+            { x => x.Side, _statement.Side }
+        };
+
+        var dialog = await Dialogs.ShowAsync<PartyPaymentDialog>("Record payment", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+}

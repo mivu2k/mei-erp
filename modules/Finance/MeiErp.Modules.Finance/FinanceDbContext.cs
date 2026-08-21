@@ -15,6 +15,11 @@ public class FinanceDbContext(
     public DbSet<VoucherLine> VoucherLines => Set<VoucherLine>();
     public DbSet<PaymentRequest> PaymentRequests => Set<PaymentRequest>();
     public DbSet<FiscalYear> FiscalYears => Set<FiscalYear>();
+    public DbSet<ThirdParty> ThirdParties => Set<ThirdParty>();
+    public DbSet<PettyCashBox> PettyCashBoxes => Set<PettyCashBox>();
+    public DbSet<PettyCashEntry> PettyCashEntries => Set<PettyCashEntry>();
+    public DbSet<UtilityConnection> UtilityConnections => Set<UtilityConnection>();
+    public DbSet<UtilityBill> UtilityBills => Set<UtilityBill>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -111,6 +116,77 @@ public class FinanceDbContext(
         {
             b.Property(y => y.Name).HasMaxLength(50).IsRequired();
             b.HasIndex(y => new { y.StartDate, y.EndDate });
+        });
+
+        modelBuilder.Entity<ThirdParty>(b =>
+        {
+            b.Property(p => p.Name).HasMaxLength(200).IsRequired();
+            b.Property(p => p.Phone).HasMaxLength(40);
+            b.Property(p => p.Cnic).HasMaxLength(20);
+            b.Property(p => p.Notes).HasMaxLength(1000);
+
+            // One party per account: two parties sharing one would merge their
+            // statements into a single unreadable ledger.
+            b.HasIndex(p => p.AccountId).IsUnique().HasFilter("\"IsDeleted\" = false");
+
+            b.HasOne(p => p.Account).WithMany()
+             .HasForeignKey(p => p.AccountId).OnDelete(DeleteBehavior.Restrict);
+
+            b.HasIndex(p => p.Name);
+        });
+
+        modelBuilder.Entity<PettyCashBox>(b =>
+        {
+            b.Property(x => x.Name).HasMaxLength(100).IsRequired();
+            b.Property(x => x.CustodianName).HasMaxLength(200).IsRequired();
+
+            b.HasOne(x => x.Account).WithMany()
+             .HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.Restrict);
+
+            b.HasMany(x => x.Entries).WithOne(e => e.Box)
+             .HasForeignKey(e => e.BoxId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PettyCashEntry>(b =>
+        {
+            b.Property(e => e.Description).HasMaxLength(500).IsRequired();
+            b.Property(e => e.PaidTo).HasMaxLength(200);
+            b.Property(e => e.ReceiptNumber).HasMaxLength(50);
+
+            b.HasOne(e => e.ExpenseAccount).WithMany()
+             .HasForeignKey(e => e.ExpenseAccountId).OnDelete(DeleteBehavior.Restrict);
+
+            b.HasIndex(e => new { e.BoxId, e.Date });
+            b.HasQueryFilter(e => !e.Box!.IsDeleted);
+        });
+
+        modelBuilder.Entity<UtilityConnection>(b =>
+        {
+            b.Property(c => c.Name).HasMaxLength(150).IsRequired();
+            b.Property(c => c.ConnectionNumber).HasMaxLength(60);
+            b.Property(c => c.Provider).HasMaxLength(150);
+            b.Property(c => c.Location).HasMaxLength(200);
+
+            b.HasOne(c => c.ExpenseAccount).WithMany()
+             .HasForeignKey(c => c.ExpenseAccountId).OnDelete(DeleteBehavior.Restrict);
+
+            b.HasMany(c => c.Bills).WithOne(x => x.Connection)
+             .HasForeignKey(x => x.ConnectionId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<UtilityBill>(b =>
+        {
+            b.Property(x => x.BillNumber).HasMaxLength(60);
+
+            // One bill per connection per month, so entering August twice is
+            // caught rather than quietly doubling the cost.
+            b.HasIndex(x => new { x.ConnectionId, x.BillingMonth })
+             .IsUnique().HasFilter("\"IsDeleted\" = false");
+
+            b.HasIndex(x => x.PaidOn);
+
+            b.Ignore(x => x.IsPaid);
+            b.HasQueryFilter(x => !x.Connection!.IsDeleted);
         });
 
         modelBuilder.Entity<DocumentSequenceCounter>(b =>

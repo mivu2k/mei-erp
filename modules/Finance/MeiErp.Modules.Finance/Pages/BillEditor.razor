@@ -1,0 +1,116 @@
+@inject IUtilityService Utilities
+@inject IClock Clock
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <MudSelect T="int" @bind-Value="_model.ConnectionId" Label="Connection"
+                       Variant="Variant.Outlined" Class="mb-3">
+                @foreach (var c in _connections)
+                {
+                    <MudSelectItem T="int" Value="@c.Id">@c.Name</MudSelectItem>
+                }
+            </MudSelect>
+
+            <div class="d-flex gap-3 mb-3">
+                <MudDatePicker Label="Billing month" Variant="Variant.Outlined"
+                               OpenTo="OpenTo.Month" FixDay="1"
+                               Date="_month" DateChanged="@(d => _month = d)"
+                               HelperText="One bill per connection per month." />
+                <MudTextField @bind-Value="_model.BillNumber" Label="Bill number"
+                              Variant="Variant.Outlined" />
+            </div>
+
+            <div class="d-flex gap-3 mb-3">
+                <MudNumericField T="decimal" @bind-Value="_model.Amount" Label="Amount"
+                                 Variant="Variant.Outlined" HideSpinButtons="true" />
+                <MudNumericField T="decimal?" @bind-Value="_model.Units" Label="Units"
+                                 Variant="Variant.Outlined" HideSpinButtons="true"
+                                 HelperText="Blank for a flat charge." />
+            </div>
+
+            <div class="d-flex gap-3">
+                <MudDatePicker Label="Issued" Variant="Variant.Outlined"
+                               Date="_issued" DateChanged="@(d => _issued = d)" />
+                <MudDatePicker Label="Due" Variant="Variant.Outlined"
+                               Date="_due" DateChanged="@(d => _due = d)" />
+            </div>
+        </MudForm>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-3">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int? BillId { get; set; }
+
+    private MudForm? _form;
+    private UtilityBill _model = new();
+    private IReadOnlyList<UtilityConnection> _connections = [];
+    private DateTime? _month, _issued, _due;
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _connections = await Utilities.ConnectionsAsync();
+
+        if (BillId is not null)
+        {
+            var bills = await Utilities.BillsAsync(null, false);
+            _model = bills.FirstOrDefault(b => b.Id == BillId) ?? new UtilityBill();
+        }
+        else
+        {
+            var today = Clock.Today;
+
+            // Defaults to last month, which is what a bill arriving today
+            // almost always covers.
+            var lastMonth = today.AddMonths(-1);
+            _model = new UtilityBill
+            {
+                ConnectionId = _connections.FirstOrDefault()?.Id ?? 0,
+                BillingMonth = new DateOnly(lastMonth.Year, lastMonth.Month, 1),
+                IssuedOn = today,
+                DueOn = today.AddDays(14)
+            };
+        }
+
+        _month = _model.BillingMonth == default
+            ? null : _model.BillingMonth.ToDateTime(TimeOnly.MinValue);
+        _issued = _model.IssuedOn == default
+            ? null : _model.IssuedOn.ToDateTime(TimeOnly.MinValue);
+        _due = _model.DueOn == default
+            ? null : _model.DueOn.ToDateTime(TimeOnly.MinValue);
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            _model.BillingMonth = DateOnly.FromDateTime(_month ?? DateTime.Today);
+            _model.IssuedOn = DateOnly.FromDateTime(_issued ?? DateTime.Today);
+            _model.DueOn = DateOnly.FromDateTime(_due ?? DateTime.Today);
+
+            var result = await Utilities.SaveBillAsync(_model);
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Bill saved.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

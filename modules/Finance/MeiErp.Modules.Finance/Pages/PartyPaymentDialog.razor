@@ -1,0 +1,155 @@
+@inject IThirdPartyService Parties
+@inject IAccountService Chart
+@inject IClock Clock
+@inject ISnackbar Snackbar
+
+@*
+    One dialog, used by both the party list and the party's own page. Two copies
+    of the screen people spend their day in would drift apart.
+*@
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+            @PartyName — currently
+            <b>@_balance.ToString("N2")</b>
+            @(Side == ThirdPartySide.Receivable ? "owed to us" : "owed to them")
+        </MudText>
+
+        @* Direction is picked inside the dialog and labelled in words. Two
+           unlabelled arrows on a list is how money gets recorded backwards. *@
+        <MudRadioGroup T="PartyMovement" @bind-Value="_direction" Class="mb-3">
+            <MudRadio T="PartyMovement" Value="PartyMovement.Received" Color="Color.Primary">
+                Money received from them
+            </MudRadio>
+            <MudRadio T="PartyMovement" Value="PartyMovement.Paid" Color="Color.Primary">
+                Money paid to them
+            </MudRadio>
+        </MudRadioGroup>
+
+        <div class="d-flex gap-3 mb-2">
+            <MudNumericField T="decimal" @bind-Value="_amount" @bind-Value:after="StateHasChanged"
+                             Label="Amount" Variant="Variant.Outlined" HideSpinButtons="true" />
+            <MudDatePicker Label="Date" Variant="Variant.Outlined"
+                           Date="_date" DateChanged="@(d => _date = d)" />
+        </div>
+
+        @if (_balance != 0)
+        {
+            <MudButton Size="Size.Small" Variant="Variant.Text" Class="mb-3"
+                       OnClick="SettleInFull">
+                Settle in full (@Math.Abs(_balance).ToString("N2"))
+            </MudButton>
+        }
+
+        @if (_amount > 0)
+        {
+            @* Shown as you type, so nobody has to work out the effect in their
+               head before pressing Post. *@
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mb-3">
+                The balance becomes <b>@Projected.ToString("N2")</b>.
+            </MudAlert>
+        }
+
+        <MudSelect T="int?" @bind-Value="_cashAccountId" Label="Through which head"
+                   Variant="Variant.Outlined" Class="mb-3"
+                   HelperText="Which cash or bank head the money moves through.">
+            @foreach (var account in _cashHeads)
+            {
+                <MudSelectItem T="int?" Value="@account.Id">@account.Code — @account.Name</MudSelectItem>
+            }
+        </MudSelect>
+
+        <MudTextField @bind-Value="_narration" Label="Narration" Variant="Variant.Outlined" />
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-3">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+
+        @* For entering a run of receipts without reopening the dialog each time. *@
+        <MudButton Variant="Variant.Text" OnClick="@(() => PostAsync(keepOpen: true))"
+                   Disabled="@Disabled">Post &amp; add another</MudButton>
+
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="@(() => PostAsync(keepOpen: false))"
+                   Disabled="@Disabled">Post</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int PartyId { get; set; }
+    [Parameter] public string PartyName { get; set; } = "";
+    [Parameter] public ThirdPartySide Side { get; set; }
+
+    private PartyMovement _direction = PartyMovement.Received;
+    private decimal _amount;
+    private decimal _balance;
+    private DateTime? _date;
+    private int? _cashAccountId;
+    private string? _narration;
+    private string? _error;
+    private bool _busy;
+
+    private IReadOnlyList<Account> _cashHeads = [];
+
+    private bool Disabled => _busy || _amount <= 0 || _cashAccountId is null;
+
+    /// <summary>
+    /// Receiving reduces a receivable and paying reduces a payable, so on both
+    /// sides the movement that settles the debt brings the figure toward nil.
+    /// </summary>
+    private decimal Projected => Side == ThirdPartySide.Receivable
+        ? _balance - (_direction == PartyMovement.Received ? _amount : -_amount)
+        : _balance - (_direction == PartyMovement.Paid ? _amount : -_amount);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _date = Clock.Today.ToDateTime(TimeOnly.MinValue);
+        _cashHeads = await Chart.PostableAsync(AccountType.Asset);
+        _balance = await Parties.BalanceAsync(PartyId);
+
+        _direction = Side == ThirdPartySide.Receivable
+            ? PartyMovement.Received
+            : PartyMovement.Paid;
+
+        // Defaults to however this party was last settled. Null for a split
+        // entry, since there is no single head worth reusing.
+        _cashAccountId = await Parties.LastCashHeadAsync(PartyId)
+                         ?? _cashHeads.FirstOrDefault()?.Id;
+    }
+
+    private void SettleInFull() => _amount = Math.Abs(_balance);
+
+    private async Task PostAsync(bool keepOpen)
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var result = await Parties.RecordAsync(
+                PartyId, _direction, _amount, _cashAccountId!.Value,
+                DateOnly.FromDateTime(_date ?? DateTime.Today), _narration);
+
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add($"Posted as {result.Value.Number}.", Severity.Success);
+
+            if (!keepOpen)
+            {
+                Dialog.Close(DialogResult.Ok(true));
+                return;
+            }
+
+            _amount = 0;
+            _narration = null;
+            _balance = await Parties.BalanceAsync(PartyId);
+        }
+        finally { _busy = false; }
+    }
+}

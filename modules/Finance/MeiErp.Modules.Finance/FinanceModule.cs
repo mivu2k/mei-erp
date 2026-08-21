@@ -19,6 +19,9 @@ public static class FinanceModule
     public const string RequestsPay = "finance.requests.pay";
     public const string ReportsView = "finance.reports.view";
     public const string YearClose = "finance.year.close";
+    public const string PartiesManage = "finance.parties.manage";
+    public const string PettyCashManage = "finance.petty-cash.manage";
+    public const string UtilitiesManage = "finance.utilities.manage";
 
     public static ModuleDescriptor Descriptor => new()
     {
@@ -41,18 +44,23 @@ public static class FinanceModule
             new(RequestsRaise,    "Payments", "Raise a payment request"),
             new(RequestsPay,      "Payments", "Pay an approved request and post its voucher"),
             new(ReportsView,      "Reports",  "See the trial balance and financial statements"),
-            new(YearClose,        "Period",   "Close a fiscal year")
+            new(YearClose,        "Period",   "Close a fiscal year"),
+            new(PartiesManage,    "Parties",  "Manage third parties and record their payments"),
+            new(PettyCashManage,  "Cash",     "Run petty cash boxes"),
+            new(UtilitiesManage,  "Cash",     "Record utility connections and their bills")
         ],
 
         RoleTemplates =
         [
             new("Accountant", "Full access to the books, short of closing the year.",
                 [AccountsView, AccountsManage, VouchersView, VouchersPost,
-                 VouchersReverse, RequestsRaise, RequestsPay, ReportsView]),
+                 VouchersReverse, RequestsRaise, RequestsPay, ReportsView,
+                 PartiesManage, PettyCashManage, UtilitiesManage]),
 
             new("Finance Manager", "Everything an accountant can do, plus closing the year.",
                 [AccountsView, AccountsManage, VouchersView, VouchersPost, VouchersReverse,
-                 RequestsRaise, RequestsPay, ReportsView, YearClose]),
+                 RequestsRaise, RequestsPay, ReportsView, YearClose,
+                 PartiesManage, PettyCashManage, UtilitiesManage]),
 
             new("Requester", "Can ask for money and follow their own requests.",
                 [RequestsRaise])
@@ -82,6 +90,9 @@ public static class FinanceModule
         services.AddScoped<IFinanceReports, FinanceReports>();
         services.AddScoped<IPaymentRequestService, PaymentRequestService>();
         services.AddScoped<IApprovalSink, PaymentRequestApprovalSink>();
+        services.AddScoped<IThirdPartyService, ThirdPartyService>();
+        services.AddScoped<IPettyCashService, PettyCashService>();
+        services.AddScoped<IUtilityService, UtilityService>();
 
         return services;
     }
