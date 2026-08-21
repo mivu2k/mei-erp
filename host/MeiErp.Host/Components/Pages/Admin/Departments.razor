@@ -1,0 +1,101 @@
+@page "/admin/departments"
+@attribute [Authorize(Policy = PlatformPermissions.DepartmentsManage)]
+@rendermode InteractiveServer
+@inject IAdminService Admin
+@inject IUserDirectory Directory
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Departments</PageTitle>
+
+<div class="d-flex align-center mb-1">
+    <div>
+        <MudText Typo="Typo.h5">Departments</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            Who heads each one decides where department-head approvals go.
+        </MudText>
+    </div>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+        New department
+    </MudButton>
+</div>
+
+<MudPaper Outlined="true" Elevation="0" Class="mt-4">
+    <MudDataGrid T="Department" Items="_rows" Dense="true" Hover="true" Elevation="0"
+                 Loading="_loading" Filterable="false">
+        <Columns>
+            <PropertyColumn Property="@(d => d.Name)" Title="Department" />
+            <PropertyColumn Property="@(d => d.Code)" Title="Code" />
+            <TemplateColumn Title="Head">
+                <CellTemplate>
+                    @if (context.Item.Head is null)
+                    {
+                        <MudTooltip Text="Department-head approvals will have nowhere to go.">
+                            <MudChip T="string" Size="Size.Small" Color="Color.Warning"
+                                     Variant="Variant.Text">not set</MudChip>
+                        </MudTooltip>
+                    }
+                    else
+                    {
+                        @context.Item.Head.FullName
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="" Sortable="false">
+                <CellTemplate>
+                    <div class="d-flex justify-end">
+                        <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small"
+                                       OnClick="@(() => Edit(context.Item))" />
+                        <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small"
+                                       Color="Color.Error" OnClick="@(() => Delete(context.Item))" />
+                    </div>
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+        <NoRecordsContent>
+            <MudText Class="pa-8 text-center mud-text-secondary">
+                No departments yet. Add one so approvals can route to its head.
+            </MudText>
+        </NoRecordsContent>
+    </MudDataGrid>
+</MudPaper>
+
+@code {
+    private IReadOnlyList<Department> _rows = [];
+    private bool _loading = true;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _rows = await Admin.DepartmentsAsync();
+        _loading = false;
+    }
+
+    private async Task Edit(Department? row)
+    {
+        var parameters = new DialogParameters<DepartmentEditor> { { x => x.Existing, row } };
+        var dialog = await Dialogs.ShowAsync<DepartmentEditor>(
+            row is null ? "New department" : "Edit department", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+
+    private async Task Delete(Department row)
+    {
+        var ok = await Dialogs.ShowMessageBox(
+            $"Delete {row.Name}?", "This cannot be undone.",
+            yesText: "Delete", cancelText: "Cancel");
+        if (ok != true) return;
+
+        var result = await Admin.DeleteDepartmentAsync(row.Id);
+        if (result.Failed) Snackbar.Add(result.Error!, Severity.Error);
+        else Snackbar.Add("Department deleted.", Severity.Success);
+
+        await LoadAsync();
+    }
+}

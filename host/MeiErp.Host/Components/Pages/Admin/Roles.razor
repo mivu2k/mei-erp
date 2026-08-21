@@ -1,0 +1,248 @@
+@page "/admin/roles"
+@attribute [Authorize(Policy = PlatformPermissions.RolesManage)]
+@rendermode InteractiveServer
+@inject IAdminService Admin
+@inject IModuleCatalog Catalog
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Roles &amp; permissions</PageTitle>
+
+<div class="d-flex align-center mb-1">
+    <div>
+        <MudText Typo="Typo.h5">Roles &amp; permissions</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            A role admits someone to a module and decides what they can do inside it.
+        </MudText>
+    </div>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add" OnClick="CreateRole">
+        New role
+    </MudButton>
+</div>
+
+<MudGrid Class="mt-2">
+    <MudItem xs="12" md="4">
+        <MudPaper Outlined="true" Elevation="0">
+            <MudList T="string" ReadOnly="false">
+                @foreach (var group in _roles.GroupBy(r => r.ModuleKey))
+                {
+                    <MudListSubheader>
+                        @(group.Key is null ? "Platform" : ModuleName(group.Key))
+                    </MudListSubheader>
+
+                    @foreach (var role in group)
+                    {
+                        <MudListItem T="string" OnClick="@(() => SelectAsync(role))"
+                                     Class="@(role.Id == _selected?.Id ? "mud-selected-item" : "")">
+                            <div class="d-flex align-center">
+                                <div class="flex-grow-1">
+                                    <MudText Typo="Typo.body2"><b>@role.Name</b></MudText>
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                        @role.MemberCount @(role.MemberCount == 1 ? "person" : "people")
+                                        · @role.PermissionCount @(role.PermissionCount == 1 ? "permission" : "permissions")
+                                    </MudText>
+                                </div>
+                                @if (role.IsSystemRole)
+                                {
+                                    <MudTooltip Text="Ships with its module and cannot be deleted.">
+                                        <MudIcon Icon="@Icons.Material.Outlined.Lock" Size="Size.Small"
+                                                 Class="mud-text-secondary" />
+                                    </MudTooltip>
+                                }
+                            </div>
+                        </MudListItem>
+                    }
+                }
+            </MudList>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="8">
+        @if (_selected is null)
+        {
+            <MudPaper Outlined="true" Elevation="0" Class="pa-12 text-center">
+                <MudText Class="mud-text-secondary">Pick a role to see what it can do.</MudText>
+            </MudPaper>
+        }
+        else if (_selected.Name == PlatformPermissions.SuperAdminRole)
+        {
+            <MudPaper Outlined="true" Elevation="0" Class="pa-8">
+                <MudText Typo="Typo.h6">@_selected.Name</MudText>
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-4">
+                    Super Admin holds every permission implicitly, including ones added by modules
+                    installed later. That is why it has no checkboxes - there is nothing to keep
+                    in step.
+                </MudAlert>
+            </MudPaper>
+        }
+        else
+        {
+            <MudPaper Outlined="true" Elevation="0">
+                <div class="d-flex align-center pa-4">
+                    <div>
+                        <MudText Typo="Typo.h6">@_selected.Name</MudText>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                            @(_selected.Description ?? "No description.")
+                        </MudText>
+                    </div>
+                    <MudSpacer />
+                    @if (!_selected.IsSystemRole)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Outlined.Delete" Color="Color.Error"
+                                       OnClick="DeleteRole" />
+                    }
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="ml-2"
+                               OnClick="SavePermissions" Disabled="!_dirty || _busy">
+                        @(_busy ? "Saving…" : "Save")
+                    </MudButton>
+                </div>
+
+                <MudDivider />
+
+                @* The matrix. The previous platform edited role claims one at a
+                   time, which does not scale past a couple of dozen permissions
+                   - and it already had more than that. *@
+                <div class="pa-4">
+                    @foreach (var group in AllPermissions.GroupBy(p => GroupOf(p)))
+                    {
+                        <div class="d-flex align-center mt-4 mb-1">
+                            <MudText Typo="Typo.overline" Class="mud-text-secondary">
+                                @group.Key
+                            </MudText>
+                            <MudSpacer />
+                            <MudButton Size="Size.Small" Variant="Variant.Text"
+                                       OnClick="@(() => ToggleGroup(group.ToList()))">
+                                @(group.All(p => _permissions.Contains(p.Key)) ? "Clear all" : "Select all")
+                            </MudButton>
+                        </div>
+                        <MudDivider Class="mb-2" />
+
+                        @foreach (var permission in group)
+                        {
+                            <MudCheckBox T="bool" Dense="true" Color="Color.Primary"
+                                         Value="@_permissions.Contains(permission.Key)"
+                                         ValueChanged="@(v => TogglePermission(permission.Key, v))">
+                                <MudText Typo="Typo.body2">@permission.Description</MudText>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">
+                                    <code>@permission.Key</code>
+                                </MudText>
+                            </MudCheckBox>
+                        }
+                    }
+                </div>
+            </MudPaper>
+        }
+    </MudItem>
+</MudGrid>
+
+@code {
+    private IReadOnlyList<RoleRow> _roles = [];
+    private RoleRow? _selected;
+    private readonly HashSet<string> _permissions = new(StringComparer.Ordinal);
+    private bool _dirty;
+    private bool _busy;
+
+    /// <summary>Platform permissions plus everything the loaded modules declare.</summary>
+    private IEnumerable<PermissionDescriptor> AllPermissions =>
+        PlatformPermissions.All.Concat(Catalog.AllPermissions);
+
+    private string ModuleName(string key) => Catalog.Find(key)?.Name ?? key;
+
+    private static string GroupOf(PermissionDescriptor p) => p.Group;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _roles = await Admin.RolesAsync();
+
+        // Keep the selection across a reload so saving does not bounce the user
+        // back to an empty pane.
+        if (_selected is not null)
+            _selected = _roles.FirstOrDefault(r => r.Id == _selected.Id);
+    }
+
+    private async Task SelectAsync(RoleRow role)
+    {
+        _selected = role;
+        _permissions.Clear();
+        foreach (var p in await Admin.RolePermissionsAsync(role.Id))
+            _permissions.Add(p);
+        _dirty = false;
+    }
+
+    private void TogglePermission(string key, bool on)
+    {
+        if (on) _permissions.Add(key); else _permissions.Remove(key);
+        _dirty = true;
+    }
+
+    private void ToggleGroup(List<PermissionDescriptor> group)
+    {
+        var allOn = group.All(p => _permissions.Contains(p.Key));
+        foreach (var p in group)
+        {
+            if (allOn) _permissions.Remove(p.Key); else _permissions.Add(p.Key);
+        }
+        _dirty = true;
+    }
+
+    private async Task SavePermissions()
+    {
+        if (_selected is null) return;
+
+        _busy = true;
+        try
+        {
+            var result = await Admin.SetRolePermissionsAsync(_selected.Id, [.. _permissions]);
+
+            if (result.Failed)
+            {
+                Snackbar.Add(result.Error!, Severity.Error);
+                return;
+            }
+
+            Snackbar.Add(
+                $"Saved. Anyone holding {_selected.Name} picks this up within two minutes.",
+                Severity.Success);
+
+            _dirty = false;
+            await LoadAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task CreateRole()
+    {
+        var dialog = await Dialogs.ShowAsync<RoleEditor>("New role",
+            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+
+    private async Task DeleteRole()
+    {
+        if (_selected is null) return;
+
+        var ok = await Dialogs.ShowMessageBox(
+            $"Delete {_selected.Name}?",
+            "This cannot be undone.",
+            yesText: "Delete", cancelText: "Cancel");
+
+        if (ok != true) return;
+
+        var result = await Admin.DeleteRoleAsync(_selected.Id);
+
+        if (result.Failed)
+        {
+            Snackbar.Add(result.Error!, Severity.Error);
+            return;
+        }
+
+        Snackbar.Add("Role deleted.", Severity.Success);
+        _selected = null;
+        await LoadAsync();
+    }
+}

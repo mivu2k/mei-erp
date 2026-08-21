@@ -1,0 +1,153 @@
+@inject IAdminService Admin
+@inject IUserDirectory Directory
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <MudTextField @bind-Value="_fullName" Label="Full name" Required="true"
+                          RequiredError="Enter their name." Variant="Variant.Outlined"
+                          Class="mb-4" />
+
+            <MudTextField @bind-Value="_email" Label="Email" Required="true"
+                          InputType="InputType.Email" Variant="Variant.Outlined"
+                          RequiredError="Enter an email - it is also their username."
+                          Class="mb-4" />
+
+            <div class="d-flex gap-3 mb-4">
+                <MudTextField @bind-Value="_employeeCode" Label="Staff number"
+                              Variant="Variant.Outlined" />
+                <MudTextField @bind-Value="_designation" Label="Designation"
+                              Variant="Variant.Outlined" />
+            </div>
+
+            <MudSelect T="string" @bind-Value="_departmentId" Label="Department"
+                       Variant="Variant.Outlined" Clearable="true" Class="mb-4">
+                @foreach (var d in _departments)
+                {
+                    <MudSelectItem T="string" Value="@d.Id">@d.Name</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudSelect T="string" @bind-Value="_lineManagerId" Label="Reports to"
+                       Variant="Variant.Outlined" Clearable="true"
+                       HelperText="Approvals routed to a line manager go to this person.">
+                @foreach (var u in _people.Where(p => p.Id != UserId))
+                {
+                    <MudSelectItem T="string" Value="@u.Id">@u.FullName</MudSelectItem>
+                }
+            </MudSelect>
+
+            @if (IsNew)
+            {
+                <MudDivider Class="my-5" />
+
+                <MudTextField @bind-Value="_password" Label="Temporary password"
+                              InputType="InputType.Password" Required="true"
+                              Validation="ValidatePassword" Variant="Variant.Outlined"
+                              HelperText="They must change it the first time they sign in." />
+            }
+        </MudForm>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">
+                @_error
+            </MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveAsync" Disabled="_busy">
+            @(_busy ? "Saving…" : IsNew ? "Create user" : "Save")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public string? UserId { get; set; }
+
+    private MudForm? _form;
+    private string _fullName = "";
+    private string _email = "";
+    private string? _employeeCode;
+    private string? _designation;
+    private string? _departmentId;
+    private string? _lineManagerId;
+    private string _password = "";
+    private string? _error;
+    private bool _busy;
+
+    private IReadOnlyList<Department> _departments = [];
+    private IReadOnlyList<UserSummary> _people = [];
+
+    private bool IsNew => UserId is null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _departments = await Admin.DepartmentsAsync();
+        _people = await Directory.SearchAsync(null, take: 500);
+
+        if (UserId is null) return;
+
+        var detail = await Admin.UserAsync(UserId);
+        if (detail is null) return;
+
+        _fullName = detail.FullName;
+        _email = detail.Email ?? "";
+        _employeeCode = detail.EmployeeCode;
+        _designation = detail.Designation;
+        _departmentId = detail.DepartmentId;
+        _lineManagerId = detail.LineManagerId;
+    }
+
+    private static string? ValidatePassword(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return "Set a temporary password.";
+        if (value.Length < 10) return "At least 10 characters.";
+        if (!value.Any(char.IsUpper)) return "Include a capital letter.";
+        if (!value.Any(char.IsDigit)) return "Include a digit.";
+        return null;
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+
+        if (_form is not null)
+        {
+            await _form.Validate();
+            if (!_form.IsValid) return;
+        }
+
+        _busy = true;
+        try
+        {
+            var input = new UserInput(
+                _fullName.Trim(), _email.Trim(), _employeeCode, _designation,
+                _departmentId, _lineManagerId);
+
+            var result = IsNew
+                ? (await Admin.CreateUserAsync(input, _password)).AsResult()
+                : await Admin.UpdateUserAsync(UserId!, input);
+
+            if (result.Failed)
+            {
+                _error = result.Error;
+                return;
+            }
+
+            Snackbar.Add(IsNew ? $"{_fullName} can now sign in." : "Saved.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void Cancel() => Dialog.Cancel();
+}

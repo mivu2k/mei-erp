@@ -1,0 +1,86 @@
+@inject IAdminService Admin
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+            A role admits @UserName to a module <i>and</i> decides what they can do inside it.
+            Changes take effect within two minutes.
+        </MudText>
+
+        @foreach (var group in _roles.GroupBy(r => r.ModuleKey))
+        {
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">
+                @(group.Key is null ? "Platform" : group.Key)
+            </MudText>
+
+            @foreach (var role in group)
+            {
+                <MudCheckBox T="bool"
+                             Value="@_selected.Contains(role.Name)"
+                             ValueChanged="@(v => Toggle(role.Name, v))"
+                             Color="Color.Primary" Dense="true">
+                    <MudText Typo="Typo.body2"><b>@role.Name</b></MudText>
+                    @if (role.Description is not null)
+                    {
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">
+                            @role.Description
+                        </MudText>
+                    }
+                </MudCheckBox>
+            }
+            <MudDivider Class="my-3" />
+        }
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public string UserId { get; set; } = "";
+    [Parameter] public string UserName { get; set; } = "";
+
+    private IReadOnlyList<RoleRow> _roles = [];
+    private readonly HashSet<string> _selected = new(StringComparer.Ordinal);
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _roles = await Admin.RolesAsync();
+
+        var detail = await Admin.UserAsync(UserId);
+        foreach (var role in detail?.Roles ?? [])
+            _selected.Add(role);
+    }
+
+    private void Toggle(string role, bool on)
+    {
+        if (on) _selected.Add(role); else _selected.Remove(role);
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var result = await Admin.SetRolesAsync(UserId, [.. _selected]);
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Roles updated.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

@@ -1,0 +1,103 @@
+@inject IAdminService Admin
+@inject IUserDirectory Directory
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <MudTextField @bind-Value="_name" Label="Name" Required="true"
+                          RequiredError="Give the department a name."
+                          Variant="Variant.Outlined" Class="mb-4" />
+
+            <MudTextField @bind-Value="_code" Label="Code" Variant="Variant.Outlined"
+                          Class="mb-4" HelperText="Short form used on reports, e.g. FIN." />
+
+            <MudSelect T="string" @bind-Value="_headUserId" Label="Head of department"
+                       Variant="Variant.Outlined" Clearable="true" Class="mb-4"
+                       HelperText="Approvals routed to a department head go to this person.">
+                @foreach (var p in _people)
+                {
+                    <MudSelectItem T="string" Value="@p.Id">@p.FullName</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudSelect T="string" @bind-Value="_parentId" Label="Sits inside"
+                       Variant="Variant.Outlined" Clearable="true">
+                @foreach (var d in _departments.Where(d => d.Id != _id))
+                {
+                    <MudSelectItem T="string" Value="@d.Id">@d.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudForm>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public Department? Existing { get; set; }
+
+    private MudForm? _form;
+    private string _id = "";
+    private string _name = "";
+    private string? _code;
+    private string? _headUserId;
+    private string? _parentId;
+    private string? _error;
+    private bool _busy;
+
+    private IReadOnlyList<UserSummary> _people = [];
+    private IReadOnlyList<Department> _departments = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _people = await Directory.SearchAsync(null, take: 500);
+        _departments = await Admin.DepartmentsAsync();
+
+        _id = Existing?.Id ?? Guid.NewGuid().ToString();
+        _name = Existing?.Name ?? "";
+        _code = Existing?.Code;
+        _headUserId = Existing?.HeadUserId;
+        _parentId = Existing?.ParentId;
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        if (_form is not null)
+        {
+            await _form.Validate();
+            if (!_form.IsValid) return;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await Admin.SaveDepartmentAsync(new Department
+            {
+                Id = _id,
+                Name = _name.Trim(),
+                Code = _code,
+                HeadUserId = string.IsNullOrWhiteSpace(_headUserId) ? null : _headUserId,
+                ParentId = string.IsNullOrWhiteSpace(_parentId) ? null : _parentId,
+                IsActive = true
+            });
+
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Saved.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

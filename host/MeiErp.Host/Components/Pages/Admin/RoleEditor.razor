@@ -1,0 +1,71 @@
+@inject IAdminService Admin
+@inject IModuleCatalog Catalog
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <MudTextField @bind-Value="_name" Label="Role name" Required="true"
+                          RequiredError="Give the role a name."
+                          HelperText="What the job is called, e.g. Storekeeper."
+                          Variant="Variant.Outlined" Class="mb-4" />
+
+            <MudSelect T="string" @bind-Value="_moduleKey" Label="Scope"
+                       Variant="Variant.Outlined" Clearable="true" Class="mb-4"
+                       HelperText="A module-scoped role also admits its holders to that module.">
+                <MudSelectItem T="string" Value="@((string?)null)">Platform-wide</MudSelectItem>
+                @foreach (var m in Catalog.All)
+                {
+                    <MudSelectItem T="string" Value="@m.Key">@m.Name</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudTextField @bind-Value="_description" Label="Description"
+                          Variant="Variant.Outlined" Lines="2"
+                          HelperText="Written for whoever administers roles later." />
+        </MudForm>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveAsync" Disabled="_busy">Create role</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+
+    private MudForm? _form;
+    private string _name = "";
+    private string? _moduleKey;
+    private string? _description;
+    private string? _error;
+    private bool _busy;
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        if (_form is not null)
+        {
+            await _form.Validate();
+            if (!_form.IsValid) return;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await Admin.CreateRoleAsync(_name.Trim(), _moduleKey, _description);
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add($"{_name} created. Now choose what it can do.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

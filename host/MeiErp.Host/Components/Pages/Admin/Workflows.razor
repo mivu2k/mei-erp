@@ -1,0 +1,245 @@
+@page "/admin/workflows"
+@attribute [Authorize(Policy = PlatformPermissions.WorkflowsManage)]
+@rendermode InteractiveServer
+@inject IWorkflowAdminService Designer
+@inject IModuleCatalog Catalog
+@inject ISnackbar Snackbar
+
+<PageTitle>Approval workflows</PageTitle>
+
+<MudText Typo="Typo.h5">Approval workflows</MudText>
+<MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+    Who signs off what, and at which amounts. Changing a workflow never disturbs
+    requests already in flight - they keep running the revision they started on.
+</MudText>
+
+@if (_list.Count == 0)
+{
+    <MudPaper Outlined="true" Elevation="0" Class="pa-12 text-center">
+        <MudIcon Icon="@Icons.Material.Outlined.AltRoute" Size="Size.Large" Class="mud-text-secondary" />
+        <MudText Typo="Typo.h6" Class="mt-3">No workflows yet</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">
+            A workflow is created automatically for each document type a module declares.
+            Install a business module and they will appear here.
+        </MudText>
+    </MudPaper>
+}
+else
+{
+    <MudGrid>
+        <MudItem xs="12" md="4">
+            <MudPaper Outlined="true" Elevation="0">
+                <MudList T="string">
+                    @foreach (var w in _list)
+                    {
+                        <MudListItem T="string" OnClick="@(() => SelectAsync(w.Id))"
+                                     Class="@(w.Id == _current?.Id ? "mud-selected-item" : "")">
+                            <MudText Typo="Typo.body2"><b>@w.DocumentName</b></MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                @w.StepCount @(w.StepCount == 1 ? "step" : "steps")
+                                · revision @w.Revision
+                                @if (w.OpenRequests > 0)
+                                {
+                                    <text> · @w.OpenRequests in flight</text>
+                                }
+                            </MudText>
+                        </MudListItem>
+                    }
+                </MudList>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="8">
+            @if (_current is null)
+            {
+                <MudPaper Outlined="true" Elevation="0" Class="pa-12 text-center">
+                    <MudText Class="mud-text-secondary">Pick a workflow to edit it.</MudText>
+                </MudPaper>
+            }
+            else
+            {
+                <MudPaper Outlined="true" Elevation="0" Class="pa-4">
+                    <MudTextField @bind-Value="_current.Name" Label="Workflow name"
+                                  Variant="Variant.Outlined" Class="mb-4" />
+
+                    <MudSwitch T="bool" @bind-Value="_current.BlockSelfApproval" Color="Color.Primary"
+                               Label="The person who raises it can never approve it" />
+                    <MudSwitch T="bool" @bind-Value="_current.RequireDistinctApprovers" Color="Color.Primary"
+                               Label="A different person must sign at each level" />
+
+                    <MudDivider Class="my-4" />
+
+                    <div class="d-flex align-center mb-2">
+                        <MudText Typo="Typo.subtitle1">Steps</MudText>
+                        <MudSpacer />
+                        <MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+                                   OnClick="AddStep">Add step</MudButton>
+                    </div>
+
+                    @foreach (var step in _current.Steps.OrderBy(s => s.Order).ToList())
+                    {
+                        <MudPaper Outlined="true" Elevation="0" Class="pa-3 mb-3">
+                            <div class="d-flex align-center mb-3">
+                                <MudChip T="string" Size="Size.Small" Color="Color.Primary">
+                                    @step.Order
+                                </MudChip>
+                                <MudTextField @bind-Value="step.Name" Label="Step name"
+                                              Variant="Variant.Text" Margin="Margin.Dense"
+                                              Class="ml-3 mt-0" />
+                                <MudSpacer />
+                                <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small"
+                                               Color="Color.Error"
+                                               OnClick="@(() => RemoveStep(step))" />
+                            </div>
+
+                            <div class="d-flex gap-3 mb-3">
+                                <MudSelect T="ApproverRule" @bind-Value="step.Rule" Label="Approved by"
+                                           Variant="Variant.Outlined" Margin="Margin.Dense">
+                                    <MudSelectItem Value="ApproverRule.LineManager">The raiser's line manager</MudSelectItem>
+                                    <MudSelectItem Value="ApproverRule.DepartmentHead">Their department head</MudSelectItem>
+                                    <MudSelectItem Value="ApproverRule.Role">Anyone with a role</MudSelectItem>
+                                    <MudSelectItem Value="ApproverRule.Permission">Anyone with a permission</MudSelectItem>
+                                    <MudSelectItem Value="ApproverRule.User">One named person</MudSelectItem>
+                                </MudSelect>
+
+                                @if (NeedsValue(step.Rule))
+                                {
+                                    <MudTextField @bind-Value="step.RuleValue"
+                                                  Label="@(step.Rule == ApproverRule.Role ? "Role name" : step.Rule == ApproverRule.Permission ? "Permission key" : "User id")"
+                                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+                                }
+                            </div>
+
+                            <div class="d-flex gap-3 mb-3">
+                                <MudNumericField T="decimal?" @bind-Value="step.MinAmount"
+                                                 Label="From amount" Variant="Variant.Outlined"
+                                                 Margin="Margin.Dense" Clearable="true"
+                                                 HelperText="Blank means no lower limit." />
+                                <MudNumericField T="decimal?" @bind-Value="step.MaxAmount"
+                                                 Label="Up to (excluding)" Variant="Variant.Outlined"
+                                                 Margin="Margin.Dense" Clearable="true"
+                                                 HelperText="Blank means no upper limit." />
+                            </div>
+
+                            <div class="d-flex gap-3">
+                                <MudNumericField T="int?" @bind-Value="step.ReminderAfterHours"
+                                                 Label="Remind after (hours)" Variant="Variant.Outlined"
+                                                 Margin="Margin.Dense" Clearable="true" />
+                                <MudNumericField T="int?" @bind-Value="step.EscalateAfterHours"
+                                                 Label="Escalate after (hours)" Variant="Variant.Outlined"
+                                                 Margin="Margin.Dense" Clearable="true" />
+                                <MudSelect T="StepQuorum" @bind-Value="step.Quorum" Label="Signatures"
+                                           Variant="Variant.Outlined" Margin="Margin.Dense">
+                                    <MudSelectItem Value="StepQuorum.Any">Any one approver</MudSelectItem>
+                                    <MudSelectItem Value="StepQuorum.All">Every approver</MudSelectItem>
+                                </MudSelect>
+                            </div>
+                        </MudPaper>
+                    }
+
+                    @if (_problems.Count > 0)
+                    {
+                        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mt-3">
+                            @foreach (var p in _problems)
+                            {
+                                <div>@p</div>
+                            }
+                        </MudAlert>
+                    }
+
+                    <div class="d-flex gap-2 mt-4">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                   OnClick="SaveAsync" Disabled="_busy">
+                            @(_busy ? "Saving…" : "Save workflow")
+                        </MudButton>
+                        <MudButton Variant="Variant.Text" OnClick="CheckAsync">Check for problems</MudButton>
+                    </div>
+                </MudPaper>
+            }
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    private IReadOnlyList<WorkflowSummary> _list = [];
+    private WorkflowDefinition? _current;
+    private List<string> _problems = [];
+    private bool _busy;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync() => _list = await Designer.ListAsync();
+
+    private static bool NeedsValue(ApproverRule rule) =>
+        rule is ApproverRule.Role or ApproverRule.Permission or ApproverRule.User;
+
+    private async Task SelectAsync(int id)
+    {
+        _current = await Designer.GetAsync(id);
+        _problems = [];
+    }
+
+    private void AddStep()
+    {
+        if (_current is null) return;
+
+        var next = _current.Steps.Count == 0 ? 1 : _current.Steps.Max(s => s.Order) + 1;
+        _current.Steps.Add(new WorkflowStep
+        {
+            Order = next,
+            Name = $"Step {next}",
+            Rule = ApproverRule.LineManager,
+            Quorum = StepQuorum.Any,
+            AllowReturn = true
+        });
+    }
+
+    private void RemoveStep(WorkflowStep step)
+    {
+        if (_current is null) return;
+
+        _current.Steps.Remove(step);
+
+        // Close the gap so positions stay 1..n; a hole would make the numbering
+        // on the document's history read as if a step had been skipped.
+        var order = 1;
+        foreach (var s in _current.Steps.OrderBy(s => s.Order))
+            s.Order = order++;
+    }
+
+    private Task CheckAsync()
+    {
+        if (_current is null) return Task.CompletedTask;
+
+        _problems = [.. Designer.Validate(_current)];
+
+        if (_problems.Count == 0)
+            Snackbar.Add("No problems found.", Severity.Success);
+
+        return Task.CompletedTask;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_current is null) return;
+
+        _busy = true;
+        try
+        {
+            var result = await Designer.SaveAsync(_current);
+
+            if (result.Failed)
+            {
+                _problems = [.. Designer.Validate(_current)];
+                Snackbar.Add(result.Error!, Severity.Error);
+                return;
+            }
+
+            _problems = [];
+            Snackbar.Add("Workflow saved.", Severity.Success);
+            await LoadAsync();
+            await SelectAsync(result.Value);
+        }
+        finally { _busy = false; }
+    }
+}

@@ -1,0 +1,218 @@
+@page "/admin/users"
+@attribute [Authorize(Policy = PlatformPermissions.UsersManage)]
+@rendermode InteractiveServer
+@inject IAdminService Admin
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Users</PageTitle>
+
+<div class="d-flex align-center mb-1">
+    <div>
+        <MudText Typo="Typo.h5">Users</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            Who can sign in, what they can do, and who they report to.
+        </MudText>
+    </div>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.PersonAdd" OnClick="@(() => OpenEditor(null))">
+        New user
+    </MudButton>
+</div>
+
+<MudPaper Outlined="true" Elevation="0" Class="mt-4">
+    <MudToolBar Dense="true">
+        <MudTextField @bind-Value="_search" @bind-Value:after="LoadAsync"
+                      Placeholder="Search name, email or staff number"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                      Immediate="false" DebounceInterval="300" Variant="Variant.Text"
+                      Margin="Margin.Dense" Class="mt-0" />
+        <MudSpacer />
+        <MudSwitch T="bool" @bind-Value="_includeInactive" @bind-Value:after="LoadAsync"
+                   Color="Color.Primary" Label="Show deactivated" />
+    </MudToolBar>
+
+    <MudDataGrid T="UserRow" Items="_rows" Loading="_loading" Dense="true"
+                 Hover="true" Striped="false" Elevation="0"
+                 RowsPerPage="25" Filterable="false" SortMode="SortMode.Single">
+        <Columns>
+            <TemplateColumn Title="Name" Sortable="true" SortBy="@(u => u.FullName)">
+                <CellTemplate>
+                    <div class="d-flex align-center gap-3">
+                        <MudAvatar Size="Size.Small" Color="Color.Primary" Variant="Variant.Filled">
+                            @Initials(context.Item.FullName)
+                        </MudAvatar>
+                        <div>
+                            <MudText Typo="Typo.body2">
+                                <b>@context.Item.FullName</b>
+                                @if (!context.Item.IsActive)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Default"
+                                             Variant="Variant.Outlined" Class="ml-2">deactivated</MudChip>
+                                }
+                                @if (context.Item.LockedOut)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Warning"
+                                             Variant="Variant.Outlined" Class="ml-2">locked</MudChip>
+                                }
+                            </MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                @context.Item.Email
+                            </MudText>
+                        </div>
+                    </div>
+                </CellTemplate>
+            </TemplateColumn>
+
+            <PropertyColumn Property="@(u => u.Designation)" Title="Designation" />
+            <PropertyColumn Property="@(u => u.DepartmentName)" Title="Department" />
+
+            <TemplateColumn Title="Reports to">
+                <CellTemplate>
+                    @if (context.Item.LineManagerName is null)
+                    {
+                        @* This is not cosmetic: line-manager routing is the
+                           default approval rule, and it has nowhere to go
+                           without one. *@
+                        <MudTooltip Text="Approvals routed to a line manager will have nowhere to go.">
+                            <MudChip T="string" Size="Size.Small" Color="Color.Warning"
+                                     Variant="Variant.Text" Icon="@Icons.Material.Outlined.Warning">
+                                not set
+                            </MudChip>
+                        </MudTooltip>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2">@context.Item.LineManagerName</MudText>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+
+            <TemplateColumn Title="Roles">
+                <CellTemplate>
+                    @if (context.Item.Roles.Count == 0)
+                    {
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">none</MudText>
+                    }
+                    else
+                    {
+                        @foreach (var role in context.Item.Roles)
+                        {
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                     Color="@(role == PlatformPermissions.SuperAdminRole ? Color.Secondary : Color.Default)">
+                                @role
+                            </MudChip>
+                        }
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+
+            <TemplateColumn Title="" Sortable="false">
+                <CellTemplate>
+                    <div class="d-flex justify-end">
+                        <MudMenu Icon="@Icons.Material.Filled.MoreVert" Dense="true"
+                                 AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                            <MudMenuItem Icon="@Icons.Material.Outlined.Edit"
+                                         OnClick="@(() => OpenEditor(context.Item))">Edit</MudMenuItem>
+                            <MudMenuItem Icon="@Icons.Material.Outlined.Badge"
+                                         OnClick="@(() => OpenRoles(context.Item))">Roles</MudMenuItem>
+                            <MudMenuItem Icon="@Icons.Material.Outlined.Key"
+                                         OnClick="@(() => ResetPassword(context.Item))">Reset password</MudMenuItem>
+                            <MudDivider />
+                            <MudMenuItem Icon="@(context.Item.IsActive ? Icons.Material.Outlined.Block : Icons.Material.Outlined.CheckCircle)"
+                                         OnClick="@(() => ToggleActive(context.Item))">
+                                @(context.Item.IsActive ? "Deactivate" : "Reactivate")
+                            </MudMenuItem>
+                        </MudMenu>
+                    </div>
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+
+        <NoRecordsContent>
+            <MudText Class="pa-8 text-center mud-text-secondary">
+                No users match that search.
+            </MudText>
+        </NoRecordsContent>
+    </MudDataGrid>
+</MudPaper>
+
+@code {
+    private IReadOnlyList<UserRow> _rows = [];
+    private string? _search;
+    private bool _includeInactive;
+    private bool _loading = true;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _rows = await Admin.UsersAsync(_search, _includeInactive);
+        _loading = false;
+    }
+
+    private static string Initials(string name) =>
+        string.Concat(name.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                          .Take(2).Select(w => char.ToUpperInvariant(w[0])));
+
+    private async Task OpenEditor(UserRow? row)
+    {
+        var parameters = new DialogParameters<UserEditor> { { x => x.UserId, row?.Id } };
+        var dialog = await Dialogs.ShowAsync<UserEditor>(
+            row is null ? "New user" : "Edit user", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+
+    private async Task OpenRoles(UserRow row)
+    {
+        var parameters = new DialogParameters<UserRoles>
+        {
+            { x => x.UserId, row.Id },
+            { x => x.UserName, row.FullName }
+        };
+        var dialog = await Dialogs.ShowAsync<UserRoles>("Roles", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+
+    private async Task ResetPassword(UserRow row)
+    {
+        var parameters = new DialogParameters<PasswordReset>
+        {
+            { x => x.UserId, row.Id },
+            { x => x.UserName, row.FullName }
+        };
+        var dialog = await Dialogs.ShowAsync<PasswordReset>("Reset password", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+
+    private async Task ToggleActive(UserRow row)
+    {
+        if (row.IsActive)
+        {
+            var ok = await Dialogs.ShowMessageBox(
+                "Deactivate this user?",
+                $"{row.FullName} will be signed out and will not be able to sign in again. " +
+                "Their history and approvals are kept.",
+                yesText: "Deactivate", cancelText: "Cancel");
+
+            if (ok != true) return;
+        }
+
+        var result = await Admin.SetActiveAsync(row.Id, !row.IsActive);
+
+        if (result.Failed)
+            Snackbar.Add(result.Error!, Severity.Error);
+        else
+            Snackbar.Add(row.IsActive ? "User deactivated." : "User reactivated.", Severity.Success);
+
+        await LoadAsync();
+    }
+}

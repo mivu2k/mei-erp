@@ -103,6 +103,8 @@ builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
 builder.Services.AddScoped<IModuleAccessService, ModuleAccessService>();
 builder.Services.AddScoped<IUserDirectory, UserDirectory>();
 builder.Services.AddScoped<ICompanyProfileService, CompanyProfileService>();
+builder.Services.AddScoped<IAdminService, AdminService>();
+builder.Services.AddScoped<IWorkflowAdminService, WorkflowAdminService>();
 builder.Services.AddScoped<PlatformSeeder>();
 builder.Services.AddHttpContextAccessor();
 
