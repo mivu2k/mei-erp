@@ -1,0 +1,129 @@
+@page "/hr"
+@page "/hr/employees"
+@attribute [Authorize(Policy = HrModule.EmployeesView)]
+@rendermode InteractiveServer
+@inject IEmployeeService Staff
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Employees</PageTitle>
+
+<div class="d-flex align-center mb-1">
+    <div>
+        <MudText Typo="Typo.h5">Employees</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            Staff records. An employee is separate from a login - plenty of staff never sign in.
+        </MudText>
+    </div>
+    <MudSpacer />
+    <AuthorizeView Policy="@HrModule.EmployeesManage">
+        <Authorized>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.PersonAdd" OnClick="@(() => Edit(null))">
+                New employee
+            </MudButton>
+        </Authorized>
+    </AuthorizeView>
+</div>
+
+<MudPaper Outlined="true" Elevation="0" Class="mt-4">
+    <MudToolBar Dense="true">
+        <MudTextField @bind-Value="_search" @bind-Value:after="LoadAsync"
+                      Placeholder="Search name, staff number or designation"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                      DebounceInterval="300" Variant="Variant.Text" Margin="Margin.Dense" Class="mt-0" />
+        <MudSpacer />
+        <MudSwitch T="bool" @bind-Value="_includeLeavers" @bind-Value:after="LoadAsync"
+                   Color="Color.Primary" Label="Include leavers" />
+    </MudToolBar>
+
+    <MudDataGrid T="Employee" Items="_rows" Dense="true" Hover="true" Elevation="0"
+                 Loading="_loading" Filterable="false" RowsPerPage="25">
+        <Columns>
+            <PropertyColumn Property="@(e => e.Code)" Title="Staff no." />
+            <TemplateColumn Title="Name" SortBy="@(e => e.FullName)">
+                <CellTemplate>
+                    <MudText Typo="Typo.body2"><b>@context.Item.FullName</b></MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        @context.Item.Designation
+                    </MudText>
+                </CellTemplate>
+            </TemplateColumn>
+            <PropertyColumn Property="@(e => e.DepartmentName)" Title="Department" />
+            <TemplateColumn Title="Joined">
+                <CellTemplate>@context.Item.JoinedOn.ToString("d MMM yyyy")</CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Status">
+                <CellTemplate>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                             Color="@StatusColour(context.Item.Status)">
+                        @context.Item.Status
+                    </MudChip>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Login">
+                <CellTemplate>
+                    @if (context.Item.UserId is null)
+                    {
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">no account</MudText>
+                    }
+                    else
+                    {
+                        <MudIcon Icon="@Icons.Material.Outlined.CheckCircle" Size="Size.Small" Color="Color.Success" />
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="" Sortable="false">
+                <CellTemplate>
+                    <AuthorizeView Policy="@HrModule.EmployeesManage" Context="perms">
+                        <Authorized>
+                            <div class="d-flex justify-end">
+                                <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small"
+                                               OnClick="@(() => Edit(context.Item))" />
+                            </div>
+                        </Authorized>
+                    </AuthorizeView>
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+        <NoRecordsContent>
+            <MudText Class="pa-8 text-center mud-text-secondary">
+                No employees yet. Add one to get started.
+            </MudText>
+        </NoRecordsContent>
+    </MudDataGrid>
+</MudPaper>
+
+@code {
+    private IReadOnlyList<Employee> _rows = [];
+    private string? _search;
+    private bool _includeLeavers;
+    private bool _loading = true;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _rows = await Staff.ListAsync(_search, _includeLeavers);
+        _loading = false;
+    }
+
+    private static Color StatusColour(EmploymentStatus status) => status switch
+    {
+        EmploymentStatus.Active => Color.Success,
+        EmploymentStatus.OnLeave => Color.Info,
+        EmploymentStatus.Suspended => Color.Warning,
+        _ => Color.Default
+    };
+
+    private async Task Edit(Employee? row)
+    {
+        var parameters = new DialogParameters<EmployeeEditor> { { x => x.EmployeeId, row?.Id } };
+        var dialog = await Dialogs.ShowAsync<EmployeeEditor>(
+            row is null ? "New employee" : "Edit employee", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+}

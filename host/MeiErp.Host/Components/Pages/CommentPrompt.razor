@@ -1,0 +1,22 @@
+<MudDialog>
+    <DialogContent>
+        <MudTextField @bind-Value="_text" Label="@Prompt" Lines="3" Variant="Variant.Outlined"
+                      Immediate="true" AutoFocus="true" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   Disabled="@string.IsNullOrWhiteSpace(_text)"
+                   OnClick="@(() => Dialog.Close(DialogResult.Ok(_text)))">
+            @Title
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public string Title { get; set; } = "Confirm";
+    [Parameter] public string Prompt { get; set; } = "Comment";
+
+    private string _text = "";
+}

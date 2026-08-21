@@ -1,17 +1,146 @@
 @page "/approvals"
 @attribute [Authorize]
+@rendermode InteractiveServer
+@inject IApprovalEngine Engine
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
 
 <PageTitle>My approvals</PageTitle>
 
-<MudText Typo="Typo.h5" Class="mb-1">My approvals</MudText>
-<MudText Typo="Typo.body2" Class="mud-text-secondary mb-6">
-    Everything waiting on you, across every module.
+<MudText Typo="Typo.h5">My approvals</MudText>
+<MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+    Everything waiting on you, across every module. One queue, not one per app.
 </MudText>
 
-<MudPaper Class="pa-12 text-center" Outlined="true" Elevation="0">
-    <MudIcon Icon="@Icons.Material.Outlined.TaskAlt" Size="Size.Large" Color="Color.Success" />
-    <MudText Typo="Typo.h6" Class="mt-3">Nothing waiting on you</MudText>
-    <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">
-        Approvals appear here as soon as the first business module is connected.
-    </MudText>
-</MudPaper>
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else if (_items.Count == 0)
+{
+    <MudPaper Class="pa-12 text-center" Outlined="true" Elevation="0">
+        <MudIcon Icon="@Icons.Material.Outlined.TaskAlt" Size="Size.Large" Color="Color.Success" />
+        <MudText Typo="Typo.h6" Class="mt-3">Nothing waiting on you</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">You are all caught up.</MudText>
+    </MudPaper>
+}
+else
+{
+    @foreach (var item in _items)
+    {
+        <MudPaper Outlined="true" Elevation="0" Class="pa-4 mb-3">
+            <div class="d-flex align-start">
+                <div class="flex-grow-1">
+                    <div class="d-flex align-center gap-2 mb-1">
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">
+                            @item.ModuleName
+                        </MudChip>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                            @item.DocumentReference
+                        </MudText>
+                        @if (item.IsOverdue)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Error"
+                                     Variant="Variant.Filled">overdue</MudChip>
+                        }
+                        @if (item.OnBehalfOfName is not null)
+                        {
+                            @* A delegated approval is never disguised as a direct
+                               one - that is how accountability gets lost. *@
+                            <MudChip T="string" Size="Size.Small" Color="Color.Secondary"
+                                     Variant="Variant.Outlined">
+                                standing in for @item.OnBehalfOfName
+                            </MudChip>
+                        }
+                    </div>
+
+                    <MudText Typo="Typo.body1">@item.Summary</MudText>
+
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        Raised by @item.RequestedByName
+                        · @Ago(item.RequestedUtc)
+                        · step: @item.StepName
+                        @if (item.Amount is not null)
+                        {
+                            <text> · @item.Currency @item.Amount.Value.ToString("N2")</text>
+                        }
+                    </MudText>
+                </div>
+
+                <div class="d-flex gap-1">
+                    <MudButton Size="Size.Small" Variant="Variant.Text" Href="@item.DocumentUrl">
+                        Open
+                    </MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Warning"
+                               OnClick="@(() => Decide(item, ApprovalDecision.Returned))">Return</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error"
+                               OnClick="@(() => Decide(item, ApprovalDecision.Rejected))">Reject</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
+                               OnClick="@(() => Decide(item, ApprovalDecision.Approved))">Approve</MudButton>
+                </div>
+            </div>
+        </MudPaper>
+    }
+}
+
+@code {
+    private IReadOnlyList<ApprovalInboxItem> _items = [];
+    private bool _loading = true;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _items = await Engine.InboxAsync();
+        _loading = false;
+    }
+
+    private static string Ago(DateTime utc)
+    {
+        var span = DateTime.UtcNow - utc;
+        return span.TotalMinutes < 60 ? $"{(int)span.TotalMinutes} min ago"
+             : span.TotalHours < 24 ? $"{(int)span.TotalHours} hours ago"
+             : $"{(int)span.TotalDays} days ago";
+    }
+
+    private async Task Decide(ApprovalInboxItem item, ApprovalDecision decision)
+    {
+        string? comment = null;
+
+        // Rejecting or returning without a reason leaves the requester at a dead
+        // end, so the comment is required rather than optional.
+        if (decision is not ApprovalDecision.Approved)
+        {
+            var parameters = new DialogParameters<CommentPrompt>
+            {
+                { x => x.Title, decision == ApprovalDecision.Rejected ? "Reject" : "Return for correction" },
+                { x => x.Prompt, decision == ApprovalDecision.Rejected
+                    ? "Why are you rejecting this?"
+                    : "What needs changing before this can be resubmitted?" }
+            };
+
+            var dialog = await Dialogs.ShowAsync<CommentPrompt>(null, parameters,
+                new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+
+            var result = await dialog.Result;
+            if (result!.Canceled) return;
+
+            comment = result.Data as string;
+        }
+
+        var decided = await Engine.DecideAsync(item.RequestId, decision, comment);
+
+        if (decided.Failed)
+            Snackbar.Add(decided.Error!, Severity.Error);
+        else
+            Snackbar.Add(decision switch
+            {
+                ApprovalDecision.Approved => "Approved.",
+                ApprovalDecision.Rejected => "Rejected.",
+                _ => "Returned for correction."
+            }, Severity.Success);
+
+        await LoadAsync();
+    }
+}

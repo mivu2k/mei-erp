@@ -1,0 +1,189 @@
+@page "/hr/leave"
+@attribute [Authorize(Policy = HrModule.LeaveRequest)]
+@rendermode InteractiveServer
+@inject ILeaveService Leaves
+@inject IEmployeeService Staff
+@inject IClock Clock
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Leave</PageTitle>
+
+<div class="d-flex align-center mb-1">
+    <div>
+        <MudText Typo="Typo.h5">Leave</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            Requests are routed for approval automatically.
+        </MudText>
+    </div>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))"
+               Disabled="_me is null">
+        Request leave
+    </MudButton>
+</div>
+
+@if (_me is null)
+{
+    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mt-4">
+        Your login is not linked to an employee record, so you cannot request leave.
+        Ask HR to set the linked login on your employee record.
+    </MudAlert>
+}
+else
+{
+    <MudGrid Class="mt-2">
+        @foreach (var balance in _balances)
+        {
+            <MudItem xs="12" sm="6" md="3">
+                <MudPaper Class="pa-4" Outlined="true" Elevation="0">
+                    <MudText Typo="Typo.overline" Class="mud-text-secondary">
+                        @balance.LeaveType?.Name
+                    </MudText>
+                    <MudText Typo="Typo.h4">@balance.Available.ToString("0.#")</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        days left of @((balance.Entitled + balance.CarriedForward).ToString("0.#"))
+                        @if (balance.Pending > 0)
+                        {
+                            @* Held, not spent: two pending requests must not be
+                               able to spend the same entitlement. *@
+                            <text> · @balance.Pending.ToString("0.#") awaiting approval</text>
+                        }
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+<MudPaper Outlined="true" Elevation="0" Class="mt-4">
+    <MudDataGrid T="LeaveRequest" Items="_rows" Dense="true" Hover="true" Elevation="0"
+                 Loading="_loading" Filterable="false">
+        <Columns>
+            <PropertyColumn Property="@(r => r.Reference)" Title="Reference" />
+            <PropertyColumn Property="@(r => r.LeaveTypeName)" Title="Type" />
+            <TemplateColumn Title="Dates">
+                <CellTemplate>
+                    @context.Item.FromDate.ToString("d MMM") — @context.Item.ToDate.ToString("d MMM yyyy")
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Days">
+                <CellTemplate>@context.Item.Days.ToString("0.#")</CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Status">
+                <CellTemplate>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                             Color="@StatusColour(context.Item.Status)">
+                        @context.Item.Status
+                    </MudChip>
+                    @if (context.Item.DecisionComment is not null)
+                    {
+                        <MudTooltip Text="@context.Item.DecisionComment">
+                            <MudIcon Icon="@Icons.Material.Outlined.Comment" Size="Size.Small"
+                                     Class="ml-1 mud-text-secondary" />
+                        </MudTooltip>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="" Sortable="false">
+                <CellTemplate>
+                    <div class="d-flex justify-end gap-1">
+                        @if (context.Item.Status is LeaveStatus.Draft or LeaveStatus.Returned)
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Text"
+                                       OnClick="@(() => Edit(context.Item))">Edit</MudButton>
+                            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                                       OnClick="@(() => Submit(context.Item))">Submit</MudButton>
+                        }
+                        else if (context.Item.Status is LeaveStatus.Pending)
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error"
+                                       OnClick="@(() => Withdraw(context.Item))">Withdraw</MudButton>
+                        }
+                    </div>
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+        <NoRecordsContent>
+            <MudText Class="pa-8 text-center mud-text-secondary">No leave requests yet.</MudText>
+        </NoRecordsContent>
+    </MudDataGrid>
+</MudPaper>
+
+@code {
+    private Employee? _me;
+    private IReadOnlyList<LeaveRequest> _rows = [];
+    private IReadOnlyList<LeaveBalance> _balances = [];
+    private bool _loading = true;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _me = await Leaves.MeAsync();
+
+        if (_me is not null)
+        {
+            _rows = await Leaves.ListAsync(_me.Id, null);
+            _balances = await Leaves.BalancesAsync(_me.Id, Clock.Today.Year);
+        }
+
+        _loading = false;
+    }
+
+    private static Color StatusColour(LeaveStatus status) => status switch
+    {
+        LeaveStatus.Approved => Color.Success,
+        LeaveStatus.Pending => Color.Info,
+        LeaveStatus.Rejected => Color.Error,
+        LeaveStatus.Returned => Color.Warning,
+        _ => Color.Default
+    };
+
+    private async Task Edit(LeaveRequest? row)
+    {
+        if (_me is null) return;
+
+        var parameters = new DialogParameters<LeaveEditor>
+        {
+            { x => x.RequestId, row?.Id },
+            { x => x.EmployeeId, _me.Id }
+        };
+
+        var dialog = await Dialogs.ShowAsync<LeaveEditor>(
+            row is null ? "Request leave" : "Edit request", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+
+    private async Task Submit(LeaveRequest row)
+    {
+        var result = await Leaves.SubmitAsync(row.Id);
+
+        if (result.Failed)
+            Snackbar.Add(result.Error!, Severity.Error);
+        else
+            Snackbar.Add("Sent for approval.", Severity.Success);
+
+        await LoadAsync();
+    }
+
+    private async Task Withdraw(LeaveRequest row)
+    {
+        var ok = await Dialogs.ShowMessageBox(
+            "Withdraw this request?",
+            "It will be taken out of the approver's queue and the days released.",
+            yesText: "Withdraw", cancelText: "Keep it");
+
+        if (ok != true) return;
+
+        var result = await Leaves.CancelAsync(row.Id);
+        if (result.Failed) Snackbar.Add(result.Error!, Severity.Error);
+        else Snackbar.Add("Withdrawn.", Severity.Success);
+
+        await LoadAsync();
+    }
+}

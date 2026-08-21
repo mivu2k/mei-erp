@@ -1,7 +1,9 @@
 using MeiErp.Host.Components;
 using MeiErp.Host.Services;
+using MeiErp.Modules.Hr;
 using MeiErp.Platform.Identity;
 using MeiErp.Platform.Kernel;
+using MeiErp.Platform.Workflow;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
@@ -46,7 +48,15 @@ builder.Services.AddSingleton<IClock>(_ =>
 // ---------------------------------------------------------------- modules
 // Resolved once at startup; nothing queries the database to find out which
 // modules exist. Business modules will register themselves here.
-builder.Services.AddSingleton<IModuleCatalog>(_ => new ModuleCatalog([]));
+// Every module the host composes. Adding one here puts it in the nav, the
+// permission matrix, the report hub and the approval designer at once - there
+// is no second place to register it.
+builder.Services.AddSingleton<IModuleCatalog>(_ => new ModuleCatalog(
+[
+    HrModule.Descriptor
+]));
+
+builder.Services.AddHrModule(builder.Configuration);
 
 // ---------------------------------------------------------------- identity
 builder.Services
@@ -105,6 +115,8 @@ builder.Services.AddScoped<IUserDirectory, UserDirectory>();
 builder.Services.AddScoped<ICompanyProfileService, CompanyProfileService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<IWorkflowAdminService, WorkflowAdminService>();
+builder.Services.AddScoped<IApprovalEngine, ApprovalEngine>();
+builder.Services.AddScoped<IApproverResolver, ApproverResolver>();
 builder.Services.AddScoped<PlatformSeeder>();
 builder.Services.AddHttpContextAccessor();
 
@@ -160,11 +172,15 @@ app.MapHealthChecks("/health/live");
 app.MapHealthChecks("/health/ready");
 
 app.MapRazorComponents<App>()
-   .AddInteractiveServerRenderMode();
+   .AddInteractiveServerRenderMode()
+   // A module's pages 404 unless its assembly is listed BOTH here and in
+   // Routes.razor. Missing either is a silent routing failure.
+   .AddAdditionalAssemblies(typeof(HrModule).Assembly);
 
 app.MapAuthEndpoints();
 
 // ---------------------------------------------------------------- start
 await app.Services.SeedPlatformAsync();
+await app.Services.SeedHrAsync();
 
 app.Run();

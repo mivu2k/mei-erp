@@ -1,0 +1,101 @@
+@inject IEmployeeService Employees
+@inject IClock Clock
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <div class="d-flex gap-3 mb-4">
+                <MudTextField @bind-Value="_model.Code" Label="Staff number" Required="true"
+                              RequiredError="Every employee needs a staff number."
+                              Variant="Variant.Outlined" />
+                <MudTextField @bind-Value="_model.FullName" Label="Full name" Required="true"
+                              RequiredError="Enter their name." Variant="Variant.Outlined" />
+            </div>
+
+            <div class="d-flex gap-3 mb-4">
+                <MudTextField @bind-Value="_model.Designation" Label="Designation" Variant="Variant.Outlined" />
+                <MudTextField @bind-Value="_model.DepartmentName" Label="Department" Variant="Variant.Outlined" />
+            </div>
+
+            <div class="d-flex gap-3 mb-4">
+                <MudTextField @bind-Value="_model.Email" Label="Email" Variant="Variant.Outlined" />
+                <MudTextField @bind-Value="_model.Phone" Label="Phone" Variant="Variant.Outlined" />
+            </div>
+
+            <div class="d-flex gap-3 mb-4">
+                <MudDatePicker Label="Joined on" Variant="Variant.Outlined"
+                               Date="_joined" DateChanged="@(d => _joined = d)" />
+                <MudSelect T="EmploymentStatus" @bind-Value="_model.Status" Label="Status"
+                           Variant="Variant.Outlined">
+                    @foreach (var s in Enum.GetValues<EmploymentStatus>())
+                    {
+                        <MudSelectItem Value="@s">@s</MudSelectItem>
+                    }
+                </MudSelect>
+            </div>
+
+            <MudTextField @bind-Value="_model.UserId" Label="Linked login (user id)"
+                          Variant="Variant.Outlined"
+                          HelperText="Leave blank if they do not sign in. Links their leave to their account." />
+        </MudForm>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int? EmployeeId { get; set; }
+
+    private MudForm? _form;
+    private Employee _model = new();
+    private DateTime? _joined;
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (EmployeeId is not null)
+            _model = await Employees.GetAsync(EmployeeId.Value) ?? new Employee();
+        else
+            _model = new Employee { JoinedOn = Clock.Today, Status = EmploymentStatus.Active };
+
+        _joined = _model.JoinedOn == default
+            ? Clock.Today.ToDateTime(TimeOnly.MinValue)
+            : _model.JoinedOn.ToDateTime(TimeOnly.MinValue);
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        if (_form is not null)
+        {
+            await _form.Validate();
+            if (!_form.IsValid) return;
+        }
+
+        _busy = true;
+        try
+        {
+            _model.JoinedOn = DateOnly.FromDateTime(_joined ?? DateTime.Today);
+            if (string.IsNullOrWhiteSpace(_model.UserId)) _model.UserId = null;
+
+            var result = await Employees.SaveAsync(_model);
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Saved.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

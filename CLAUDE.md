@@ -12,13 +12,14 @@ office yet.
 | Piece | State |
 |---|---|
 | `Platform.Kernel` | done — entities, clock, result, module catalog |
-| `Platform.Workflow` | domain + router done, **20 tests green**; engine implementation next |
+| `Platform.Workflow` | done — domain, router, engine, resolver, delegation; **20 tests green** |
 | `Platform.Persistence` | done — audit, soft delete, xmin, outbox, sequences; **5 integration tests green** |
-| `Platform.Identity` | not started |
+| `Platform.Identity` | done — users, roles, permissions, admin screens; **10 tests green** |
 | `Platform.Notifications` | not started |
 | `Platform.Reporting` | not started |
 | `Platform.Messaging` | not started |
-| Business modules | not started — ported one at a time, after the spine |
+| **HR module** | employees + leave, wired to the approval engine; **11 tests green** |
+| Other modules | not started — each is now a repeat of the HR pattern |
 
 **The old app at `/home/pc/vb/acc` stays live in the office until this reaches parity,
 module by module.** There is no cutover date and there must not be a big-bang switch.

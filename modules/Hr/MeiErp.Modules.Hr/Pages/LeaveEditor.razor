@@ -1,0 +1,148 @@
+@inject ILeaveService Leave
+@inject IEmployeeService Staff
+@inject IClock Clock
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <MudSelect T="int" @bind-Value="_leaveTypeId" Label="Leave type" Required="true"
+                       Variant="Variant.Outlined" Class="mb-4">
+                @foreach (var t in _types)
+                {
+                    <MudSelectItem T="int" Value="@t.Id">
+                        @t.Name @(t.IsPaid ? "" : "(unpaid)")
+                    </MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudDateRangePicker Label="Dates" Variant="Variant.Outlined" Class="mb-2"
+                                DateRange="_range" DateRangeChanged="RangeChangedAsync" />
+
+            @if (_days > 0)
+            {
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mb-4">
+                    @_days.ToString("0.#") working @(_days == 1 ? "day" : "days")
+                    — weekends and holidays are not counted.
+                </MudAlert>
+            }
+
+            <MudTextField @bind-Value="_reason" Label="Reason" Lines="2"
+                          Variant="Variant.Outlined" Class="mb-4" />
+
+            <MudTextField @bind-Value="_coveredBy" Label="Covered by"
+                          Variant="Variant.Outlined"
+                          HelperText="Who picks up your work. Helps whoever approves this." />
+        </MudForm>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Text" OnClick="@(() => SaveAsync(false))" Disabled="_busy">
+            Save draft
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="@(() => SaveAsync(true))" Disabled="_busy">
+            Save &amp; submit
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int? RequestId { get; set; }
+    [Parameter] public int EmployeeId { get; set; }
+
+    private MudForm? _form;
+    private IReadOnlyList<LeaveType> _types = [];
+    private int _leaveTypeId;
+    private DateRange? _range;
+    private decimal _days;
+    private string? _reason;
+    private string? _coveredBy;
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _types = await Staff.LeaveTypesAsync();
+
+        if (RequestId is not null)
+        {
+            var existing = await Leave.GetAsync(RequestId.Value);
+            if (existing is not null)
+            {
+                _leaveTypeId = existing.LeaveTypeId;
+                _range = new DateRange(
+                    existing.FromDate.ToDateTime(TimeOnly.MinValue),
+                    existing.ToDate.ToDateTime(TimeOnly.MinValue));
+                _days = existing.Days;
+                _reason = existing.Reason;
+                _coveredBy = existing.CoveredByName;
+            }
+        }
+        else if (_types.Count > 0)
+        {
+            _leaveTypeId = _types[0].Id;
+        }
+    }
+
+    /// <summary>Shows the working-day count as soon as dates are picked, not after saving.</summary>
+    private async Task RangeChangedAsync(DateRange? range)
+    {
+        _range = range;
+        _days = range?.Start is null || range.End is null
+            ? 0
+            : await Leave.WorkingDaysAsync(
+                DateOnly.FromDateTime(range.Start.Value),
+                DateOnly.FromDateTime(range.End.Value));
+    }
+
+    private async Task SaveAsync(bool submit)
+    {
+        _error = null;
+
+        if (_range?.Start is null || _range.End is null)
+        {
+            _error = "Pick the dates you will be away.";
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var saved = await Leave.SaveDraftAsync(new LeaveRequestInput(
+                RequestId, EmployeeId, _leaveTypeId,
+                DateOnly.FromDateTime(_range.Start.Value),
+                DateOnly.FromDateTime(_range.End.Value),
+                _reason, _coveredBy));
+
+            if (saved.Failed) { _error = saved.Error; return; }
+
+            if (submit)
+            {
+                var sent = await Leave.SubmitAsync(saved.Value.Id);
+                if (sent.Failed)
+                {
+                    // The draft is saved either way, so nothing is lost - they
+                    // can fix the problem and submit from the list.
+                    _error = sent.Error + " Your draft has been saved.";
+                    return;
+                }
+                Snackbar.Add("Sent for approval.", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("Draft saved.", Severity.Success);
+            }
+
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}
