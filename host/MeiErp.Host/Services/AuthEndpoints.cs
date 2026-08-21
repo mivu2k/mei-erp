@@ -22,7 +22,10 @@ public static class AuthEndpoints
         group.MapPost("/sign-in", async (
             [FromForm] string email,
             [FromForm] string password,
-            [FromForm] bool rememberMe,
+            // Nullable on purpose: an unticked checkbox posts nothing at all,
+            // so a non-nullable bool here makes the ordinary sign-in - the one
+            // where nobody ticked "keep me signed in" - throw a 400.
+            [FromForm] bool? rememberMe,
             [FromForm] string? returnUrl,
             SignInManager<ApplicationUser> signIn,
             UserManager<ApplicationUser> users,
@@ -38,7 +41,7 @@ public static class AuthEndpoints
                 return Redirect($"/sign-in?error=1&returnUrl={Uri.EscapeDataString(returnUrl ?? "/")}");
 
             var result = await signIn.PasswordSignInAsync(
-                user, password, rememberMe, lockoutOnFailure: true);
+                user, password, rememberMe ?? false, lockoutOnFailure: true);
 
             if (result.IsLockedOut)
                 return Redirect("/sign-in?error=locked");
