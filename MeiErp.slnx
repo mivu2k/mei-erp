@@ -28,6 +28,8 @@
     <Project Path="platform/MeiErp.Platform.Identity/MeiErp.Platform.Identity.csproj" />
     <Project Path="platform/MeiErp.Platform.Kernel/MeiErp.Platform.Kernel.csproj" />
     <Project Path="platform/MeiErp.Platform.Persistence/MeiErp.Platform.Persistence.csproj" />
+    <Project Path="platform/MeiErp.Platform.Printing/MeiErp.Platform.Printing.csproj" />
+    <Project Path="platform/MeiErp.Platform.Reporting/MeiErp.Platform.Reporting.csproj" />
     <Project Path="platform/MeiErp.Platform.Workflow/MeiErp.Platform.Workflow.csproj" />
   </Folder>
   <Folder Name="/tests/">
@@ -39,6 +41,7 @@
     <Project Path="tests/MeiErp.Modules.Tender.Tests/MeiErp.Modules.Tender.Tests.csproj" />
     <Project Path="tests/MeiErp.Platform.Identity.Tests/MeiErp.Platform.Identity.Tests.csproj" />
     <Project Path="tests/MeiErp.Platform.Persistence.Tests/MeiErp.Platform.Persistence.Tests.csproj" />
+    <Project Path="tests/MeiErp.Platform.Printing.Tests/MeiErp.Platform.Printing.Tests.csproj" />
     <Project Path="tests/MeiErp.Platform.Workflow.Tests/MeiErp.Platform.Workflow.Tests.csproj" />
   </Folder>
 </Solution>

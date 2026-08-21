@@ -9,6 +9,8 @@ using MeiErp.Modules.Tender;
 using MeiErp.Modules.Inventory;
 using MeiErp.Platform.Identity;
 using MeiErp.Platform.Kernel;
+using MeiErp.Platform.Printing;
+using MeiErp.Platform.Reporting;
 using MeiErp.Platform.Workflow;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -70,6 +72,7 @@ builder.Services.AddSingleton<IModuleCatalog>(_ => new ModuleCatalog(
 
 builder.Services.AddHrModule(builder.Configuration);
 builder.Services.AddFinanceModule(builder.Configuration);
+builder.Services.AddFinanceReports();
 builder.Services.AddInventoryModule(builder.Configuration);
 builder.Services.AddAutoModule(builder.Configuration);
 builder.Services.AddGatePassModule(builder.Configuration);
@@ -135,6 +138,13 @@ builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<IWorkflowAdminService, WorkflowAdminService>();
 builder.Services.AddScoped<IApprovalEngine, ApprovalEngine>();
 builder.Services.AddScoped<IApproverResolver, ApproverResolver>();
+
+// Printing and reporting. The catalog is built from whatever the modules
+// registered, so a report appears in the hub by being declared - not by anyone
+// editing the hub.
+builder.Services.AddSingleton<IPrintService, PrintService>();
+builder.Services.AddScoped<IReportCatalog>(sp =>
+    new ReportCatalog(sp.GetServices<ReportDefinition>()));
 builder.Services.AddScoped<PlatformSeeder>();
 builder.Services.AddHttpContextAccessor();
 
@@ -203,6 +213,7 @@ app.MapRazorComponents<App>()
        typeof(TenderModule).Assembly);
 
 app.MapAuthEndpoints();
+app.MapReportEndpoints();
 
 // ---------------------------------------------------------------- start
 await app.Services.SeedPlatformAsync();

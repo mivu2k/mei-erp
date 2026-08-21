@@ -1,0 +1,368 @@
+@page "/reports"
+@page "/reports/{ReportKey}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using MeiErp.Platform.Reporting
+@using MeiErp.Platform.Printing
+@inject IReportCatalog Catalog
+@inject ICurrentUser User
+@inject IClock Clock
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>Reports</PageTitle>
+
+<MudText Typo="Typo.h5">Reports</MudText>
+<MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+    Every report in the suite, in one place. You only see the ones you have access to.
+</MudText>
+
+<MudGrid>
+    <MudItem xs="12" md="3">
+        <MudPaper Outlined="true" Elevation="0">
+            <MudTextField @bind-Value="_search" Placeholder="Find a report"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                          Variant="Variant.Text" Margin="Margin.Dense" Class="pa-2 mt-0" Immediate="true" />
+            <MudDivider />
+
+            <MudList T="string" Dense="true">
+                @foreach (var group in Visible.GroupBy(r => r.ModuleKey))
+                {
+                    <MudListSubheader>@ModuleName(group.Key)</MudListSubheader>
+
+                    @foreach (var report in group)
+                    {
+                        <MudListItem T="string" OnClick="@(() => Select(report))"
+                                     Class="@(report.Key == _current?.Key ? "mud-selected-item" : "")">
+                            <MudText Typo="Typo.body2">@report.Name</MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                @report.Description
+                            </MudText>
+                        </MudListItem>
+                    }
+                }
+            </MudList>
+
+            @if (Visible.Count == 0)
+            {
+                <MudText Class="pa-6 text-center mud-text-secondary" Typo="Typo.body2">
+                    @(Catalog.All.Count == 0
+                        ? "No reports are registered yet."
+                        : "No reports match that search, or you do not have access to any.")
+                </MudText>
+            }
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="9">
+        @if (_current is null)
+        {
+            <MudPaper Outlined="true" Elevation="0" Class="pa-12 text-center">
+                <MudIcon Icon="@Icons.Material.Outlined.Assessment" Size="Size.Large"
+                         Class="mud-text-secondary" />
+                <MudText Class="mud-text-secondary mt-3">Pick a report to run it.</MudText>
+            </MudPaper>
+        }
+        else
+        {
+            <MudPaper Outlined="true" Elevation="0">
+                <div class="pa-4">
+                    <div class="d-flex align-center">
+                        <div>
+                            <MudText Typo="Typo.h6">@_current.Name</MudText>
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                                @_current.Description
+                            </MudText>
+                        </div>
+                        <MudSpacer />
+                        @if (_result is not null && _result.Rows.Count > 0)
+                        {
+                            <MudButton StartIcon="@Icons.Material.Outlined.TableChart" Size="Size.Small"
+                                       Href="@ExportUrl("xlsx")" Target="_blank">Excel</MudButton>
+                            <MudButton StartIcon="@Icons.Material.Outlined.PictureAsPdf" Size="Size.Small"
+                                       Href="@ExportUrl("pdf")" Target="_blank">PDF</MudButton>
+                        }
+                    </div>
+
+                    @* Only the filters this report actually uses. Showing one it
+                       ignores makes the reader distrust the whole panel. *@
+                    <div class="d-flex flex-wrap gap-3 mt-4">
+                        @if (_current.Uses.HasFlag(ReportFilters.DateRange))
+                        {
+                            <MudDatePicker Label="From" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                           Date="_from" DateChanged="@(d => _from = d)" Style="max-width:170px" />
+                            <MudDatePicker Label="To" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                           Date="_to" DateChanged="@(d => _to = d)" Style="max-width:170px" />
+                        }
+
+                        @if (_current.Uses.HasFlag(ReportFilters.AsAtDate))
+                        {
+                            <MudDatePicker Label="As at" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                           Date="_asAt" DateChanged="@(d => _asAt = d)" Style="max-width:170px" />
+                        }
+
+                        @if (_current.Uses.HasFlag(ReportFilters.Status))
+                        {
+                            <MudTextField @bind-Value="_status" Label="Status" Variant="Variant.Outlined"
+                                          Margin="Margin.Dense" Style="max-width:160px" />
+                        }
+
+                        <MudTextField @bind-Value="_searchTerm" Label="Contains" Variant="Variant.Outlined"
+                                      Margin="Margin.Dense" Style="max-width:200px" />
+
+                        @if (_result is not null && _result.Columns.Count > 0)
+                        {
+                            <MudSelect T="string" @bind-Value="_groupBy" Label="Group by" Clearable="true"
+                                       Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:180px">
+                                @foreach (var column in _result.Columns.Where(c => c.Kind is not ReportValueKind.Money))
+                                {
+                                    <MudSelectItem T="string" Value="@column.Key">@column.Header</MudSelectItem>
+                                }
+                            </MudSelect>
+                        }
+
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                   OnClick="RunAsync" Disabled="_running">
+                            @(_running ? "Running…" : "Run")
+                        </MudButton>
+                    </div>
+                </div>
+
+                <MudDivider />
+
+                @if (_running)
+                {
+                    <MudProgressLinear Indeterminate="true" />
+                }
+                else if (_result is null)
+                {
+                    <MudText Class="pa-12 text-center mud-text-secondary">
+                        Choose your filters and press Run.
+                    </MudText>
+                }
+                else if (_result.Rows.Count == 0)
+                {
+                    <MudText Class="pa-12 text-center mud-text-secondary">
+                        @_result.EmptyMessage
+                    </MudText>
+                }
+                else
+                {
+                    <div class="pa-4">
+                        @if (_result.Header.Count > 0)
+                        {
+                            <div class="d-flex flex-wrap gap-4 mb-3">
+                                @foreach (var field in _result.Header)
+                                {
+                                    <div>
+                                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                            @field.Label
+                                        </MudText>
+                                        <MudText Typo="Typo.body2"><b>@field.Value</b></MudText>
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        <div style="overflow-x:auto">
+                            <MudSimpleTable Dense="true" Hover="true" Striped="false">
+                                <thead>
+                                    <tr>
+                                        @foreach (var column in _result.Columns)
+                                        {
+                                            <th style="@(IsNumeric(column) ? "text-align:right" : "")">
+                                                @column.Header
+                                            </th>
+                                        }
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var group in _groups)
+                                    {
+                                        @if (group.Key is not null)
+                                        {
+                                            <tr>
+                                                <td colspan="@_result.Columns.Count"
+                                                    style="background:var(--mud-palette-background-grey);font-weight:600">
+                                                    @group.Key
+                                                </td>
+                                            </tr>
+                                        }
+
+                                        @foreach (var row in group.Rows)
+                                        {
+                                            <tr style="@(row.DrillUrl is null ? "" : "cursor:pointer")"
+                                                @onclick="@(() => Drill(row))">
+                                                @foreach (var column in _result.Columns)
+                                                {
+                                                    <td style="@(IsNumeric(column) ? "text-align:right;font-variant-numeric:tabular-nums" : "")">
+                                                        @if (column.Kind is ReportValueKind.Status
+                                                             && row[column.Key] is not null)
+                                                        {
+                                                            <MudChip T="string" Size="Size.Small"
+                                                                     Variant="Variant.Outlined">
+                                                                @ReportRenderer.Format(row[column.Key], column.Kind)
+                                                            </MudChip>
+                                                        }
+                                                        else
+                                                        {
+                                                            @ReportRenderer.Format(row[column.Key], column.Kind)
+                                                        }
+                                                    </td>
+                                                }
+                                            </tr>
+                                        }
+
+                                        @if (group.Key is not null && group.Totals.Count > 0)
+                                        {
+                                            <tr style="font-weight:600">
+                                                @foreach (var column in _result.Columns)
+                                                {
+                                                    var subtotal = group.Totals.FirstOrDefault(t => t.ColumnKey == column.Key);
+                                                    <td style="@(IsNumeric(column) ? "text-align:right;font-variant-numeric:tabular-nums" : "")">
+                                                        @(subtotal is null
+                                                            ? (column.Key == _result.Columns[0].Key ? $"{group.Key} total" : "")
+                                                            : ReportRenderer.Format(subtotal.Value, column.Kind))
+                                                    </td>
+                                                }
+                                            </tr>
+                                        }
+                                    }
+                                </tbody>
+
+                                @if (_result.Totals.Count > 0)
+                                {
+                                    <tfoot>
+                                        <tr style="font-weight:600;border-top:2px solid var(--mud-palette-lines-default)">
+                                            @foreach (var column in _result.Columns)
+                                            {
+                                                var total = _result.Totals.FirstOrDefault(t => t.ColumnKey == column.Key);
+                                                <td style="@(IsNumeric(column) ? "text-align:right;font-variant-numeric:tabular-nums" : "")">
+                                                    @(total is null
+                                                        ? (column.Key == _result.Columns[0].Key ? "Total" : "")
+                                                        : ReportRenderer.Format(total.Value, column.Kind))
+                                                </td>
+                                            }
+                                        </tr>
+                                    </tfoot>
+                                }
+                            </MudSimpleTable>
+                        </div>
+
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2">
+                            @_result.Rows.Count @(_result.Rows.Count == 1 ? "row" : "rows")
+                        </MudText>
+                    </div>
+                }
+            </MudPaper>
+        }
+    </MudItem>
+</MudGrid>
+
+@code {
+    [Parameter] public string? ReportKey { get; set; }
+
+    private ReportDefinition? _current;
+    private ReportResult? _result;
+    private IReadOnlyList<ReportGroup> _groups = [];
+
+    private string? _search;
+    private string? _searchTerm;
+    private string? _status;
+    private string? _groupBy;
+    private DateTime? _from, _to, _asAt;
+    private bool _running;
+
+    private IReadOnlyList<ReportDefinition> Visible =>
+        [.. Catalog.Available(User)
+            .Where(r => string.IsNullOrWhiteSpace(_search)
+                     || r.Name.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                     || r.Description.Contains(_search, StringComparison.OrdinalIgnoreCase))];
+
+    private static string ModuleName(string key) =>
+        key.Length == 0 ? key : char.ToUpperInvariant(key[0]) + key[1..];
+
+    private static bool IsNumeric(ReportColumn column) =>
+        column.Kind is ReportValueKind.Money or ReportValueKind.Number;
+
+    protected override void OnParametersSet()
+    {
+        var today = Clock.Today;
+
+        // Defaults to this fiscal year, so the first run shows something useful
+        // rather than an empty table that looks like a broken report.
+        var startYear = today.Month >= 7 ? today.Year : today.Year - 1;
+        _from ??= new DateOnly(startYear, 7, 1).ToDateTime(TimeOnly.MinValue);
+        _to ??= today.ToDateTime(TimeOnly.MinValue);
+        _asAt ??= today.ToDateTime(TimeOnly.MinValue);
+
+        if (ReportKey is not null && _current?.Key != ReportKey)
+        {
+            var found = Catalog.Find(ReportKey);
+            if (found is not null && User.Can(found.Permission)) _current = found;
+        }
+    }
+
+    private void Select(ReportDefinition report)
+    {
+        _current = report;
+        _result = null;
+        _groups = [];
+        _groupBy = null;
+    }
+
+    private async Task RunAsync()
+    {
+        if (_current is null) return;
+
+        _running = true;
+        try
+        {
+            var request = new ReportRequest
+            {
+                From = _current.Uses.HasFlag(ReportFilters.DateRange) && _from is not null
+                    ? DateOnly.FromDateTime(_from.Value) : null,
+                To = _current.Uses.HasFlag(ReportFilters.DateRange) && _to is not null
+                    ? DateOnly.FromDateTime(_to.Value) : null,
+                AsAt = _current.Uses.HasFlag(ReportFilters.AsAtDate) && _asAt is not null
+                    ? DateOnly.FromDateTime(_asAt.Value) : null,
+                Status = _status,
+                Search = _searchTerm,
+                GroupBy = _groupBy
+            };
+
+            _result = await _current.Run(request, CancellationToken.None);
+            _groups = ReportRenderer.Group(_result, _groupBy);
+        }
+        catch (Exception ex)
+        {
+            // A report that throws should say so rather than leaving a spinner
+            // running for ever.
+            Snackbar.Add($"That report could not be run: {ex.Message}", Severity.Error);
+            _result = null;
+        }
+        finally
+        {
+            _running = false;
+        }
+    }
+
+    private void Drill(ReportRow row)
+    {
+        // Nothing in a report should be a dead number.
+        if (row.DrillUrl is not null) Nav.NavigateTo(row.DrillUrl);
+    }
+
+    private string ExportUrl(string format)
+    {
+        var query = new List<string> { $"format={format}" };
+
+        if (_from is not null) query.Add($"from={_from:yyyy-MM-dd}");
+        if (_to is not null) query.Add($"to={_to:yyyy-MM-dd}");
+        if (_asAt is not null) query.Add($"asAt={_asAt:yyyy-MM-dd}");
+        if (!string.IsNullOrWhiteSpace(_status)) query.Add($"status={Uri.EscapeDataString(_status)}");
+        if (!string.IsNullOrWhiteSpace(_searchTerm)) query.Add($"search={Uri.EscapeDataString(_searchTerm)}");
+
+        return $"/reports/export/{_current!.Key}?{string.Join("&", query)}";
+    }
+}

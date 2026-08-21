@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>MeiErp.Platform.Reporting</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MeiErp.Platform.Kernel\MeiErp.Platform.Kernel.csproj" />
+    <ProjectReference Include="..\MeiErp.Platform.Printing\MeiErp.Platform.Printing.csproj" />
+  </ItemGroup>
+</Project>
