@@ -9,6 +9,7 @@ using MeiErp.Modules.Tender;
 using MeiErp.Modules.Inventory;
 using MeiErp.Platform.Identity;
 using MeiErp.Platform.Kernel;
+using MeiErp.Platform.Notifications;
 using MeiErp.Platform.Printing;
 using MeiErp.Platform.Reporting;
 using MeiErp.Platform.Workflow;
@@ -138,6 +139,14 @@ builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<IWorkflowAdminService, WorkflowAdminService>();
 builder.Services.AddScoped<IApprovalEngine, ApprovalEngine>();
 builder.Services.AddScoped<IApproverResolver, ApproverResolver>();
+
+// Notifications. The channels, the notifier and the background dispatcher come
+// from the platform; the two storage interfaces are wired here because the
+// tables live on PlatformDbContext - which is what lets a notification be
+// written in the same transaction as the approval that raised it.
+builder.Services.AddNotifications(builder.Configuration);
+builder.Services.AddScoped<INotificationStore, NotificationStore>();
+builder.Services.AddScoped<INotificationOutbox, NotificationOutbox>();
 
 // Printing and reporting. The catalog is built from whatever the modules
 // registered, so a report appears in the hub by being declared - not by anyone

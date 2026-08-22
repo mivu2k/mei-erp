@@ -1,0 +1,123 @@
+@rendermode InteractiveServer
+@implements IDisposable
+@inject INotifier Notifier
+@inject ICurrentUser CurrentUser
+@inject NavigationManager Nav
+
+<MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight"
+         Dense="true" ListClass="notification-list">
+    <ActivatorContent>
+        <MudTooltip Text="Notifications">
+            <MudBadge Content="_unread" Max="99" Color="Color.Error" Overlap="true"
+                      Visible="_unread > 0">
+                <MudIconButton Icon="@Icons.Material.Outlined.Notifications" Color="Color.Inherit" />
+            </MudBadge>
+        </MudTooltip>
+    </ActivatorContent>
+
+    <ChildContent>
+        <div class="d-flex align-center px-4 py-2" style="min-width:340px;">
+            <MudText Typo="Typo.subtitle2">Notifications</MudText>
+            <MudSpacer />
+            @if (_unread > 0)
+            {
+                <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="MarkAllReadAsync">
+                    Mark all read
+                </MudButton>
+            }
+        </div>
+        <MudDivider />
+
+        @if (_items.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Class="pa-6 text-center mud-text-secondary"
+                     Style="max-width:340px;">
+                Nothing waiting.
+            </MudText>
+        }
+        else
+        {
+            @foreach (var item in _items)
+            {
+                <MudMenuItem OnClick="@(() => OpenAsync(item))">
+                    <div style="max-width:320px;white-space:normal;">
+                        <MudText Typo="Typo.body2"><b>@item.Subject</b></MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                            @Summarise(item.Body)
+                        </MudText>
+                    </div>
+                </MudMenuItem>
+            }
+        }
+    </ChildContent>
+</MudMenu>
+
+@code {
+    // The bell polls rather than pushing. A push would mean the dispatcher
+    // reaching into live circuits, and this costs one indexed count per user
+    // per interval - the index on (UserId, ReadUtc, DismissedUtc) exists for it.
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(30);
+
+    private readonly List<Notification> _items = [];
+    private int _unread;
+    private Timer? _timer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAsync();
+
+        _timer = new Timer(
+            async void (_) =>
+            {
+                try
+                {
+                    await RefreshAsync();
+                    await InvokeAsync(StateHasChanged);
+                }
+                catch (ObjectDisposedException)
+                {
+                    // The circuit went away between the tick and the render.
+                    // Ordinary on a closed tab, and not worth logging.
+                }
+            },
+            null, PollInterval, PollInterval);
+    }
+
+    private async Task RefreshAsync()
+    {
+        var userId = CurrentUser.UserId;
+        if (userId is null) return;
+
+        _unread = await Notifier.UnreadCountAsync(userId);
+
+        _items.Clear();
+        _items.AddRange(await Notifier.UnreadAsync(userId, 10));
+    }
+
+    private async Task OpenAsync(Notification item)
+    {
+        await Notifier.MarkReadAsync(item.Id);
+        await RefreshAsync();
+
+        if (!string.IsNullOrWhiteSpace(item.Url))
+            Nav.NavigateTo(item.Url);
+    }
+
+    private async Task MarkAllReadAsync()
+    {
+        var userId = CurrentUser.UserId;
+        if (userId is null) return;
+
+        await Notifier.MarkAllReadAsync(userId);
+        await RefreshAsync();
+    }
+
+    /// <summary>First line only - the body carries the detail for email.</summary>
+    private static string Summarise(string body)
+    {
+        var firstLine = body.Split('\n', 2)[0];
+        return firstLine.Length <= 90 ? firstLine : firstLine[..90] + "…";
+    }
+
+    public void Dispose() => _timer?.Dispose();
+}

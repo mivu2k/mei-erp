@@ -21,6 +21,11 @@
                                    Color="Color.Inherit" Href="/approvals" />
                 </MudTooltip>
 
+                @* The bell the approval engine finally has. Without it, someone
+                   raises a request and their manager never finds out unless they
+                   happen to open the inbox. *@
+                <NotificationBell />
+
                 <MudTooltip Text="@(_dark ? "Light mode" : "Dark mode")">
                     <MudIconButton Color="Color.Inherit"
                                    Icon="@(_dark ? Icons.Material.Outlined.LightMode : Icons.Material.Outlined.DarkMode)"

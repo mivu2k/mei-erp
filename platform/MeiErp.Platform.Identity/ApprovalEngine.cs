@@ -1,4 +1,5 @@
 using MeiErp.Platform.Kernel;
+using MeiErp.Platform.Notifications;
 using MeiErp.Platform.Workflow;
 using Microsoft.EntityFrameworkCore;
 
@@ -17,8 +18,20 @@ public sealed class ApprovalEngine(
     ICurrentUser currentUser,
     IClock clock,
     IModuleCatalog catalog,
+    INotifier notifier,
     IEnumerable<IApprovalSink> sinks) : IApprovalEngine
 {
+    /// <summary>
+    /// Groups the notifications one step's assignment raised, so deciding it
+    /// stands the rest down.
+    ///
+    /// Built from the document and step rather than the request id, because it
+    /// has to be known <i>before</i> the request is saved - that is what lets the
+    /// notification rows commit in the same transaction as the approval.
+    /// </summary>
+    private static string StepEvent(string documentType, int documentId, int stepOrder) =>
+        $"approval:{documentType}:{documentId}:step:{stepOrder}";
+
     public async Task<Result<ApprovalRequest>> SubmitAsync(
         SubmitApproval request, CancellationToken ct = default)
     {
@@ -77,6 +90,12 @@ public sealed class ApprovalEngine(
             return Result.Fail<ApprovalRequest>(opened.Error!, opened.Code);
 
         db.ApprovalRequests.Add(approval);
+
+        // Staged, not sent: the notification rows commit with the approval on the
+        // next line. Without that, an approval could land with nobody told, which
+        // is the failure that made the engine's best feature invisible.
+        await NotifyStepAssignedAsync(approval, ct);
+
         await db.SaveChangesAsync(ct);
 
         return Result.Success(approval);
@@ -112,6 +131,83 @@ public sealed class ApprovalEngine(
         approval.DueUtc = WorkflowRouter.DueAt(first, now);
 
         return Result.Success();
+    }
+
+    /// <summary>
+    /// Tells whoever can act on the currently open step that it is waiting.
+    ///
+    /// Everybody eligible is told, not just the first: a step needing one of
+    /// four signatures is answered by whichever of the four gets there, and the
+    /// other three are stood down when it settles.
+    /// </summary>
+    private async Task NotifyStepAssignedAsync(ApprovalRequest approval, CancellationToken ct)
+    {
+        var step = WorkflowRouter.CurrentStep(approval);
+        if (step is null) return;
+
+        var eligible = await resolver.ResolveAsync(step, approval, ct);
+        if (eligible.Count == 0) return;
+
+        var amount = approval.Amount is { } value
+            ? $"{approval.Currency ?? ""} {value:N0}".Trim() + " — "
+            : "";
+
+        await notifier.NotifyAsync(new NotificationRequest(
+            [.. eligible.Select(e => new NotificationRecipient(e.UserId, e.Name, e.Email))],
+            NotificationCategories.ApprovalAssigned,
+            $"{approval.DocumentReference} needs your approval",
+            $"{amount}{approval.Summary}\nRaised by {approval.RequestedByName}. Step: {step.Name}.",
+            approval.DocumentUrl,
+            approval.ModuleKey,
+            NotificationPriority.High,
+            StepEvent(approval.DocumentType, approval.DocumentId, step.Order)), ct);
+    }
+
+    /// <summary>
+    /// Tells the person who raised it what happened to it.
+    ///
+    /// Cancellation is the one outcome nobody is told about: the raiser is the
+    /// only one who can cancel, so the message would go straight back to whoever
+    /// just clicked the button.
+    /// </summary>
+    private async Task NotifySettledAsync(
+        ApprovalRequest approval, ApprovalStatus status, string? comment, CancellationToken ct)
+    {
+        if (status is ApprovalStatus.Cancelled) return;
+
+        var what = status switch
+        {
+            ApprovalStatus.Approved => "was approved",
+            ApprovalStatus.Rejected => "was rejected",
+            ApprovalStatus.Returned => "was returned for correction",
+            _ => "was decided"
+        };
+
+        var body = $"{approval.Summary}\nYour {approval.DocumentReference} {what}.";
+        if (!string.IsNullOrWhiteSpace(comment)) body += $"\n\n\"{comment}\"";
+
+        // The raiser's address is read now rather than snapshotted at submission:
+        // somebody who changed their email since raising it should be told at the
+        // address they have today.
+        var email = await db.Users
+            .Where(u => u.Id == approval.RequestedByUserId)
+            .Select(u => u.Email)
+            .FirstOrDefaultAsync(ct);
+
+        await notifier.NotifyAsync(new NotificationRequest(
+            [new NotificationRecipient(
+                approval.RequestedByUserId, approval.RequestedByName, email)],
+            NotificationCategories.ApprovalSettled,
+            $"{approval.DocumentReference} {what}",
+            body,
+            approval.DocumentUrl,
+            approval.ModuleKey,
+            // A rejection or a return is blocking somebody, so it earns the
+            // channels that reach outside the app. An approval is good news
+            // that can wait for the bell.
+            status is ApprovalStatus.Approved
+                ? NotificationPriority.Normal
+                : NotificationPriority.High), ct);
     }
 
     /// <summary>Says what is actually missing, rather than "no approver found".</summary>
@@ -186,6 +282,15 @@ public sealed class ApprovalEngine(
 
         var outcome = WorkflowRouter.Advance(approval, step, decision, now);
 
+        // Whoever else was holding this step no longer needs to look at it. Done
+        // before anything new is raised, so a step that routes back to the same
+        // person leaves them the new message rather than clearing it.
+        if (!outcome.StillAwaitingSameStep)
+        {
+            await notifier.DismissEventAsync(
+                StepEvent(approval.DocumentType, approval.DocumentId, step.Order), ct);
+        }
+
         // A newly opened step needs its own quorum resolved: the set of eligible
         // approvers can have changed while the request was in flight.
         if (outcome.Status is ApprovalStatus.Pending && !outcome.StillAwaitingSameStep)
@@ -205,6 +310,8 @@ public sealed class ApprovalEngine(
 
                 next.RequiredApprovals = next.Quorum == StepQuorum.All ? nextEligible.Count : 1;
                 approval.DueUtc = WorkflowRouter.DueAt(next, now);
+
+                await NotifyStepAssignedAsync(approval, ct);
             }
         }
 
@@ -221,6 +328,8 @@ public sealed class ApprovalEngine(
                 if (applied.Failed)
                     return Result.Fail<ApprovalRequest>(applied.Error!, applied.Code);
             }
+
+            await NotifySettledAsync(approval, outcome.Status, comment, ct);
         }
 
         await db.SaveChangesAsync(ct);
@@ -262,6 +371,12 @@ public sealed class ApprovalEngine(
         var sink = sinks.FirstOrDefault(s => s.DocumentType == approval.DocumentType);
         if (sink is not null)
             await sink.OnSettledAsync(approval.DocumentId, ApprovalStatus.Cancelled, approval, ct);
+
+        // The approvers holding it are told nothing new, but what they were told
+        // is stood down - a bell full of withdrawn requests teaches people to
+        // ignore the bell.
+        await notifier.DismissEventAsync(
+            StepEvent(approval.DocumentType, approval.DocumentId, step.Order), ct);
 
         await db.SaveChangesAsync(ct);
         return Result.Success();

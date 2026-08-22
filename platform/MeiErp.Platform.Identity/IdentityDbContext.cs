@@ -1,3 +1,4 @@
+using MeiErp.Platform.Notifications;
 using MeiErp.Platform.Workflow;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -28,6 +29,15 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options)
     public DbSet<ApprovalStepState> ApprovalStepStates => Set<ApprovalStepState>();
     public DbSet<ApprovalAction> ApprovalActions => Set<ApprovalAction>();
     public DbSet<ApprovalDelegation> ApprovalDelegations => Set<ApprovalDelegation>();
+
+    // Notifications sit on this context rather than one of their own so that a
+    // notification is written in the same transaction as the approval that
+    // raised it. Two contexts would mean two commits, and an approval that
+    // succeeded while its notification rolled back leaves somebody waiting on a
+    // queue nobody told them about.
+    public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<NotificationDelivery> NotificationDeliveries => Set<NotificationDelivery>();
+    public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -170,5 +180,55 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options)
 
         builder.Entity<WorkflowStep>()
             .HasQueryFilter(s => !s.Definition!.IsDeleted);
+
+        builder.Entity<Notification>(b =>
+        {
+            b.Property(n => n.UserId).HasMaxLength(450).IsRequired();
+            b.Property(n => n.Category).HasMaxLength(100).IsRequired();
+            b.Property(n => n.Subject).HasMaxLength(300).IsRequired();
+            b.Property(n => n.Body).HasMaxLength(4000).IsRequired();
+            b.Property(n => n.Url).HasMaxLength(500);
+            b.Property(n => n.ModuleKey).HasMaxLength(50);
+            b.Property(n => n.EventKey).HasMaxLength(200);
+
+            // The bell's query, on every page render for every signed-in user.
+            b.HasIndex(n => new { n.UserId, n.ReadUtc, n.DismissedUtc });
+
+            // Standing down everything one event raised.
+            b.HasIndex(n => n.EventKey).HasFilter("\"EventKey\" IS NOT NULL");
+
+            b.HasMany(n => n.Deliveries)
+             .WithOne(d => d.Notification!)
+             .HasForeignKey(d => d.NotificationId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<NotificationDelivery>(b =>
+        {
+            b.Property(d => d.Channel).HasMaxLength(50).IsRequired();
+            b.Property(d => d.Address).HasMaxLength(300);
+            b.Property(d => d.LastError).HasMaxLength(2000);
+
+            // What the dispatcher claims on. Filtered to the two statuses that
+            // can still be due, so the index stays small however much history
+            // accumulates behind it.
+            b.HasIndex(d => new { d.Status, d.NextAttemptUtc })
+             .HasFilter("\"Status\" IN (0, 2)");
+
+            // One channel carries a given notification once. A retry updates the
+            // row it already has; a second row would be a second email.
+            b.HasIndex(d => new { d.NotificationId, d.Channel }).IsUnique();
+        });
+
+        builder.Entity<NotificationPreference>(b =>
+        {
+            b.Property(p => p.UserId).HasMaxLength(450).IsRequired();
+            b.Property(p => p.Category).HasMaxLength(100).IsRequired();
+            b.Property(p => p.Channel).HasMaxLength(50).IsRequired();
+
+            // Absent means "the channel's default", so there is exactly one
+            // answer per person per category per channel or none at all.
+            b.HasIndex(p => new { p.UserId, p.Category, p.Channel }).IsUnique();
+        });
     }
 }

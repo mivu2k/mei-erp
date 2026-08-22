@@ -15,8 +15,8 @@ screens and none of the depth.
 | | Old app (`/home/pc/vb/acc`) | This rebuild | |
 |---|---|---|---|
 | Code (excl. migrations) | 57,065 | 31,169 | **55%** |
-| Pages | 175 | 94 | 54% |
-| Tests | 226 | 188 | 83% |
+| Pages | 175 | 96 | 55% |
+| Tests | 226 | 227 | **101%** |
 | Modules | 8 | 7 | Plain Ledger missing entirely |
 
 The old app also has whole subsystems this one has never touched — attendance,
@@ -74,21 +74,27 @@ bank reconciliation · year close · 6 reports · PDF and Excel export.
 
 ## What is missing — ordered by how much it matters
 
-### 1. Notifications and email — nothing exists
+### 1. Notifications — built; three pieces still open
 
-**Highest priority.** The approval engine sends nobody anything. Somebody raises
-a leave request and their manager never finds out unless they happen to open the
-inbox. This makes the engine's best feature invisible in daily use.
+`Platform.Notifications` exists and the approval engine is wired to it, so
+raising a request now tells the people who can approve it, and settling one
+tells the raiser. In-app and email channels, a durable queue with exponential
+backoff, and per-user per-category preferences. 33 tests, 8 of them against a
+real database because the claim statement is hand-written SQL.
 
-Needs: `Platform.Notifications` with a channel abstraction (email now, WhatsApp
-later — build the abstraction on day one, it was the plan), a durable outbound
-queue with retry and a delivery log, Razor templates on the company letterhead,
-an in-app bell, and per-user preferences. Then wire approval assignment,
-reminder and escalation into it.
+What is still missing:
+
+- **A preferences screen.** The `NotificationPreferences` table is read on every
+  send and nothing writes to it, so a person cannot yet turn a channel off.
+- **A dead-letter screen.** `INotificationOutbox.DeadAsync` and `RetryAsync`
+  exist and nothing calls them, so a message that gave up is invisible.
+- **Templates.** Email is plain text; it should render Razor on the company
+  letterhead like the PDFs do.
 
 The SLA fields on `WorkflowStep` (`ReminderAfterHours`, `EscalateAfterHours`) are
-**stored but never acted on** — there is no background job reading them. That
-needs a scheduler.
+still **stored but never acted on** — there is no background job reading them.
+The `approval.reminder` and `approval.escalated` categories are declared and
+nothing raises them. That needs a scheduler, and is item 3 below.
 
 ### 2. Attendance — the whole subsystem, ~2,000 lines in the old app
 
@@ -135,8 +141,6 @@ passes, labels and stickers. Every one of those is unbuilt.
 
 - **Global search** — nothing.
 - **Audit trail viewer** — audit columns are stamped, nothing reads them.
-- **Company profile page** — `/admin/company` is in the nav but **the page does
-  not exist**; the service and entity do. Clicking it 404s.
 - **Password reset by email, 2FA, email confirmation** — none.
 - **Dashboard** is static placeholder tiles showing zeros.
 - **Backups, staging environment, monitoring** — none of the infrastructure
@@ -146,8 +150,6 @@ passes, labels and stickers. Every one of those is unbuilt.
 
 ## Known bugs and rough edges
 
-- `/admin/company` is in the nav and has no page. Either build it or remove the
-  nav entry.
 - The dashboard's four tiles are hardcoded zeros.
 - Reports have no scheduling, saved views, or drill-through targets wired up
   (`DrillUrl` is populated on two reports; nothing else uses it).
@@ -163,9 +165,20 @@ passes, labels and stickers. Every one of those is unbuilt.
 
 In order. Each is a session's work or less unless noted.
 
-1. **Build `/admin/company`** — small, and it is a visible 404 today.
-2. **Notifications and email** (2 sessions) — unblocks the approval engine.
-3. **Scheduler + SLA reminders and escalation** — makes the stored SLA fields real.
+1. ~~**Build `/admin/company`**~~ — **done.** The page exists at
+   `/admin/company`; two bugs under it were fixed on the way (`SaveAsync`
+   clobbered the primary key, and `GetAsync` handed the process-wide cache to
+   the caller). Six tests.
+2. ~~**Notifications and email**~~ — **mostly done.** `Platform.Notifications`
+   exists: channel abstraction (in-app + email over MailKit), a durable queue
+   with backoff and a dead-letter state, per-user per-category preferences, the
+   bell in the app bar, and the approval engine wired to raise on assignment and
+   on settlement. 33 tests. **Still missing:** a preferences screen, a
+   dead-letter review screen, and Razor/letterhead templates — email is plain
+   text today.
+3. **Scheduler + SLA reminders and escalation** — makes the stored SLA fields
+   real. The `approval.reminder` and `approval.escalated` categories already
+   exist and nothing raises them; that is the gap.
 4. **Attendance** (2–3 sessions) — the biggest daily-use hole.
 5. **Plain Ledger module** (1–2 sessions) — self-contained, copy the old design.
 6. **Outbox and cross-module posting** (2 sessions) — the rebuild's actual thesis.

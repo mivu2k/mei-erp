@@ -9,10 +9,11 @@ apps behind a shared login. Read this before exploring the tree.
 warnings. Nothing is in the office yet — the old app stays live until this reaches
 parity feature by feature.
 
-What is deliberately *not* built yet: printing (QuestPDF documents), the shared
-report platform, notifications and email, and the outbox event bus that would let
-Inventory and Repair post to Finance's ledger automatically. Those are the next
-pieces, and the sections below describe how they are meant to fit.
+What is deliberately *not* built yet: the outbox event bus that would let
+Inventory and Repair post to Finance's ledger automatically, and the scheduler
+behind the approval engine's SLA reminders. Those are the next pieces, and the
+sections below describe how they are meant to fit. `HANDOVER.md` is the honest
+account of how far short of the old app this still is.
 
 | Piece | State |
 |---|---|
@@ -20,7 +21,7 @@ pieces, and the sections below describe how they are meant to fit.
 | `Platform.Workflow` | done — domain, router, engine, resolver, delegation; **20 tests green** |
 | `Platform.Persistence` | done — audit, soft delete, xmin, outbox, sequences; **5 integration tests green** |
 | `Platform.Identity` | done — users, roles, permissions, admin screens; **10 tests green** |
-| `Platform.Notifications` | not started |
+| `Platform.Notifications` | done — channels, durable queue, preferences, bell; **33 tests green** |
 | `Platform.Reporting` | not started |
 | `Platform.Messaging` | not started |
 | **HR module** | employees + leave, wired to the approval engine; **11 tests green** |
@@ -182,6 +183,54 @@ money.
 - **An item with stock or history can never be deleted** — only deactivated. Same
   reason as Finance's accounts: it keeps the soft-delete filter from hiding movements.
 
+## Notifications — the rules that must not be relaxed
+
+The approval engine's best features were invisible until this existed: somebody
+raised a request and their manager only found out if they happened to open the
+inbox.
+
+- **A notification is staged, never sent inline.** `NotifyAsync` and
+  `DismissEventAsync` write rows and return; **the caller commits.** The tables
+  live on `PlatformDbContext` precisely so a notification lands in the same
+  transaction as the approval that raised it. An approval that commits while its
+  notification rolls back leaves somebody waiting on a queue nobody told them
+  about; the reverse tells them about something that never happened. Sending
+  inline would also let a slow SMTP server hold open the transaction that
+  approves a payment.
+- **The bell's own actions do save** — `MarkReadAsync`, `MarkAllReadAsync`.
+  Nothing else is in flight when a person clicks one.
+- **Every channel gets a row, including the ones that did nothing.** Suppressed
+  by preference and unreachable for want of an address are recorded as
+  `Suppressed` and `NotApplicable`, not omitted. "We never tried" and "we tried
+  and it bounced" are different answers to the only question anyone asks
+  afterwards, and a missing row cannot tell them apart.
+- **No address is not a failure.** It is a fact about the account, so it is
+  never retried — otherwise every attempt burns against something that cannot
+  change without somebody editing the user.
+- **The attempt is counted when the row is claimed, not when the send returns.**
+  `ClaimDueAsync` increments `Attempts` and clears `NextAttemptUtc` in the same
+  UPDATE that selects the rows, under `FOR UPDATE SKIP LOCKED`. That is what
+  stops two app instances sending the same email, and what stops a message that
+  hangs the dispatcher being retried forever.
+- **A dead delivery carries no next-attempt time.** A dispatcher that filters
+  only on the clock would otherwise pick it up for ever.
+- **A channel that throws is a bug in that channel**, caught and turned into a
+  failed attempt so it cannot take the rest of the batch down.
+- **Categories are constants, not free strings** (`NotificationCategories`). A
+  typo would create a second category nobody has a preference for, which then
+  quietly ignores their opt-out.
+- **Email is off by default for most categories.** Emailing every status change
+  teaches people to filter the system into a folder they never open, and the one
+  message that mattered is lost with the rest.
+- **Deciding a step stands down everyone else holding it.** A bell full of
+  things already handled trains people to ignore the bell. Notifications the
+  person has already *read* are left alone — dismissing those would rewrite what
+  they saw.
+
+`RetrySchedule` is pure and static for the same reason `WorkflowRouter` is: the
+awkward cases are all about time, and none are testable if the rule reads the
+clock itself.
+
 ## Gate Pass — why it exists
 
 The module is a segregation-of-duties control, not a form. **Whoever raises a pass
@@ -287,5 +336,7 @@ test, then two people press Save in the same second and both get PO-26-0042.
 ## Open decisions
 
 - Concurrent user count at peak is unconfirmed; under ~200 needs no capacity planning.
-- WhatsApp as a notification channel is planned as a *provider* behind
-  `Platform.Notifications`, not a special case. Build the channel abstraction first.
+- WhatsApp as a notification channel is a *provider* behind
+  `Platform.Notifications`, not a special case. The abstraction is built:
+  implement `INotificationChannel`, register it, and choose what
+  `EnabledByDefault` returns. Nothing else changes, and no call site moves.

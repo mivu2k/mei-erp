@@ -8,5 +8,21 @@
     "AdminEmail": "admin@mei.local",
     "AdminName": "Administrator",
     "AdminPassword": "CHANGE_ME_TOO"
+  },
+  "Notifications": {
+    "//": "Off by default. The in-app bell works regardless; only email needs this.",
+    "Email": {
+      "Enabled": false,
+      "Host": "smtp.example.com",
+      "Port": 587,
+      "UseStartTls": true,
+      "Username": "",
+      "Password": "",
+      "FromAddress": "erp@example.com",
+      "FromName": "MEI ERP",
+      "//BaseUrl": "Prefixed to a notification's link so the email carries a clickable URL.",
+      "BaseUrl": "http://localhost:5090",
+      "//RedirectAllTo": "Set on staging, where the database is a copy of production and the addresses on it are real people who did not ask to be tested against."
+    }
   }
 }
