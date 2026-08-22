@@ -81,6 +81,26 @@ public static class FinanceModule
                 [RequestsRaise, AdvancesRaise])
         ],
 
+        Nav =
+        [
+            new("Chart of accounts", "/finance/accounts", "AccountTree", AccountsView),
+            new("Vouchers",          "/finance/vouchers", "ReceiptLong", VouchersView),
+            new("Day book",          "/finance/day-book", "MenuBook", VouchersView),
+
+            new("Payment requests",  "/finance/requests", "RequestQuote", RequestsRaise, "Spending"),
+            new("Advances",          "/finance/advances", "AccountBalanceWallet", AdvancesRaise, "Spending"),
+            new("Petty cash",        "/finance/petty-cash", "Savings", PettyCashManage, "Spending"),
+            new("Utilities",         "/finance/utilities", "Bolt", UtilitiesManage, "Spending"),
+
+            new("Third parties",     "/finance/third-parties", "Handshake", PartiesManage, "People"),
+            new("Payroll",           "/finance/payroll", "Payments", PayrollView, "People"),
+            new("My payslips",       "/finance/my-payslips", "Description", null, "People"),
+
+            new("Reports",           "/finance/reports", "Assessment", ReportsView, "Period"),
+            new("Reconciliation",    "/finance/reconcile", "Rule", ReconcileManage, "Period"),
+            new("Fiscal years",      "/finance/year-end", "EventAvailable", YearClose, "Period")
+        ],
+
         Approvables =
         [
             new(PaymentRequestService.DocumentType, "Payment request", "Amount requested"),

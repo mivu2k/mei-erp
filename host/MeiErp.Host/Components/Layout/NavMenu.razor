@@ -1,11 +1,14 @@
 @inject IModuleCatalog Catalog
+@inject NavigationManager Nav
+@implements IDisposable
 
 @*
-    One nav for the whole suite, not eight.
+    One nav for the whole suite.
 
     Every business module contributes its own section from the module catalog,
-    so adding a module never means editing this file. Each entry is gated on
-    that module's access policy - a person only ever sees what they can enter.
+    so adding a module — or a page inside one — never means editing this file.
+    Each entry is gated on its own permission, so a person only ever sees what
+    they can actually open.
 *@
 
 <MudNavMenu Class="pt-4">
@@ -33,10 +36,55 @@
         {
             <AuthorizeView Policy="@($"module:{module.Key}")" Context="moduleAccess">
                 <Authorized>
-                    <MudNavLink Href="@module.BasePath" Match="NavLinkMatch.Prefix"
-                                Icon="@ResolveIcon(module.Icon)">
-                        @module.Name
-                    </MudNavLink>
+                    @if (module.Nav.Count == 0)
+                    {
+                        @* A module with no declared nav is still reachable at
+                           its base path rather than being invisible. *@
+                        <MudNavLink Href="@module.BasePath" Match="NavLinkMatch.Prefix"
+                                    Icon="@ResolveIcon(module.Icon)">
+                            @module.Name
+                        </MudNavLink>
+                    }
+                    else
+                    {
+                        @* Opens itself when you are inside it, so the page you
+                           are on is always visible in the nav. *@
+                        <MudNavGroup Title="@module.Name" Icon="@ResolveIcon(module.Icon)"
+                                     Expanded="@IsInside(module.BasePath)">
+                            @foreach (var group in module.Nav.GroupBy(n => n.Group))
+                            {
+                                @if (group.Key is not null)
+                                {
+                                    <MudText Typo="Typo.overline"
+                                             Class="px-6 pt-2 mud-text-secondary d-block">
+                                        @group.Key
+                                    </MudText>
+                                }
+
+                                @foreach (var item in group)
+                                {
+                                    @if (item.Permission is null)
+                                    {
+                                        <MudNavLink Href="@item.Path" Match="NavLinkMatch.Prefix"
+                                                    Icon="@ResolveIcon(item.Icon)">
+                                            @item.Label
+                                        </MudNavLink>
+                                    }
+                                    else
+                                    {
+                                        <AuthorizeView Policy="@item.Permission" Context="pageAccess">
+                                            <Authorized>
+                                                <MudNavLink Href="@item.Path" Match="NavLinkMatch.Prefix"
+                                                            Icon="@ResolveIcon(item.Icon)">
+                                                    @item.Label
+                                                </MudNavLink>
+                                            </Authorized>
+                                        </AuthorizeView>
+                                    }
+                                }
+                            }
+                        </MudNavGroup>
+                    }
                 </Authorized>
             </AuthorizeView>
         }
@@ -86,11 +134,35 @@
 </MudNavMenu>
 
 @code {
+    protected override void OnInitialized() =>
+        Nav.LocationChanged += OnLocationChanged;
+
+    public void Dispose() =>
+        Nav.LocationChanged -= OnLocationChanged;
+
+    /// <summary>
+    /// Re-renders on navigation so the group covering the current page opens
+    /// itself — otherwise following a link from elsewhere leaves the nav
+    /// collapsed and the page you are on invisible in it.
+    /// </summary>
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) =>
+        InvokeAsync(StateHasChanged);
+
+    private bool IsInside(string basePath)
+    {
+        var path = "/" + Nav.ToBaseRelativePath(Nav.Uri);
+        var query = path.IndexOf('?');
+        if (query >= 0) path = path[..query];
+
+        return path.Equals(basePath, StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith(basePath + "/", StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>
     /// A module names its icon as a string, because the catalog lives in the
     /// Kernel and the Kernel must not depend on MudBlazor. Falls back to a
-    /// generic icon rather than throwing, so a typo in a module's descriptor
-    /// costs a wrong picture, not a broken nav.
+    /// generic icon rather than throwing, so a typo in a descriptor costs a
+    /// wrong picture, not a broken nav.
     /// </summary>
     private static string ResolveIcon(string name)
     {

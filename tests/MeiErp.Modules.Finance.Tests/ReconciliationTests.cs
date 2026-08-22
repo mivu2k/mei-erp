@@ -173,7 +173,7 @@ public sealed class ReconciliationTests : IAsyncLifetime
         Assert.Equal(-20_000, updated.Value.Uncleared);
         Assert.True(updated.Value.IsReconciled);
 
-        var outstanding = Assert.Single(updated.Value.Lines.Where(l => !l.IsCleared));
+        var outstanding = Assert.Single(updated.Value.Lines, l => !l.IsCleared);
         Assert.Equal("Rent cheque", outstanding.Narration);
     }
 

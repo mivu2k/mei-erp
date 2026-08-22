@@ -64,6 +64,15 @@ public static class InventoryModule
                  ReceiptPost, SalesManage, DeliveryPost, CostsView])
         ],
 
+        Nav =
+        [
+            new("Items",              "/inventory/items", "Inventory2", ItemsView),
+            new("Customers & suppliers", "/inventory/parties", "Contacts", PartiesManage),
+
+            new("Purchase orders",    "/inventory/purchase-orders", "ShoppingCart", PurchasingManage, "Buying"),
+            new("Sales orders",       "/inventory/sales-orders", "PointOfSale", SalesManage, "Selling")
+        ],
+
         Approvables =
         [
             new(PurchasingService.DocumentType, "Purchase order", "Order value")

@@ -353,6 +353,11 @@ public static class AutoModule
             new(ServicesManage, "Servicing", "Record servicing, fuel and repairs")
         ],
 
+        Nav =
+        [
+            new("Vehicles", "/auto/vehicles", "DirectionsCar", VehiclesView)
+        ],
+
         RoleTemplates =
         [
             new("Fleet Manager", "Manages vehicles and their service records.",

@@ -431,6 +431,11 @@ public static class GatePassModule
             new(PassesReturn, "Gate",   "Tick returnable goods back in")
         ],
 
+        Nav =
+        [
+            new("Gate passes", "/gatepass/passes", "LocalShipping", PassesView)
+        ],
+
         RoleTemplates =
         [
             new("Gate Security", "Clears goods through the gate and receives returns.",

@@ -335,7 +335,7 @@ public class FinanceDbContext(
             b.Property(l => l.VoucherNumber).HasMaxLength(30);
             b.Property(l => l.Narration).HasMaxLength(500);
             b.HasIndex(l => l.VoucherLineId);
-            b.Ignore(l => l.Signed);
+            b.Ignore(l => l.SignedAmount);
             b.HasQueryFilter(l => !l.Reconciliation!.IsDeleted);
         });
 

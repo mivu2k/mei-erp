@@ -21,7 +21,7 @@ public class PettyCashBox : AuditableEntity, IConcurrencyChecked
     public string? CustodianUserId { get; set; }
 
     /// <summary>The standing float this box is topped up to.</summary>
-    public decimal Float { get; set; }
+    public decimal FloatAmount { get; set; }
 
     /// <summary>The cash account the box's balance lives on.</summary>
     public int AccountId { get; set; }
@@ -111,7 +111,7 @@ public sealed class PettyCashService(
             return Result.Fail<PettyCashBox>("Say who holds this float.", "petty.no-custodian");
         }
 
-        if (box.Float <= 0)
+        if (box.FloatAmount <= 0)
             return Result.Fail<PettyCashBox>("A float has to be more than nothing.", "petty.bad-float");
 
         if (box.Id == 0)
@@ -257,14 +257,14 @@ public sealed class PettyCashService(
             return Result.Fail<PettyCashEntry>("The amount must be more than nothing.", "petty.bad-amount");
 
         var balance = await BalanceAsync(boxId, ct);
-        if (balance + amount > box.Float)
+        if (balance + amount > box.FloatAmount)
         {
             // The float is the whole point: topping past it means the box is no
             // longer a fixed float, and "what should be in the tin" stops having
             // an answer.
             return Result.Fail<PettyCashEntry>(
-                $"{box.Name} holds {balance:N2} against a float of {box.Float:N2}, " +
-                $"so it can take at most {box.Float - balance:N2}.",
+                $"{box.Name} holds {balance:N2} against a float of {box.FloatAmount:N2}, " +
+                $"so it can take at most {box.FloatAmount - balance:N2}.",
                 "petty.over-float");
         }
 

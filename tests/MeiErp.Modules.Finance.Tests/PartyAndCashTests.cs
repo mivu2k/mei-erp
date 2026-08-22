@@ -283,7 +283,7 @@ public sealed class PartyAndCashTests : IAsyncLifetime
 
         var box = await petty.SaveBoxAsync(new PettyCashBox
         {
-            Name = "Front desk", CustodianName = "Rafiq", Float = 20_000, IsActive = true
+            Name = "Front desk", CustodianName = "Rafiq", FloatAmount = 20_000, IsActive = true
         });
         Assert.True(box.Ok, box.Error);
 
@@ -311,7 +311,7 @@ public sealed class PartyAndCashTests : IAsyncLifetime
 
         var box = await petty.SaveBoxAsync(new PettyCashBox
         {
-            Name = "Front desk", CustodianName = "Rafiq", Float = 20_000, IsActive = true
+            Name = "Front desk", CustodianName = "Rafiq", FloatAmount = 20_000, IsActive = true
         });
 
         await petty.TopUpAsync(box.Value.Id, 20_000, _bank, _clock.Today, null);
@@ -334,7 +334,7 @@ public sealed class PartyAndCashTests : IAsyncLifetime
 
         var box = await petty.SaveBoxAsync(new PettyCashBox
         {
-            Name = "Front desk", CustodianName = "Rafiq", Float = 20_000, IsActive = true
+            Name = "Front desk", CustodianName = "Rafiq", FloatAmount = 20_000, IsActive = true
         });
 
         await petty.TopUpAsync(box.Value.Id, 20_000, _bank, _clock.Today, null);
@@ -360,7 +360,7 @@ public sealed class PartyAndCashTests : IAsyncLifetime
 
         var result = await NewPetty(db).SaveBoxAsync(new PettyCashBox
         {
-            Name = "Nobody's box", Float = 10_000
+            Name = "Nobody's box", FloatAmount = 10_000
         });
 
         // An unattributed float is one nobody is answerable for.

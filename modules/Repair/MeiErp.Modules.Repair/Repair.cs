@@ -511,6 +511,12 @@ public static class RepairModule
             new(CostsView,       "Reporting", "See cost and margin on repair work")
         ],
 
+        Nav =
+        [
+            new("Jobs",      "/repair/jobs", "Build", JobsView),
+            new("Customers", "/repair/customers", "Contacts", CustomersManage)
+        ],
+
         RoleTemplates =
         [
             new("Technician", "Works on devices and records what was done.",

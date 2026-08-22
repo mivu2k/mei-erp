@@ -36,7 +36,30 @@ public sealed record ModuleDescriptor
 
     /// <summary>Document types this module can route through the approval engine.</summary>
     public IReadOnlyList<ApprovableDocument> Approvables { get; init; } = [];
+
+    /// <summary>
+    /// The module's own nav, shown beneath it in the shell.
+    ///
+    /// Without this a module is reachable only at its base path, and every page
+    /// behind it may as well not exist - which is exactly what happened before
+    /// this was added.
+    /// </summary>
+    public IReadOnlyList<NavItem> Nav { get; init; } = [];
 }
+
+/// <summary>
+/// One entry in a module's own navigation.
+/// </summary>
+/// <param name="Label">What it is called. Written for the person, not the route.</param>
+/// <param name="Path">Where it goes.</param>
+/// <param name="Icon">MudBlazor icon name, resolved by the shell.</param>
+/// <param name="Permission">
+/// Hidden unless the person holds this. Null shows it to anyone who can enter
+/// the module at all.
+/// </param>
+/// <param name="Group">Optional heading, so a long module's nav reads in sections.</param>
+public sealed record NavItem(
+    string Label, string Path, string Icon, string? Permission = null, string? Group = null);
 
 /// <param name="Key">Namespaced, e.g. "finance.vouchers.post".</param>
 /// <param name="Group">Groups rows in the permission matrix, e.g. "Vouchers".</param>

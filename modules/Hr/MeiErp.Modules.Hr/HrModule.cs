@@ -122,6 +122,12 @@ public static class HrModule
                 [EmployeesView, LeaveRequest])
         ],
 
+        Nav =
+        [
+            new("Employees", "/hr/employees", "Badge", EmployeesView),
+            new("Leave",     "/hr/leave", "EventBusy", LeaveRequest)
+        ],
+
         Approvables =
         [
             new(LeaveService.DocumentType, "Leave request")

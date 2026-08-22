@@ -35,7 +35,7 @@ public class Reconciliation : AuditableEntity, IConcurrencyChecked
     public List<ReconciliationLine> Lines { get; set; } = [];
 
     /// <summary>Ledger entries the bank has not shown yet.</summary>
-    public decimal Uncleared => Lines.Where(l => !l.IsCleared).Sum(l => l.Signed);
+    public decimal Uncleared => Lines.Where(l => !l.IsCleared).Sum(l => l.SignedAmount);
 
     /// <summary>
     /// The ledger balance adjusted for what has not cleared. This is the figure
@@ -70,7 +70,7 @@ public class ReconciliationLine : Entity
     /// <summary>Ticked when it appears on the statement.</summary>
     public bool IsCleared { get; set; }
 
-    public decimal Signed => Debit - Credit;
+    public decimal SignedAmount => Debit - Credit;
 }
 
 public interface IReconciliationService

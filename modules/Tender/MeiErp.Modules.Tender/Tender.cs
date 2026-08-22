@@ -599,6 +599,12 @@ public static class TenderModule
             new(TasksManage,      "Projects",   "Progress tasks on a project board")
         ],
 
+        Nav =
+        [
+            new("Tenders",  "/tender/tenders", "Gavel", TendersView),
+            new("Projects", "/tender/projects", "Assignment", ProjectsView)
+        ],
+
         RoleTemplates =
         [
             new("Bid Manager", "Runs tenders and the guarantees lodged against them.",

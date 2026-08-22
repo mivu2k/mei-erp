@@ -81,7 +81,7 @@ public sealed class PayrollTests : IAsyncLifetime
 
     private static readonly DateOnly August = new(2026, 8, 1);
 
-    private async Task<PayrollEmployee> AddEmployeeAsync(
+    private static async Task<PayrollEmployee> AddEmployeeAsync(
         PayrollService service, string code, string name, decimal basic,
         string? userId = null, IReadOnlyList<StructureLineInput>? lines = null)
     {

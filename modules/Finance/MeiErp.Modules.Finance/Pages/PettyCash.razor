@@ -25,7 +25,7 @@
     @foreach (var box in _boxes)
     {
         var balance = _balances.GetValueOrDefault(box.Id);
-        var used = box.Float == 0 ? 0 : (double)((box.Float - balance) / box.Float * 100);
+        var used = box.FloatAmount == 0 ? 0 : (double)((box.FloatAmount - balance) / box.FloatAmount * 100);
 
         <MudItem xs="12" sm="6" md="4">
             <MudPaper Outlined="true" Elevation="0" Class="pa-4">
@@ -46,8 +46,8 @@
                                    Value="@used" Class="mt-3" Rounded="true" />
 
                 <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                    @((box.Float - balance).ToString("N2")) spent of a
-                    @box.Float.ToString("N2") float
+                    @((box.FloatAmount - balance).ToString("N2")) spent of a
+                    @box.FloatAmount.ToString("N2") float
                 </MudText>
 
                 <div class="d-flex gap-2 mt-3">
@@ -172,7 +172,7 @@
         {
             { x => x.BoxId, box.Id },
             { x => x.BoxName, box.Name },
-            { x => x.Headroom, box.Float - _balances.GetValueOrDefault(box.Id) }
+            { x => x.Headroom, box.FloatAmount - _balances.GetValueOrDefault(box.Id) }
         };
         var dialog = await Dialogs.ShowAsync<PettyTopUpDialog>("Top up", parameters,
             new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
