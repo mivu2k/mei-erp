@@ -1,0 +1,158 @@
+@page "/finance/payroll"
+@attribute [Authorize(Policy = FinanceModule.PayrollView)]
+@rendermode InteractiveServer
+@inject IPayrollService Wages
+@inject IAccountService Chart
+@inject IClock Clock
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Payroll</PageTitle>
+
+<div class="d-flex align-center mb-1">
+    <div>
+        <MudText Typo="Typo.h5">Payroll</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            A run is built from current salaries, approved, then posted as one voucher.
+        </MudText>
+    </div>
+    <MudSpacer />
+    <MudButton Variant="Variant.Text" Href="/finance/payroll/setup" Class="mr-2">
+        Salaries &amp; components
+    </MudButton>
+    <AuthorizeView Policy="@FinanceModule.PayrollManage" Context="perms">
+        <Authorized>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.PlayArrow" OnClick="Generate">
+                Build a month
+            </MudButton>
+        </Authorized>
+    </AuthorizeView>
+</div>
+
+<MudPaper Outlined="true" Elevation="0" Class="mt-4">
+    <MudDataGrid T="PayrollRun" Items="_runs" Dense="true" Hover="true" Elevation="0"
+                 Loading="_loading" Filterable="false" RowsPerPage="24">
+        <Columns>
+            <TemplateColumn Title="Month">
+                <CellTemplate>
+                    <MudText Typo="Typo.body2"><b>@context.Item.Month.ToString("MMMM yyyy")</b></MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        @context.Item.Reference
+                    </MudText>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="People">
+                <CellTemplate>@context.Item.Payslips.Count</CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Gross" HeaderClass="text-right" CellClass="text-right">
+                <CellTemplate>
+                    <span style="font-variant-numeric:tabular-nums">@context.Item.TotalGross.ToString("N2")</span>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Deductions" HeaderClass="text-right" CellClass="text-right">
+                <CellTemplate>
+                    <span style="font-variant-numeric:tabular-nums">@context.Item.TotalDeductions.ToString("N2")</span>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Net" HeaderClass="text-right" CellClass="text-right">
+                <CellTemplate>
+                    <span style="font-variant-numeric:tabular-nums"><b>@context.Item.TotalNet.ToString("N2")</b></span>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Status">
+                <CellTemplate>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                             Color="@(context.Item.Status switch {
+                                 PayrollRunStatus.Paid => Color.Success,
+                                 PayrollRunStatus.Approved => Color.Info,
+                                 PayrollRunStatus.Cancelled => Color.Error,
+                                 _ => Color.Default })">
+                        @context.Item.Status
+                    </MudChip>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="" Sortable="false">
+                <CellTemplate>
+                    <div class="d-flex justify-end gap-1">
+                        <MudButton Size="Size.Small" Variant="Variant.Text"
+                                   Href="@($"/finance/payroll/{context.Item.Id}")">Payslips</MudButton>
+
+                        <AuthorizeView Policy="@FinanceModule.PayrollPay" Context="perms">
+                            <Authorized>
+                                @if (context.Item.Status == PayrollRunStatus.Draft)
+                                {
+                                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                                               OnClick="@(() => Approve(context.Item))">Approve</MudButton>
+                                }
+                                else if (context.Item.Status == PayrollRunStatus.Approved)
+                                {
+                                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
+                                               OnClick="@(() => Pay(context.Item))">Pay</MudButton>
+                                }
+                            </Authorized>
+                        </AuthorizeView>
+                    </div>
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+        <NoRecordsContent>
+            <MudText Class="pa-8 text-center mud-text-secondary">
+                No payroll runs yet. Set salaries first, then build a month.
+            </MudText>
+        </NoRecordsContent>
+    </MudDataGrid>
+</MudPaper>
+
+@code {
+    private IReadOnlyList<PayrollRun> _runs = [];
+    private bool _loading = true;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _runs = await Wages.RunsAsync();
+        _loading = false;
+    }
+
+    private async Task Generate()
+    {
+        var dialog = await Dialogs.ShowAsync<GenerateRunDialog>("Build a payroll month",
+            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+
+    private async Task Approve(PayrollRun run)
+    {
+        var ok = await Dialogs.ShowMessageBox(
+            $"Approve {run.Month:MMMM yyyy}?",
+            $"{run.Payslips.Count} payslips totalling {run.TotalNet:N2} net. " +
+            "Once approved the run cannot be rebuilt.",
+            yesText: "Approve", cancelText: "Cancel");
+
+        if (ok != true) return;
+
+        var result = await Wages.ApproveAsync(run.Id);
+        if (result.Failed) Snackbar.Add(result.Error!, Severity.Error);
+        else Snackbar.Add("Run approved.", Severity.Success);
+
+        await LoadAsync();
+    }
+
+    private async Task Pay(PayrollRun run)
+    {
+        var parameters = new DialogParameters<PayRunDialog>
+        {
+            { x => x.RunId, run.Id },
+            { x => x.Net, run.TotalNet },
+            { x => x.Label, run.Month.ToString("MMMM yyyy") }
+        };
+        var dialog = await Dialogs.ShowAsync<PayRunDialog>("Pay the run", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+}

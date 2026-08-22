@@ -1,0 +1,61 @@
+@inject IPayrollService Payroll
+@inject IClock Clock
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+            Payslips are built from whatever salary is in force for that month.
+            Building again replaces a draft; an approved run cannot be rebuilt.
+        </MudText>
+
+        <MudDatePicker Label="Month" Variant="Variant.Outlined" OpenTo="OpenTo.Month" FixDay="1"
+                       Date="_month" DateChanged="@(d => _month = d)" Class="mb-3" />
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="RunAsync" Disabled="_busy">Build</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+
+    private DateTime? _month;
+    private string? _error;
+    private bool _busy;
+
+    protected override void OnInitialized()
+    {
+        // Defaults to last month, which is what is usually being paid.
+        var previous = Clock.Today.AddMonths(-1);
+        _month = new DateOnly(previous.Year, previous.Month, 1).ToDateTime(TimeOnly.MinValue);
+    }
+
+    private async Task RunAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var result = await Payroll.GenerateAsync(
+                DateOnly.FromDateTime(_month ?? DateTime.Today));
+
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add(
+                $"{result.Value.Payslips.Count} payslips built for {result.Value.Month:MMMM yyyy}.",
+                Severity.Success);
+
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

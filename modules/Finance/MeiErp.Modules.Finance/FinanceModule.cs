@@ -24,6 +24,9 @@ public static class FinanceModule
     public const string UtilitiesManage = "finance.utilities.manage";
     public const string AdvancesRaise = "finance.advances.raise";
     public const string AdvancesManage = "finance.advances.manage";
+    public const string PayrollView = "finance.payroll.view";
+    public const string PayrollManage = "finance.payroll.manage";
+    public const string PayrollPay = "finance.payroll.pay";
 
     public static ModuleDescriptor Descriptor => new()
     {
@@ -51,7 +54,10 @@ public static class FinanceModule
             new(PettyCashManage,  "Cash",     "Run petty cash boxes"),
             new(UtilitiesManage,  "Cash",     "Record utility connections and their bills"),
             new(AdvancesRaise,    "Advances", "Ask for an advance and account for it"),
-            new(AdvancesManage,   "Advances", "Pay out, accept receipts and settle advances")
+            new(AdvancesManage,   "Advances", "Pay out, accept receipts and settle advances"),
+            new(PayrollView,      "Payroll",  "See payroll runs and payslips"),
+            new(PayrollManage,    "Payroll",  "Set salaries and build payroll runs"),
+            new(PayrollPay,       "Payroll",  "Approve and pay a payroll run")
         ],
 
         RoleTemplates =
@@ -60,13 +66,14 @@ public static class FinanceModule
                 [AccountsView, AccountsManage, VouchersView, VouchersPost,
                  VouchersReverse, RequestsRaise, RequestsPay, ReportsView,
                  PartiesManage, PettyCashManage, UtilitiesManage,
-                 AdvancesRaise, AdvancesManage]),
+                 AdvancesRaise, AdvancesManage, PayrollView]),
 
             new("Finance Manager", "Everything an accountant can do, plus closing the year.",
                 [AccountsView, AccountsManage, VouchersView, VouchersPost, VouchersReverse,
                  RequestsRaise, RequestsPay, ReportsView, YearClose,
                  PartiesManage, PettyCashManage, UtilitiesManage,
-                 AdvancesRaise, AdvancesManage]),
+                 AdvancesRaise, AdvancesManage,
+                 PayrollView, PayrollManage, PayrollPay]),
 
             new("Requester", "Can ask for money and follow their own requests.",
                 [RequestsRaise, AdvancesRaise])
@@ -102,6 +109,7 @@ public static class FinanceModule
         services.AddScoped<IUtilityService, UtilityService>();
         services.AddScoped<IAdvanceService, AdvanceService>();
         services.AddScoped<IApprovalSink, AdvanceApprovalSink>();
+        services.AddScoped<IPayrollService, PayrollService>();
 
         return services;
     }

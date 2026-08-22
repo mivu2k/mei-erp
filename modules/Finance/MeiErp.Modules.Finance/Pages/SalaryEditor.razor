@@ -1,0 +1,111 @@
+@inject IPayrollService Wages
+@inject IClock Clock
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+            @EmployeeName — this supersedes whatever is in force, from the date below.
+            Payslips already issued are untouched.
+        </MudText>
+
+        <div class="d-flex gap-3 mb-4">
+            <MudNumericField T="decimal" @bind-Value="_basic" Label="Basic salary"
+                             Variant="Variant.Outlined" HideSpinButtons="true" />
+            <MudDatePicker Label="Effective from" Variant="Variant.Outlined" FixDay="1"
+                           Date="_from" DateChanged="@(d => _from = d)" />
+        </div>
+
+        @if (_components.Count > 0)
+        {
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Allowances and deductions</MudText>
+
+            <MudSimpleTable Dense="true">
+                <tbody>
+                    @foreach (var component in _components)
+                    {
+                        <tr>
+                            <td>
+                                @component.Name
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+                                         Color="@(component.Kind == PayComponentKind.Earning ? Color.Success : Color.Warning)">
+                                    @component.Kind
+                                </MudChip>
+                            </td>
+                            <td style="width:150px">
+                                <MudNumericField T="decimal" Value="@Amount(component.Id)"
+                                                 ValueChanged="@(v => SetAmount(component.Id, v))"
+                                                 Variant="Variant.Text" Margin="Margin.Dense"
+                                                 HideSpinButtons="true" />
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        }
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-3">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveAsync" Disabled="_busy">Save salary</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int EmployeeId { get; set; }
+    [Parameter] public string EmployeeName { get; set; } = "";
+
+    private IReadOnlyList<PayComponent> _components = [];
+    private readonly Dictionary<int, decimal> _amounts = [];
+    private decimal _basic;
+    private DateTime? _from;
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _components = await Wages.ComponentsAsync();
+
+        // Defaults to the start of next month, which is when a salary change
+        // almost always takes effect.
+        var next = Clock.Today.AddMonths(1);
+        _from = new DateOnly(next.Year, next.Month, 1).ToDateTime(TimeOnly.MinValue);
+
+        var current = await Wages.CurrentStructureAsync(EmployeeId, Clock.Today);
+        if (current is null) return;
+
+        _basic = current.BasicSalary;
+        foreach (var line in current.Lines)
+            _amounts[line.ComponentId] = line.Amount;
+    }
+
+    private decimal Amount(int componentId) => _amounts.GetValueOrDefault(componentId);
+
+    private void SetAmount(int componentId, decimal value) => _amounts[componentId] = value;
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var result = await Wages.SaveStructureAsync(
+                EmployeeId, DateOnly.FromDateTime(_from ?? DateTime.Today), _basic,
+                [.. _amounts.Where(a => a.Value != 0)
+                            .Select(a => new StructureLineInput(a.Key, a.Value))]);
+
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Salary saved.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

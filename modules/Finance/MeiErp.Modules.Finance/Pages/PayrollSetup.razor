@@ -1,0 +1,191 @@
+@page "/finance/payroll/setup"
+@attribute [Authorize(Policy = FinanceModule.PayrollManage)]
+@rendermode InteractiveServer
+@inject IPayrollService Wages
+@inject IAccountService Chart
+@inject IClock Clock
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Salaries &amp; components</PageTitle>
+
+<div class="d-flex align-center mb-1">
+    <div>
+        <MudText Typo="Typo.h5">Salaries &amp; components</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            A new salary supersedes the old one rather than editing it, so old payslips still explain themselves.
+        </MudText>
+    </div>
+    <MudSpacer />
+    <MudButton Variant="Variant.Text" Href="/finance/payroll">Back to runs</MudButton>
+</div>
+
+<MudTabs Elevation="0" Outlined="true" ApplyEffectsToContainer="true" PanelClass="pa-4" Class="mt-4">
+
+    <MudTabPanel Text="People">
+        <div class="d-flex mb-3">
+            <MudSpacer />
+            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.PersonAdd"
+                       OnClick="@(() => EditEmployee(null))">Add somebody</MudButton>
+        </div>
+
+        <MudSimpleTable Dense="true" Hover="true">
+            <thead>
+                <tr>
+                    <th>Staff no.</th><th>Name</th><th>Designation</th>
+                    <th style="text-align:right">Basic</th><th>Login</th><th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var employee in _employees)
+                {
+                    <tr>
+                        <td>@employee.Code</td>
+                        <td>@employee.FullName</td>
+                        <td>@employee.Designation</td>
+                        <td style="text-align:right;font-variant-numeric:tabular-nums">
+                            @(_salaries.TryGetValue(employee.Id, out var basic)
+                                ? basic.ToString("N2")
+                                : "not set")
+                        </td>
+                        <td>
+                            @if (employee.UserId is null)
+                            {
+                                @* Without a login, payroll cannot recover their
+                                   advances or show them their own payslips. *@
+                                <MudTooltip Text="No login linked — advance recovery and self-service payslips will not work.">
+                                    <MudIcon Icon="@Icons.Material.Outlined.Warning" Size="Size.Small"
+                                             Color="Color.Warning" />
+                                </MudTooltip>
+                            }
+                            else
+                            {
+                                <MudIcon Icon="@Icons.Material.Outlined.CheckCircle" Size="Size.Small"
+                                         Color="Color.Success" />
+                            }
+                        </td>
+                        <td style="text-align:right">
+                            <MudButton Size="Size.Small" Variant="Variant.Text"
+                                       OnClick="@(() => EditSalary(employee))">Set salary</MudButton>
+                            <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small"
+                                           OnClick="@(() => EditEmployee(employee))" />
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+
+        @if (_employees.Count == 0)
+        {
+            <MudText Class="pa-8 text-center mud-text-secondary">
+                Nobody on the payroll yet.
+            </MudText>
+        }
+    </MudTabPanel>
+
+    <MudTabPanel Text="Pay components">
+        <div class="d-flex mb-3">
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                Allowances and deductions, kept as data so adding one is a row rather than a code change.
+            </MudText>
+            <MudSpacer />
+            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="@(() => EditComponent(null))">Add component</MudButton>
+        </div>
+
+        <MudSimpleTable Dense="true" Hover="true">
+            <thead>
+                <tr><th>Name</th><th>Kind</th><th>Head</th><th>Pro-rated</th><th></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var component in _components)
+                {
+                    <tr>
+                        <td>@component.Name</td>
+                        <td>
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                     Color="@(component.Kind == PayComponentKind.Earning ? Color.Success : Color.Warning)">
+                                @component.Kind
+                            </MudChip>
+                        </td>
+                        <td>@component.Account?.Name</td>
+                        <td>
+                            @if (component.Kind == PayComponentKind.Earning)
+                            {
+                                @(component.ProRateOnAttendance ? "by attendance" : "fixed")
+                            }
+                        </td>
+                        <td style="text-align:right">
+                            <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small"
+                                           OnClick="@(() => EditComponent(component))" />
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+
+        @if (_components.Count == 0)
+        {
+            <MudText Class="pa-8 text-center mud-text-secondary">
+                No components yet. Basic salary works without any.
+            </MudText>
+        }
+    </MudTabPanel>
+
+</MudTabs>
+
+@code {
+    private IReadOnlyList<PayrollEmployee> _employees = [];
+    private IReadOnlyList<PayComponent> _components = [];
+    private Dictionary<int, decimal> _salaries = [];
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _employees = await Wages.EmployeesAsync(includeLeavers: false);
+        _components = await Wages.ComponentsAsync();
+
+        _salaries = [];
+        foreach (var employee in _employees)
+        {
+            var structure = await Wages.CurrentStructureAsync(employee.Id, Clock.Today);
+            if (structure is not null) _salaries[employee.Id] = structure.BasicSalary;
+        }
+    }
+
+    private async Task EditEmployee(PayrollEmployee? row)
+    {
+        var parameters = new DialogParameters<PayrollEmployeeEditor> { { x => x.Existing, row } };
+        var dialog = await Dialogs.ShowAsync<PayrollEmployeeEditor>(
+            row is null ? "Add to payroll" : "Edit", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+
+    private async Task EditComponent(PayComponent? row)
+    {
+        var parameters = new DialogParameters<PayComponentEditor> { { x => x.Existing, row } };
+        var dialog = await Dialogs.ShowAsync<PayComponentEditor>(
+            row is null ? "New component" : "Edit component", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+
+    private async Task EditSalary(PayrollEmployee employee)
+    {
+        var parameters = new DialogParameters<SalaryEditor>
+        {
+            { x => x.EmployeeId, employee.Id },
+            { x => x.EmployeeName, employee.FullName }
+        };
+        var dialog = await Dialogs.ShowAsync<SalaryEditor>("Set salary", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+}

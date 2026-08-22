@@ -1,0 +1,94 @@
+@inject IPayrollService Wages
+@inject IAccountService Chart
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <MudTextField @bind-Value="_model.Name" Label="Name" Required="true"
+                          RequiredError="Give it a name." Variant="Variant.Outlined" Class="mb-3" />
+
+            <MudSelect T="PayComponentKind" @bind-Value="_model.Kind" Label="Kind"
+                       Variant="Variant.Outlined" Class="mb-3">
+                <MudSelectItem Value="PayComponentKind.Earning">Earning — adds to pay</MudSelectItem>
+                <MudSelectItem Value="PayComponentKind.Deduction">Deduction — taken off pay</MudSelectItem>
+            </MudSelect>
+
+            <MudSelect T="int?" @bind-Value="_model.AccountId" Label="Post to"
+                       Variant="Variant.Outlined" Clearable="true" Class="mb-3"
+                       HelperText="An earning is a cost; a deduction is owed to somebody.">
+                @foreach (var head in _heads)
+                {
+                    <MudSelectItem T="int?" Value="@head.Id">@head.Code — @head.Name</MudSelectItem>
+                }
+            </MudSelect>
+
+            @if (_model.Kind == PayComponentKind.Earning)
+            {
+                <MudSwitch T="bool" @bind-Value="_model.ProRateOnAttendance" Color="Color.Primary"
+                           Label="Reduce this when somebody is absent" />
+                <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">
+                    Turn it off for a fixed allowance — a phone bill does not shrink because
+                    somebody took a day off.
+                </MudText>
+            }
+        </MudForm>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-3">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public PayComponent? Existing { get; set; }
+
+    private MudForm? _form;
+    private PayComponent _model = new();
+    private IReadOnlyList<Account> _heads = [];
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _heads = await Chart.PostableAsync();
+
+        _model = Existing is null
+            ? new PayComponent { IsActive = true, ProRateOnAttendance = true }
+            : new PayComponent
+            {
+                Id = Existing.Id, Name = Existing.Name, Code = Existing.Code,
+                Kind = Existing.Kind, AccountId = Existing.AccountId,
+                ProRateOnAttendance = Existing.ProRateOnAttendance, IsActive = Existing.IsActive
+            };
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        if (_form is not null)
+        {
+            await _form.Validate();
+            if (!_form.IsValid) return;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await Wages.SaveComponentAsync(_model);
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Saved.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

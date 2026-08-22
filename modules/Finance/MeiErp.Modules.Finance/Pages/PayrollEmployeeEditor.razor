@@ -1,0 +1,89 @@
+@inject IPayrollService Wages
+@inject IAccountService Chart
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <div class="d-flex gap-3 mb-3">
+                <MudTextField @bind-Value="_model.Code" Label="Staff number" Required="true"
+                              RequiredError="Every person needs a staff number."
+                              Variant="Variant.Outlined" />
+                <MudTextField @bind-Value="_model.Designation" Label="Designation"
+                              Variant="Variant.Outlined" />
+            </div>
+
+            <MudTextField @bind-Value="_model.FullName" Label="Full name" Required="true"
+                          RequiredError="Enter their name." Variant="Variant.Outlined" Class="mb-3" />
+
+            <MudTextField @bind-Value="_model.UserId" Label="Linked login (user id)"
+                          Variant="Variant.Outlined" Class="mb-3"
+                          HelperText="Needed for advance recovery and self-service payslips." />
+
+            <MudDatePicker Label="Joined on" Variant="Variant.Outlined"
+                           Date="_joined" DateChanged="@(d => _joined = d)" />
+        </MudForm>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-3">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public PayrollEmployee? Existing { get; set; }
+
+    private MudForm? _form;
+    private PayrollEmployee _model = new();
+    private DateTime? _joined;
+    private string? _error;
+    private bool _busy;
+
+    protected override void OnInitialized()
+    {
+        _model = Existing is null
+            ? new PayrollEmployee { IsActive = true, JoinedOn = DateOnly.FromDateTime(DateTime.Today) }
+            : new PayrollEmployee
+            {
+                Id = Existing.Id, Code = Existing.Code, FullName = Existing.FullName,
+                UserId = Existing.UserId, Designation = Existing.Designation,
+                DepartmentId = Existing.DepartmentId, JoinedOn = Existing.JoinedOn,
+                LeftOn = Existing.LeftOn, IsActive = Existing.IsActive,
+                SalaryAccountId = Existing.SalaryAccountId
+            };
+
+        _joined = _model.JoinedOn.ToDateTime(TimeOnly.MinValue);
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        if (_form is not null)
+        {
+            await _form.Validate();
+            if (!_form.IsValid) return;
+        }
+
+        _busy = true;
+        try
+        {
+            _model.JoinedOn = DateOnly.FromDateTime(_joined ?? DateTime.Today);
+            if (string.IsNullOrWhiteSpace(_model.UserId)) _model.UserId = null;
+
+            var result = await Wages.SaveEmployeeAsync(_model);
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Saved.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

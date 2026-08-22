@@ -22,6 +22,13 @@ public class FinanceDbContext(
     public DbSet<UtilityBill> UtilityBills => Set<UtilityBill>();
     public DbSet<Advance> Advances => Set<Advance>();
     public DbSet<AdvanceExpense> AdvanceExpenses => Set<AdvanceExpense>();
+    public DbSet<PayrollEmployee> PayrollEmployees => Set<PayrollEmployee>();
+    public DbSet<PayComponent> PayComponents => Set<PayComponent>();
+    public DbSet<SalaryStructure> SalaryStructures => Set<SalaryStructure>();
+    public DbSet<SalaryLine> SalaryLines => Set<SalaryLine>();
+    public DbSet<PayrollRun> PayrollRuns => Set<PayrollRun>();
+    public DbSet<Payslip> Payslips => Set<Payslip>();
+    public DbSet<PayslipLine> PayslipLines => Set<PayslipLine>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -219,6 +226,84 @@ public class FinanceDbContext(
              .HasForeignKey(e => e.ExpenseAccountId).OnDelete(DeleteBehavior.Restrict);
 
             b.HasQueryFilter(e => !e.Advance!.IsDeleted);
+        });
+
+        modelBuilder.Entity<PayrollEmployee>(b =>
+        {
+            b.Property(e => e.Code).HasMaxLength(30).IsRequired();
+            b.Property(e => e.FullName).HasMaxLength(200).IsRequired();
+            b.Property(e => e.Designation).HasMaxLength(120);
+
+            // Two people on one staff number would merge their payslips.
+            b.HasIndex(e => e.Code).IsUnique().HasFilter("\"IsDeleted\" = false");
+            b.HasIndex(e => e.UserId);
+
+            b.HasMany(e => e.Structures).WithOne(s => s.Employee)
+             .HasForeignKey(s => s.EmployeeId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PayComponent>(b =>
+        {
+            b.Property(c => c.Name).HasMaxLength(120).IsRequired();
+            b.Property(c => c.Code).HasMaxLength(30);
+            b.HasOne(c => c.Account).WithMany()
+             .HasForeignKey(c => c.AccountId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<SalaryStructure>(b =>
+        {
+            b.HasMany(s => s.Lines).WithOne(l => l.Structure)
+             .HasForeignKey(l => l.SalaryStructureId).OnDelete(DeleteBehavior.Cascade);
+
+            b.HasIndex(s => new { s.EmployeeId, s.EffectiveFrom });
+            b.HasQueryFilter(s => !s.Employee!.IsDeleted);
+        });
+
+        modelBuilder.Entity<SalaryLine>(b =>
+        {
+            b.HasOne(l => l.Component).WithMany()
+             .HasForeignKey(l => l.ComponentId).OnDelete(DeleteBehavior.Restrict);
+            b.HasQueryFilter(l => !l.Structure!.Employee!.IsDeleted);
+        });
+
+        modelBuilder.Entity<PayrollRun>(b =>
+        {
+            b.Property(r => r.Reference).HasMaxLength(30).IsRequired();
+
+            // One run per month. Two would double every salary in it.
+            b.HasIndex(r => r.Month).IsUnique().HasFilter("\"IsDeleted\" = false");
+
+            b.HasMany(r => r.Payslips).WithOne(p => p.Run)
+             .HasForeignKey(p => p.RunId).OnDelete(DeleteBehavior.Cascade);
+
+            b.Ignore(r => r.TotalGross);
+            b.Ignore(r => r.TotalDeductions);
+            b.Ignore(r => r.TotalNet);
+            b.Ignore(r => r.IsEditable);
+        });
+
+        modelBuilder.Entity<Payslip>(b =>
+        {
+            b.Property(p => p.EmployeeCode).HasMaxLength(30);
+            b.Property(p => p.EmployeeName).HasMaxLength(200);
+
+            b.HasMany(p => p.Lines).WithOne(l => l.Payslip)
+             .HasForeignKey(l => l.PayslipId).OnDelete(DeleteBehavior.Cascade);
+
+            b.HasIndex(p => new { p.RunId, p.EmployeeId }).IsUnique();
+            b.HasIndex(p => p.UserId);
+
+            b.Ignore(p => p.Gross);
+            b.Ignore(p => p.TotalDeductions);
+            b.Ignore(p => p.Net);
+
+            b.HasQueryFilter(p => !p.Run!.IsDeleted);
+        });
+
+        modelBuilder.Entity<PayslipLine>(b =>
+        {
+            b.Property(l => l.Name).HasMaxLength(200).IsRequired();
+            b.HasQueryFilter(l => !l.Payslip!.Run!.IsDeleted);
         });
 
         modelBuilder.Entity<DocumentSequenceCounter>(b =>

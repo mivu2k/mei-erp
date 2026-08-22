@@ -1,0 +1,65 @@
+@page "/finance/my-payslips"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject IPayrollService Wages
+@inject ICurrentUser User
+
+<PageTitle>My payslips</PageTitle>
+
+<MudText Typo="Typo.h5">My payslips</MudText>
+<MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+    Only runs that have actually been paid appear here.
+</MudText>
+
+@if (_payslips.Count == 0)
+{
+    <MudPaper Outlined="true" Elevation="0" Class="pa-12 text-center">
+        <MudText Class="mud-text-secondary">
+            Nothing yet. If you are expecting a payslip, your login may not be linked
+            to a payroll record — ask whoever runs payroll.
+        </MudText>
+    </MudPaper>
+}
+else
+{
+    @foreach (var payslip in _payslips)
+    {
+        <MudPaper Outlined="true" Elevation="0" Class="pa-4 mb-3">
+            <div class="d-flex align-center mb-2">
+                <MudText Typo="Typo.subtitle1">
+                    <b>@payslip.Run?.Month.ToString("MMMM yyyy")</b>
+                </MudText>
+                <MudSpacer />
+                <MudText Typo="Typo.h6" Style="font-variant-numeric:tabular-nums">
+                    @payslip.Net.ToString("N2")
+                </MudText>
+            </div>
+
+            <MudDivider Class="mb-2" />
+
+            @foreach (var line in payslip.Lines)
+            {
+                <div class="d-flex justify-space-between py-1" style="max-width:440px">
+                    <span>@line.Name</span>
+                    <span style="font-variant-numeric:tabular-nums">
+                        @(line.Kind == PayComponentKind.Deduction ? "−" : "")@line.Amount.ToString("N2")
+                    </span>
+                </div>
+            }
+
+            <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2">
+                @payslip.DaysWorked.ToString("0.#") of @payslip.DaysInMonth.ToString("0") days
+            </MudText>
+        </MudPaper>
+    }
+}
+
+@code {
+    private IReadOnlyList<Payslip> _payslips = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (User.UserId is not null)
+            _payslips = await Wages.PayslipsForAsync(User.UserId);
+    }
+}
