@@ -1,7 +1,7 @@
 @rendermode InteractiveServer
 @implements IDisposable
-@inject INotifier Notifier
-@inject ICurrentUser CurrentUser
+@using System.Security.Claims
+@inject IServiceScopeFactory Scopes
 @inject NavigationManager Nav
 
 <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight"
@@ -58,13 +58,43 @@
     // per interval - the index on (UserId, ReadUtc, DismissedUtc) exists for it.
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// Not <c>ICurrentUser</c>: that reads <c>IHttpContextAccessor</c>, and there
+    /// is no HttpContext once this component is running over its circuit. It
+    /// would report nobody, and the bell would sit silently empty for ever.
+    /// </summary>
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
     private readonly List<Notification> _items = [];
+    private string? _userId;
     private int _unread;
     private Timer? _timer;
 
-    protected override async Task OnInitializedAsync()
+    /// <summary>
+    /// The bell sits in the layout, so it renders beside every page.
+    ///
+    /// It must therefore never touch the request's scoped DbContext: during
+    /// prerender its work and the page's own run inside one scope, and two
+    /// awaited queries on one context throw "a second operation was started on
+    /// this context instance". The polling timer makes it worse again, firing on
+    /// a thread pool thread against that same context. A scope per operation is
+    /// what the dispatcher already does, and for the same reason.
+    /// </summary>
+    private async Task<T> WithNotifierAsync<T>(Func<INotifier, Task<T>> work)
     {
+        await using var scope = Scopes.CreateAsyncScope();
+        return await work(scope.ServiceProvider.GetRequiredService<INotifier>());
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        // Nothing is loaded during prerender: the badge would be thrown away and
+        // redrawn a moment later over the circuit anyway, and querying there is
+        // what put this component in the page's scope in the first place.
         await RefreshAsync();
+        StateHasChanged();
 
         _timer = new Timer(
             async void (_) =>
@@ -85,18 +115,30 @@
 
     private async Task RefreshAsync()
     {
-        var userId = CurrentUser.UserId;
-        if (userId is null) return;
+        _userId ??= AuthState is null
+            ? null
+            : (await AuthState).User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
-        _unread = await Notifier.UnreadCountAsync(userId);
+        if (_userId is not { } userId) return;
+
+        var snapshot = await WithNotifierAsync(async notifier => (
+            Count: await notifier.UnreadCountAsync(userId),
+            Items: await notifier.UnreadAsync(userId, 10)));
+
+        _unread = snapshot.Count;
 
         _items.Clear();
-        _items.AddRange(await Notifier.UnreadAsync(userId, 10));
+        _items.AddRange(snapshot.Items);
     }
 
     private async Task OpenAsync(Notification item)
     {
-        await Notifier.MarkReadAsync(item.Id);
+        await WithNotifierAsync(async notifier =>
+        {
+            await notifier.MarkReadAsync(item.Id);
+            return true;
+        });
+
         await RefreshAsync();
 
         if (!string.IsNullOrWhiteSpace(item.Url))
@@ -105,10 +147,14 @@
 
     private async Task MarkAllReadAsync()
     {
-        var userId = CurrentUser.UserId;
-        if (userId is null) return;
+        if (_userId is not { } userId) return;
 
-        await Notifier.MarkAllReadAsync(userId);
+        await WithNotifierAsync(async notifier =>
+        {
+            await notifier.MarkAllReadAsync(userId);
+            return true;
+        });
+
         await RefreshAsync();
     }
 
