@@ -1,0 +1,242 @@
+@page "/admin/company"
+@attribute [Authorize(Policy = PlatformPermissions.CompanyManage)]
+@rendermode InteractiveServer
+@inject ICompanyProfileService Companies
+@inject ISnackbar Snackbar
+
+<PageTitle>Company profile</PageTitle>
+
+<div class="d-flex align-center mb-1">
+    <div>
+        <MudText Typo="Typo.h5">Company profile</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            Heads every printed document in every module. A change is live on the
+            next document, not after a restart.
+        </MudText>
+    </div>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Save"
+               OnClick="SaveAsync" Disabled="_busy || _loading">
+        Save
+    </MudButton>
+</div>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Class="mt-4" />
+}
+else
+{
+    <MudForm @ref="_form">
+        <MudGrid Class="mt-2">
+
+            <MudItem xs="12" md="7">
+                <MudPaper Outlined="true" Elevation="0" Class="pa-4">
+                    <MudText Typo="Typo.subtitle1" Class="mb-3">Identity</MudText>
+
+                    <MudTextField @bind-Value="_profile.Name" Label="Trading name" Required="true"
+                                  RequiredError="A document with no company name on it is not a document."
+                                  Variant="Variant.Outlined" Class="mb-4" />
+
+                    <MudTextField @bind-Value="_profile.LegalName" Label="Registered name"
+                                  Variant="Variant.Outlined" Class="mb-4"
+                                  HelperText="Printed where the legal entity must be named, if it differs from the trading name." />
+
+                    <MudGrid>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField @bind-Value="_profile.TaxNumber" Label="Tax number"
+                                          Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField @bind-Value="_profile.SalesTaxNumber" Label="Sales tax number"
+                                          Variant="Variant.Outlined" />
+                        </MudItem>
+                    </MudGrid>
+                </MudPaper>
+
+                <MudPaper Outlined="true" Elevation="0" Class="pa-4 mt-4">
+                    <MudText Typo="Typo.subtitle1" Class="mb-3">Address and contact</MudText>
+
+                    <MudTextField @bind-Value="_profile.AddressLine1" Label="Address line 1"
+                                  Variant="Variant.Outlined" Class="mb-4" />
+                    <MudTextField @bind-Value="_profile.AddressLine2" Label="Address line 2"
+                                  Variant="Variant.Outlined" Class="mb-4" />
+
+                    <MudGrid Class="mb-4">
+                        <MudItem xs="12" sm="6">
+                            <MudTextField @bind-Value="_profile.City" Label="City"
+                                          Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField @bind-Value="_profile.Country" Label="Country"
+                                          Variant="Variant.Outlined" />
+                        </MudItem>
+                    </MudGrid>
+
+                    <MudGrid>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField @bind-Value="_profile.Phone" Label="Phone"
+                                          Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField @bind-Value="_profile.Email" Label="Email"
+                                          Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12">
+                            <MudTextField @bind-Value="_profile.Website" Label="Website"
+                                          Variant="Variant.Outlined" />
+                        </MudItem>
+                    </MudGrid>
+                </MudPaper>
+
+                <MudPaper Outlined="true" Elevation="0" Class="pa-4 mt-4">
+                    <MudText Typo="Typo.subtitle1" Class="mb-3">Money and footer</MudText>
+
+                    <MudGrid Class="mb-4">
+                        <MudItem xs="12" sm="6">
+                            <MudTextField @bind-Value="_profile.Currency" Label="Currency code"
+                                          Variant="Variant.Outlined"
+                                          HelperText="Three letters, e.g. PKR." />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField @bind-Value="_profile.CurrencySymbol" Label="Currency symbol"
+                                          Variant="Variant.Outlined"
+                                          HelperText="Shown against amounts, e.g. Rs." />
+                        </MudItem>
+                    </MudGrid>
+
+                    <MudTextField @bind-Value="_profile.FooterNote" Label="Footer note"
+                                  Variant="Variant.Outlined" Lines="3"
+                                  HelperText="Printed at the foot of every document — bank details, terms, a thank-you." />
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" md="5">
+                <MudPaper Outlined="true" Elevation="0" Class="pa-4">
+                    <MudText Typo="Typo.subtitle1" Class="mb-1">Logo</MudText>
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+                        Drawn into the letterhead of every PDF. A wide, transparent
+                        PNG reproduces best; it is fitted to the header, not stretched.
+                    </MudText>
+
+                    <div class="d-flex align-center justify-center pa-4 mb-4"
+                         style="min-height:140px;border:1px dashed var(--mud-palette-lines-default);border-radius:4px;">
+                        @if (_profile.Logo is { Length: > 0 })
+                        {
+                            <MudImage Src="@LogoDataUrl()" Alt="Company logo"
+                                      Style="max-height:120px;max-width:100%;" ObjectFit="ObjectFit.Contain" />
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                                No logo — documents print the name as text.
+                            </MudText>
+                        }
+                    </div>
+
+                    <MudFileUpload T="IBrowserFile" FilesChanged="UploadLogoAsync"
+                                   Accept=".png,.jpg,.jpeg,.gif,.webp">
+                        <ActivatorContent>
+                            <MudButton Variant="Variant.Outlined" FullWidth="true"
+                                       StartIcon="@Icons.Material.Filled.Upload">
+                                Choose an image
+                            </MudButton>
+                        </ActivatorContent>
+                    </MudFileUpload>
+
+                    @if (_profile.Logo is { Length: > 0 })
+                    {
+                        <MudButton Variant="Variant.Text" Color="Color.Error" FullWidth="true"
+                                   Class="mt-2" StartIcon="@Icons.Material.Outlined.Delete"
+                                   OnClick="@(() => _profile.Logo = null)">
+                            Remove logo
+                        </MudButton>
+                    }
+
+                    @if (_logoError is not null)
+                    {
+                        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">
+                            @_logoError
+                        </MudAlert>
+                    }
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    </MudForm>
+}
+
+@code {
+    // Big enough for any sensible letterhead, small enough that the row stays
+    // cheap to read - it is fetched with the profile on every document render.
+    private const long MaxLogoBytes = 2 * 1024 * 1024;
+
+    private CompanyProfile _profile = new();
+    private MudForm? _form;
+    private string? _logoError;
+    private bool _loading = true;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Clone: GetAsync returns the process-wide cache, and binding a form to
+        // that would edit every user's copy live, saved or not.
+        _profile = (await Companies.GetAsync()).Clone();
+        _loading = false;
+    }
+
+    private string LogoDataUrl() =>
+        $"data:image;base64,{Convert.ToBase64String(_profile.Logo!)}";
+
+    private async Task UploadLogoAsync(IBrowserFile? file)
+    {
+        _logoError = null;
+        if (file is null) return;
+
+        if (file.Size > MaxLogoBytes)
+        {
+            _logoError = $"That image is {file.Size / 1024 / 1024d:0.#} MB. Keep it under 2 MB.";
+            return;
+        }
+
+        try
+        {
+            using var stream = file.OpenReadStream(MaxLogoBytes);
+            using var buffer = new MemoryStream();
+            await stream.CopyToAsync(buffer);
+            _profile.Logo = buffer.ToArray();
+        }
+        catch (Exception ex)
+        {
+            _logoError = $"That file could not be read: {ex.Message}";
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_form is not null)
+        {
+            await _form.Validate();
+            if (!_form.IsValid) return;
+        }
+
+        _busy = true;
+        try
+        {
+            await Companies.SaveAsync(_profile);
+
+            // Save mutates the Id to match the row it wrote; re-clone so a second
+            // save from the same open page updates rather than inserting again.
+            _profile = (await Companies.GetAsync()).Clone();
+            Snackbar.Add("Company profile saved.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not save: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

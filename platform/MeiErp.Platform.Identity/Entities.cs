@@ -146,4 +146,14 @@ public class CompanyProfile
 
     public string Currency { get; set; } = "PKR";
     public string CurrencySymbol { get; set; } = "Rs";
+
+    /// <summary>
+    /// A detached copy, for an edit screen to work on.
+    ///
+    /// <see cref="ICompanyProfileService.GetAsync"/> hands back the process-wide
+    /// cached instance, so a form bound straight to it would rewrite the company
+    /// on every keystroke for every user in the building - and leave the edit in
+    /// place even if the save is abandoned.
+    /// </summary>
+    public CompanyProfile Clone() => (CompanyProfile)MemberwiseClone();
 }

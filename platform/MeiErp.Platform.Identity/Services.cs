@@ -211,9 +211,19 @@ public sealed class CompanyProfileService(PlatformDbContext db) : ICompanyProfil
     {
         var existing = await db.CompanyProfiles.FirstOrDefaultAsync(ct);
         if (existing is null)
+        {
+            // GetAsync hands back an unsaved stand-in when the table is empty, so
+            // the first save arrives carrying whatever Id that stand-in had.
+            profile.Id = 0;
             db.CompanyProfiles.Add(profile);
+        }
         else
+        {
+            // SetValues copies by property name, key included, and EF refuses to
+            // modify a key on a tracked entity. Match the row being updated.
+            profile.Id = existing.Id;
             db.Entry(existing).CurrentValues.SetValues(profile);
+        }
 
         await db.SaveChangesAsync(ct);
 
