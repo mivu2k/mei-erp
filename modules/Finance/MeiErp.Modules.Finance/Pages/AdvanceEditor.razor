@@ -1,0 +1,101 @@
+@inject IAdvanceService Advances
+@inject IClock Clock
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <MudTextField @bind-Value="_purpose" Label="What is it for?" Required="true"
+                          RequiredError="Say what the advance is for." Lines="2"
+                          Variant="Variant.Outlined" Class="mb-3" />
+
+            <div class="d-flex gap-3">
+                <MudNumericField T="decimal" @bind-Value="_amount" Label="Amount"
+                                 Variant="Variant.Outlined" HideSpinButtons="true" />
+                <MudDatePicker Label="Needed by" Variant="Variant.Outlined"
+                               Date="_neededBy" DateChanged="@(d => _neededBy = d)" />
+            </div>
+        </MudForm>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-3">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Text" OnClick="@(() => SaveAsync(false))" Disabled="_busy">
+            Save draft
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="@(() => SaveAsync(true))" Disabled="_busy">Save &amp; submit</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int? AdvanceId { get; set; }
+
+    private MudForm? _form;
+    private string _purpose = "";
+    private decimal _amount;
+    private DateTime? _neededBy;
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _neededBy = Clock.Today.AddDays(3).ToDateTime(TimeOnly.MinValue);
+
+        if (AdvanceId is not null)
+        {
+            var existing = await Advances.GetAsync(AdvanceId.Value);
+            if (existing is not null)
+            {
+                _purpose = existing.Purpose;
+                _amount = existing.Amount;
+                _neededBy = existing.NeededBy.ToDateTime(TimeOnly.MinValue);
+            }
+        }
+    }
+
+    private async Task SaveAsync(bool submit)
+    {
+        _error = null;
+        if (_form is not null)
+        {
+            await _form.Validate();
+            if (!_form.IsValid) return;
+        }
+
+        _busy = true;
+        try
+        {
+            var saved = await Advances.SaveDraftAsync(new AdvanceInput(
+                AdvanceId, _purpose, _amount,
+                DateOnly.FromDateTime(_neededBy ?? DateTime.Today), null, null, null));
+
+            if (saved.Failed) { _error = saved.Error; return; }
+
+            if (submit)
+            {
+                var sent = await Advances.SubmitAsync(saved.Value.Id);
+                if (sent.Failed)
+                {
+                    // The draft survives, so nothing typed is lost.
+                    _error = sent.Error + " Your draft has been saved.";
+                    return;
+                }
+                Snackbar.Add("Sent for approval.", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("Draft saved.", Severity.Success);
+            }
+
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

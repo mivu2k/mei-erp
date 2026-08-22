@@ -20,6 +20,8 @@ public class FinanceDbContext(
     public DbSet<PettyCashEntry> PettyCashEntries => Set<PettyCashEntry>();
     public DbSet<UtilityConnection> UtilityConnections => Set<UtilityConnection>();
     public DbSet<UtilityBill> UtilityBills => Set<UtilityBill>();
+    public DbSet<Advance> Advances => Set<Advance>();
+    public DbSet<AdvanceExpense> AdvanceExpenses => Set<AdvanceExpense>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -187,6 +189,36 @@ public class FinanceDbContext(
 
             b.Ignore(x => x.IsPaid);
             b.HasQueryFilter(x => !x.Connection!.IsDeleted);
+        });
+
+        modelBuilder.Entity<Advance>(b =>
+        {
+            b.Property(a => a.Reference).HasMaxLength(30).IsRequired();
+            b.HasIndex(a => a.Reference).IsUnique().HasFilter("\"IsDeleted\" = false");
+            b.Property(a => a.Purpose).HasMaxLength(500).IsRequired();
+            b.Property(a => a.PersonName).HasMaxLength(200);
+            b.Property(a => a.DecisionComment).HasMaxLength(2000);
+
+            b.HasMany(a => a.Expenses).WithOne(e => e.Advance)
+             .HasForeignKey(e => e.AdvanceId).OnDelete(DeleteBehavior.Cascade);
+
+            b.HasIndex(a => new { a.PersonId, a.Status });
+            b.HasIndex(a => a.Status);
+
+            b.Ignore(a => a.Difference);
+            b.Ignore(a => a.OutstandingDifference);
+            b.Ignore(a => a.IsOpen);
+        });
+
+        modelBuilder.Entity<AdvanceExpense>(b =>
+        {
+            b.Property(e => e.Description).HasMaxLength(500).IsRequired();
+            b.Property(e => e.ReceiptNumber).HasMaxLength(60);
+
+            b.HasOne(e => e.ExpenseAccount).WithMany()
+             .HasForeignKey(e => e.ExpenseAccountId).OnDelete(DeleteBehavior.Restrict);
+
+            b.HasQueryFilter(e => !e.Advance!.IsDeleted);
         });
 
         modelBuilder.Entity<DocumentSequenceCounter>(b =>

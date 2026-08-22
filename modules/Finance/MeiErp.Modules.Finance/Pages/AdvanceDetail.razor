@@ -1,0 +1,382 @@
+@page "/finance/advances/{AdvanceId:int}"
+@attribute [Authorize(Policy = FinanceModule.AdvancesRaise)]
+@rendermode InteractiveServer
+@inject IAdvanceService Advances
+@inject IAccountService Chart
+@inject IClock Clock
+@inject ISnackbar Snackbar
+
+<PageTitle>Advance</PageTitle>
+
+@if (_advance is null)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else
+{
+    <div class="d-flex align-center mb-1">
+        <div>
+            <MudText Typo="Typo.h5">@_advance.Reference</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                @_advance.Purpose — @_advance.PersonName
+            </MudText>
+        </div>
+        <MudSpacer />
+        <MudChip T="string" Variant="Variant.Outlined">@_advance.Status</MudChip>
+        <MudButton Variant="Variant.Text" Href="/finance/advances" Class="ml-2">Back</MudButton>
+    </div>
+
+    @* The whole point of an advance is the gap between taken and spent, so it
+       is stated plainly rather than left for the reader to subtract. *@
+    <MudGrid Class="mt-2">
+        <MudItem xs="6" md="3">
+            <MudPaper Outlined="true" Elevation="0" Class="pa-4">
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">Asked for</MudText>
+                <MudText Typo="Typo.h5">@_advance.Amount.ToString("N2")</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudPaper Outlined="true" Elevation="0" Class="pa-4">
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">Taken</MudText>
+                <MudText Typo="Typo.h5">@(_advance.DisbursedAmount?.ToString("N2") ?? "—")</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudPaper Outlined="true" Elevation="0" Class="pa-4">
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">Spent</MudText>
+                <MudText Typo="Typo.h5">@(_advance.JustifiedAmount?.ToString("N2") ?? "—")</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudPaper Outlined="true" Elevation="0" Class="pa-4">
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">Difference</MudText>
+                <MudText Typo="Typo.h5"
+                         Color="@(_advance.Difference is null or 0 ? Color.Default : Color.Warning)">
+                    @(_advance.Difference?.ToString("N2") ?? "—")
+                </MudText>
+                @if (_advance.Status == AdvanceStatus.Settled && _advance.OutstandingDifference != 0)
+                {
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        @Math.Abs(_advance.OutstandingDifference).ToString("N2") still outstanding
+                    </MudText>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    @if (_advance.Status == AdvanceStatus.Approved)
+    {
+        <MudPaper Outlined="true" Elevation="0" Class="pa-4 mt-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">Hand the money over</MudText>
+
+            <div class="d-flex gap-3 align-end">
+                <MudNumericField T="decimal" @bind-Value="_disburseAmount" Label="Amount"
+                                 Variant="Variant.Outlined" HideSpinButtons="true"
+                                 HelperText="@($"Approved: {_advance.Amount:N2}")" />
+                <MudSelect T="int?" @bind-Value="_cashId" Label="Out of" Variant="Variant.Outlined">
+                    @foreach (var head in _cashHeads)
+                    {
+                        <MudSelectItem T="int?" Value="@head.Id">@head.Code — @head.Name</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudDatePicker Label="Date" Variant="Variant.Outlined"
+                               Date="_date" DateChanged="@(d => _date = d)" />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           OnClick="DisburseAsync" Disabled="@(_busy || _cashId is null)">
+                    Pay out
+                </MudButton>
+            </div>
+        </MudPaper>
+    }
+
+    @if (_advance.Status is AdvanceStatus.Disbursed or AdvanceStatus.Justified)
+    {
+        <MudPaper Outlined="true" Elevation="0" Class="pa-4 mt-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-1">Receipts</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary mb-3">
+                Each one is charged to its own head when the advance is settled.
+            </MudText>
+
+            <MudTable T="ExpenseRow" Items="_expenses" Dense="true" Elevation="0" Bordered="true">
+                <HeaderContent>
+                    <MudTh Style="width:140px">Date</MudTh>
+                    <MudTh>Description</MudTh>
+                    <MudTh Style="width:200px">Charge to</MudTh>
+                    <MudTh Style="width:130px">Amount</MudTh>
+                    <MudTh Style="width:48px"></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>
+                        <MudDatePicker Variant="Variant.Text" Margin="Margin.Dense"
+                                       Date="context.Date" DateChanged="@(d => context.Date = d)" />
+                    </MudTd>
+                    <MudTd>
+                        <MudTextField @bind-Value="context.Description" Variant="Variant.Text"
+                                      Margin="Margin.Dense" Placeholder="What it was for" />
+                    </MudTd>
+                    <MudTd>
+                        <MudSelect T="int?" @bind-Value="context.HeadId" Variant="Variant.Text"
+                                   Margin="Margin.Dense" Dense="true">
+                            @foreach (var head in _expenseHeads)
+                            {
+                                <MudSelectItem T="int?" Value="@head.Id">@head.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudTd>
+                    <MudTd>
+                        <MudNumericField T="decimal" @bind-Value="context.Amount"
+                                         @bind-Value:after="StateHasChanged"
+                                         Variant="Variant.Text" Margin="Margin.Dense" HideSpinButtons="true" />
+                    </MudTd>
+                    <MudTd>
+                        <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small"
+                                       OnClick="@(() => RemoveExpense(context))" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+
+            <div class="d-flex align-center mt-2">
+                <MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="AddExpense">Add receipt</MudButton>
+                <MudSpacer />
+                <MudText Typo="Typo.subtitle1">
+                    @_expenses.Sum(e => e.Amount).ToString("N2")
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary" Inline="true">
+                        of @(_advance.DisbursedAmount?.ToString("N2"))
+                    </MudText>
+                </MudText>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="ml-3"
+                           OnClick="JustifyAsync" Disabled="_busy">Save receipts</MudButton>
+            </div>
+        </MudPaper>
+    }
+
+    @if (_advance.Status == AdvanceStatus.Justified)
+    {
+        <MudPaper Outlined="true" Elevation="0" Class="pa-4 mt-4">
+            <MudText Typo="Typo.subtitle1">Settle</MudText>
+
+            @if (_advance.Difference is { } difference && difference != 0)
+            {
+                <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Class="my-3">
+                    @if (difference > 0)
+                    {
+                        <text>
+                            @_advance.PersonName is holding <b>@difference.ToString("N2")</b>
+                            that has not been accounted for. Say where it goes.
+                        </text>
+                    }
+                    else
+                    {
+                        <text>
+                            @_advance.PersonName spent <b>@Math.Abs(difference).ToString("N2")</b>
+                            more than they were given. Say how that is handled.
+                        </text>
+                    }
+                </MudAlert>
+
+                <MudRadioGroup T="DifferenceHandling" @bind-Value="_handling" Class="mb-3">
+                    <MudRadio T="DifferenceHandling" Value="DifferenceHandling.SettleNow" Color="Color.Primary">
+                        @(difference > 0 ? "They hand it back now" : "Pay them the shortfall now")
+                    </MudRadio>
+                    <MudRadio T="DifferenceHandling" Value="DifferenceHandling.Outstanding" Color="Color.Primary">
+                        Leave it outstanding on their account
+                    </MudRadio>
+                    <MudRadio T="DifferenceHandling" Value="DifferenceHandling.RecoverFromPayroll" Color="Color.Primary">
+                        Recover it from payroll
+                    </MudRadio>
+                </MudRadioGroup>
+            }
+            else
+            {
+                <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Dense="true" Class="my-3">
+                    The receipts match what was taken exactly.
+                </MudAlert>
+            }
+
+            <div class="d-flex gap-3 align-end">
+                <MudSelect T="int?" @bind-Value="_cashId" Label="Through which head"
+                           Variant="Variant.Outlined">
+                    @foreach (var head in _cashHeads)
+                    {
+                        <MudSelectItem T="int?" Value="@head.Id">@head.Code — @head.Name</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudDatePicker Label="Date" Variant="Variant.Outlined"
+                               Date="_date" DateChanged="@(d => _date = d)" />
+                <MudButton Variant="Variant.Filled" Color="Color.Success"
+                           OnClick="SettleAsync" Disabled="@(_busy || _cashId is null)">
+                    Settle and post
+                </MudButton>
+            </div>
+        </MudPaper>
+    }
+
+    @if (_advance.Status == AdvanceStatus.Settled && _advance.OutstandingDifference != 0)
+    {
+        <MudPaper Outlined="true" Elevation="0" Class="pa-4 mt-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-1">Clear the outstanding amount</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary mb-3">
+                @Math.Abs(_advance.OutstandingDifference).ToString("N2")
+                @(_advance.OutstandingDifference > 0 ? "still to come back" : "still owed to them").
+            </MudText>
+
+            <div class="d-flex gap-3 align-end">
+                <MudNumericField T="decimal" @bind-Value="_clearAmount" Label="Amount"
+                                 Variant="Variant.Outlined" HideSpinButtons="true" />
+                <MudSelect T="int?" @bind-Value="_cashId" Label="Through which head"
+                           Variant="Variant.Outlined">
+                    @foreach (var head in _cashHeads)
+                    {
+                        <MudSelectItem T="int?" Value="@head.Id">@head.Code — @head.Name</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           OnClick="ClearAsync" Disabled="@(_busy || _cashId is null)">Record</MudButton>
+            </div>
+        </MudPaper>
+    }
+
+    @if (_error is not null)
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
+    }
+}
+
+@code {
+    [Parameter] public int AdvanceId { get; set; }
+
+    private sealed class ExpenseRow
+    {
+        public DateTime? Date { get; set; }
+        public string Description { get; set; } = "";
+        public decimal Amount { get; set; }
+        public int? HeadId { get; set; }
+    }
+
+    private Advance? _advance;
+    private List<ExpenseRow> _expenses = [];
+    private IReadOnlyList<Account> _cashHeads = [];
+    private IReadOnlyList<Account> _expenseHeads = [];
+
+    private decimal _disburseAmount, _clearAmount;
+    private int? _cashId;
+    private DateTime? _date;
+    private DifferenceHandling _handling = DifferenceHandling.SettleNow;
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _cashHeads = await Chart.PostableAsync(AccountType.Asset);
+        _expenseHeads = await Chart.PostableAsync(AccountType.Expense);
+        _date = Clock.Today.ToDateTime(TimeOnly.MinValue);
+        _cashId = _cashHeads.FirstOrDefault()?.Id;
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _advance = await Advances.GetAsync(AdvanceId);
+        if (_advance is null) return;
+
+        // Defaults to paying out exactly what was approved, which is the usual case.
+        _disburseAmount = _advance.DisbursedAmount ?? _advance.Amount;
+        _clearAmount = Math.Abs(_advance.OutstandingDifference);
+
+        _expenses = [.. _advance.Expenses.Select(e => new ExpenseRow
+        {
+            Date = e.Date.ToDateTime(TimeOnly.MinValue),
+            Description = e.Description,
+            Amount = e.Amount,
+            HeadId = e.ExpenseAccountId
+        })];
+
+        if (_expenses.Count == 0)
+            _expenses.Add(new ExpenseRow { Date = _date });
+    }
+
+    private void AddExpense() => _expenses.Add(new ExpenseRow { Date = _date });
+
+    private void RemoveExpense(ExpenseRow row)
+    {
+        _expenses.Remove(row);
+        if (_expenses.Count == 0) _expenses.Add(new ExpenseRow { Date = _date });
+    }
+
+    private async Task DisburseAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var result = await Advances.DisburseAsync(
+                AdvanceId, _disburseAmount, _cashId!.Value,
+                DateOnly.FromDateTime(_date ?? DateTime.Today));
+
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Paid out and posted.", Severity.Success);
+            await LoadAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task JustifyAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var result = await Advances.JustifyAsync(AdvanceId,
+                [.. _expenses
+                    .Where(e => !string.IsNullOrWhiteSpace(e.Description) && e.Amount > 0)
+                    .Select(e => new AdvanceExpenseInput(
+                        DateOnly.FromDateTime(e.Date ?? DateTime.Today),
+                        e.Description, e.Amount, e.HeadId, null))]);
+
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Receipts saved.", Severity.Success);
+            await LoadAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task SettleAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var result = await Advances.SettleAsync(
+                AdvanceId, _handling, _cashId!.Value,
+                DateOnly.FromDateTime(_date ?? DateTime.Today));
+
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Settled and posted.", Severity.Success);
+            await LoadAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ClearAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var result = await Advances.ClearDifferenceAsync(
+                AdvanceId, _clearAmount, _cashId!.Value,
+                DateOnly.FromDateTime(_date ?? DateTime.Today));
+
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Recorded.", Severity.Success);
+            await LoadAsync();
+        }
+        finally { _busy = false; }
+    }
+}

@@ -22,6 +22,8 @@ public static class FinanceModule
     public const string PartiesManage = "finance.parties.manage";
     public const string PettyCashManage = "finance.petty-cash.manage";
     public const string UtilitiesManage = "finance.utilities.manage";
+    public const string AdvancesRaise = "finance.advances.raise";
+    public const string AdvancesManage = "finance.advances.manage";
 
     public static ModuleDescriptor Descriptor => new()
     {
@@ -47,7 +49,9 @@ public static class FinanceModule
             new(YearClose,        "Period",   "Close a fiscal year"),
             new(PartiesManage,    "Parties",  "Manage third parties and record their payments"),
             new(PettyCashManage,  "Cash",     "Run petty cash boxes"),
-            new(UtilitiesManage,  "Cash",     "Record utility connections and their bills")
+            new(UtilitiesManage,  "Cash",     "Record utility connections and their bills"),
+            new(AdvancesRaise,    "Advances", "Ask for an advance and account for it"),
+            new(AdvancesManage,   "Advances", "Pay out, accept receipts and settle advances")
         ],
 
         RoleTemplates =
@@ -55,20 +59,23 @@ public static class FinanceModule
             new("Accountant", "Full access to the books, short of closing the year.",
                 [AccountsView, AccountsManage, VouchersView, VouchersPost,
                  VouchersReverse, RequestsRaise, RequestsPay, ReportsView,
-                 PartiesManage, PettyCashManage, UtilitiesManage]),
+                 PartiesManage, PettyCashManage, UtilitiesManage,
+                 AdvancesRaise, AdvancesManage]),
 
             new("Finance Manager", "Everything an accountant can do, plus closing the year.",
                 [AccountsView, AccountsManage, VouchersView, VouchersPost, VouchersReverse,
                  RequestsRaise, RequestsPay, ReportsView, YearClose,
-                 PartiesManage, PettyCashManage, UtilitiesManage]),
+                 PartiesManage, PettyCashManage, UtilitiesManage,
+                 AdvancesRaise, AdvancesManage]),
 
             new("Requester", "Can ask for money and follow their own requests.",
-                [RequestsRaise])
+                [RequestsRaise, AdvancesRaise])
         ],
 
         Approvables =
         [
-            new(PaymentRequestService.DocumentType, "Payment request", "Amount requested")
+            new(PaymentRequestService.DocumentType, "Payment request", "Amount requested"),
+            new(AdvanceService.DocumentType, "Advance request", "Amount requested")
         ]
     };
 
@@ -93,6 +100,8 @@ public static class FinanceModule
         services.AddScoped<IThirdPartyService, ThirdPartyService>();
         services.AddScoped<IPettyCashService, PettyCashService>();
         services.AddScoped<IUtilityService, UtilityService>();
+        services.AddScoped<IAdvanceService, AdvanceService>();
+        services.AddScoped<IApprovalSink, AdvanceApprovalSink>();
 
         return services;
     }

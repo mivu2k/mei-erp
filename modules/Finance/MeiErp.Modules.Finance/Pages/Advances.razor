@@ -1,0 +1,148 @@
+@page "/finance/advances"
+@attribute [Authorize(Policy = FinanceModule.AdvancesRaise)]
+@rendermode InteractiveServer
+@inject IAdvanceService Loans
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Advances</PageTitle>
+
+<div class="d-flex align-center mb-1">
+    <div>
+        <MudText Typo="Typo.h5">Advances</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            Money given before it is spent. Paid out, accounted for with receipts, then settled.
+        </MudText>
+    </div>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+        Request an advance
+    </MudButton>
+</div>
+
+<MudPaper Outlined="true" Elevation="0" Class="mt-4">
+    <MudToolBar Dense="true">
+        <MudSwitch T="bool" @bind-Value="_mineOnly" @bind-Value:after="LoadAsync"
+                   Color="Color.Primary" Label="Only mine" />
+    </MudToolBar>
+
+    <MudDataGrid T="Advance" Items="_rows" Dense="true" Hover="true" Elevation="0"
+                 Loading="_loading" Filterable="false" RowsPerPage="25">
+        <Columns>
+            <PropertyColumn Property="@(a => a.Reference)" Title="Reference" />
+            <TemplateColumn Title="For">
+                <CellTemplate>
+                    <MudText Typo="Typo.body2"><b>@context.Item.Purpose</b></MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        @context.Item.PersonName
+                    </MudText>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Asked" HeaderClass="text-right" CellClass="text-right">
+                <CellTemplate>
+                    <span style="font-variant-numeric:tabular-nums">@context.Item.Amount.ToString("N2")</span>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Taken" HeaderClass="text-right" CellClass="text-right">
+                <CellTemplate>
+                    <span style="font-variant-numeric:tabular-nums">
+                        @(context.Item.DisbursedAmount?.ToString("N2") ?? "—")
+                    </span>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Spent" HeaderClass="text-right" CellClass="text-right">
+                <CellTemplate>
+                    <span style="font-variant-numeric:tabular-nums">
+                        @(context.Item.JustifiedAmount?.ToString("N2") ?? "—")
+                    </span>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Outstanding" HeaderClass="text-right" CellClass="text-right">
+                <CellTemplate>
+                    @if (context.Item.Status == AdvanceStatus.Settled
+                         && context.Item.OutstandingDifference != 0)
+                    {
+                        @* Money the person is still holding, or still owed.
+                           Settled does not always mean square. *@
+                        <MudText Typo="Typo.body2" Color="Color.Warning"
+                                 Style="font-variant-numeric:tabular-nums">
+                            @context.Item.OutstandingDifference.ToString("N2")
+                        </MudText>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Status">
+                <CellTemplate>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                             Color="@Colour(context.Item.Status)">@context.Item.Status</MudChip>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="" Sortable="false">
+                <CellTemplate>
+                    <div class="d-flex justify-end gap-1">
+                        @if (context.Item.Status is AdvanceStatus.Draft or AdvanceStatus.Returned)
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Text"
+                                       OnClick="@(() => Edit(context.Item))">Edit</MudButton>
+                            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                                       OnClick="@(() => Submit(context.Item))">Submit</MudButton>
+                        }
+                        else
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Text"
+                                       Href="@($"/finance/advances/{context.Item.Id}")">Open</MudButton>
+                        }
+                    </div>
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+        <NoRecordsContent>
+            <MudText Class="pa-8 text-center mud-text-secondary">No advances yet.</MudText>
+        </NoRecordsContent>
+    </MudDataGrid>
+</MudPaper>
+
+@code {
+    private IReadOnlyList<Advance> _rows = [];
+    private bool _mineOnly;
+    private bool _loading = true;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _rows = await Loans.ListAsync(null, _mineOnly);
+        _loading = false;
+    }
+
+    private static Color Colour(AdvanceStatus status) => status switch
+    {
+        AdvanceStatus.Settled => Color.Success,
+        AdvanceStatus.Approved => Color.Info,
+        AdvanceStatus.Disbursed => Color.Primary,
+        AdvanceStatus.Justified => Color.Info,
+        AdvanceStatus.Rejected => Color.Error,
+        AdvanceStatus.Returned => Color.Warning,
+        _ => Color.Default
+    };
+
+    private async Task Edit(Advance? row)
+    {
+        var parameters = new DialogParameters<AdvanceEditor> { { x => x.AdvanceId, row?.Id } };
+        var dialog = await Dialogs.ShowAsync<AdvanceEditor>(
+            row is null ? "Request an advance" : "Edit request", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+
+    private async Task Submit(Advance row)
+    {
+        var result = await Loans.SubmitAsync(row.Id);
+        if (result.Failed) Snackbar.Add(result.Error!, Severity.Error);
+        else Snackbar.Add("Sent for approval.", Severity.Success);
+        await LoadAsync();
+    }
+}
