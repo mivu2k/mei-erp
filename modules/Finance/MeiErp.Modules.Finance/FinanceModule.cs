@@ -27,6 +27,7 @@ public static class FinanceModule
     public const string PayrollView = "finance.payroll.view";
     public const string PayrollManage = "finance.payroll.manage";
     public const string PayrollPay = "finance.payroll.pay";
+    public const string ReconcileManage = "finance.reconcile.manage";
 
     public static ModuleDescriptor Descriptor => new()
     {
@@ -57,7 +58,8 @@ public static class FinanceModule
             new(AdvancesManage,   "Advances", "Pay out, accept receipts and settle advances"),
             new(PayrollView,      "Payroll",  "See payroll runs and payslips"),
             new(PayrollManage,    "Payroll",  "Set salaries and build payroll runs"),
-            new(PayrollPay,       "Payroll",  "Approve and pay a payroll run")
+            new(PayrollPay,       "Payroll",  "Approve and pay a payroll run"),
+            new(ReconcileManage,  "Period",   "Reconcile a bank account to its statement")
         ],
 
         RoleTemplates =
@@ -66,14 +68,14 @@ public static class FinanceModule
                 [AccountsView, AccountsManage, VouchersView, VouchersPost,
                  VouchersReverse, RequestsRaise, RequestsPay, ReportsView,
                  PartiesManage, PettyCashManage, UtilitiesManage,
-                 AdvancesRaise, AdvancesManage, PayrollView]),
+                 AdvancesRaise, AdvancesManage, PayrollView, ReconcileManage]),
 
             new("Finance Manager", "Everything an accountant can do, plus closing the year.",
                 [AccountsView, AccountsManage, VouchersView, VouchersPost, VouchersReverse,
                  RequestsRaise, RequestsPay, ReportsView, YearClose,
                  PartiesManage, PettyCashManage, UtilitiesManage,
                  AdvancesRaise, AdvancesManage,
-                 PayrollView, PayrollManage, PayrollPay]),
+                 PayrollView, PayrollManage, PayrollPay, ReconcileManage]),
 
             new("Requester", "Can ask for money and follow their own requests.",
                 [RequestsRaise, AdvancesRaise])
@@ -110,6 +112,8 @@ public static class FinanceModule
         services.AddScoped<IAdvanceService, AdvanceService>();
         services.AddScoped<IApprovalSink, AdvanceApprovalSink>();
         services.AddScoped<IPayrollService, PayrollService>();
+        services.AddScoped<IReconciliationService, ReconciliationService>();
+        services.AddScoped<IYearEndService, YearEndService>();
 
         return services;
     }

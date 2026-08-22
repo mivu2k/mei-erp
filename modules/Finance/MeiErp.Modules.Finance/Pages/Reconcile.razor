@@ -1,0 +1,325 @@
+@page "/finance/reconcile"
+@page "/finance/reconcile/{ReconciliationId:int}"
+@attribute [Authorize(Policy = FinanceModule.ReconcileManage)]
+@rendermode InteractiveServer
+@inject IReconciliationService Recon
+@inject IAccountService Chart
+@inject IClock Clock
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>Reconciliation</PageTitle>
+
+@if (_current is null)
+{
+    <div class="d-flex align-center mb-1">
+        <div>
+            <MudText Typo="Typo.h5">Bank reconciliation</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                Agree an account to its statement, and see what has not cleared.
+            </MudText>
+        </div>
+    </div>
+
+    <MudPaper Outlined="true" Elevation="0" Class="pa-4 mt-4">
+        <MudText Typo="Typo.subtitle1" Class="mb-3">Start a new one</MudText>
+
+        <div class="d-flex gap-3 align-end flex-wrap">
+            <MudSelect T="int?" @bind-Value="_accountId" Label="Account"
+                       Variant="Variant.Outlined" Style="min-width:240px">
+                @foreach (var account in _accounts)
+                {
+                    <MudSelectItem T="int?" Value="@account.Id">@account.Code — @account.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <MudDatePicker Label="Statement date" Variant="Variant.Outlined"
+                           Date="_statementDate" DateChanged="@(d => _statementDate = d)" />
+            <MudNumericField T="decimal" @bind-Value="_statementBalance" Label="Statement balance"
+                             Variant="Variant.Outlined" HideSpinButtons="true"
+                             HelperText="What the bank says." />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       OnClick="StartAsync" Disabled="@(_busy || _accountId is null)">Start</MudButton>
+        </div>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-3">@_error</MudAlert>
+        }
+    </MudPaper>
+
+    <MudPaper Outlined="true" Elevation="0" Class="mt-4">
+        <MudDataGrid T="Reconciliation" Items="_history" Dense="true" Hover="true" Elevation="0"
+                     Filterable="false" RowsPerPage="20">
+            <Columns>
+                <TemplateColumn Title="Account">
+                    <CellTemplate>@context.Item.Account?.Name</CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Statement date">
+                    <CellTemplate>@context.Item.StatementDate.ToString("d MMM yyyy")</CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Statement" HeaderClass="text-right" CellClass="text-right">
+                    <CellTemplate>
+                        <span style="font-variant-numeric:tabular-nums">
+                            @context.Item.StatementBalance.ToString("N2")
+                        </span>
+                    </CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Uncleared" HeaderClass="text-right" CellClass="text-right">
+                    <CellTemplate>
+                        <span style="font-variant-numeric:tabular-nums">
+                            @context.Item.Uncleared.ToString("N2")
+                        </span>
+                    </CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Status">
+                    <CellTemplate>
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                 Color="@(context.Item.IsClosed ? Color.Success : Color.Warning)">
+                            @(context.Item.IsClosed ? "closed" : "open")
+                        </MudChip>
+                    </CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="" Sortable="false">
+                    <CellTemplate>
+                        <div class="d-flex justify-end">
+                            <MudButton Size="Size.Small" Variant="Variant.Text"
+                                       Href="@($"/finance/reconcile/{context.Item.Id}")">Open</MudButton>
+                        </div>
+                    </CellTemplate>
+                </TemplateColumn>
+            </Columns>
+            <NoRecordsContent>
+                <MudText Class="pa-8 text-center mud-text-secondary">
+                    Nothing reconciled yet.
+                </MudText>
+            </NoRecordsContent>
+        </MudDataGrid>
+    </MudPaper>
+}
+else
+{
+    <div class="d-flex align-center mb-1">
+        <div>
+            <MudText Typo="Typo.h5">@_current.Account?.Name</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                Statement to @_current.StatementDate.ToString("d MMM yyyy")
+                @if (_current.IsClosed)
+                {
+                    <text> · closed</text>
+                }
+            </MudText>
+        </div>
+        <MudSpacer />
+        <MudButton Variant="Variant.Text" Href="/finance/reconcile">Back</MudButton>
+    </div>
+
+    @* The four figures that have to agree, shown together so the arithmetic is
+       visible rather than something the reader has to reconstruct. *@
+    <MudGrid Class="mt-2">
+        <MudItem xs="6" md="3">
+            <MudPaper Outlined="true" Elevation="0" Class="pa-4">
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">Ledger</MudText>
+                <MudText Typo="Typo.h6">@_current.LedgerBalance.ToString("N2")</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudPaper Outlined="true" Elevation="0" Class="pa-4">
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">Less uncleared</MudText>
+                <MudText Typo="Typo.h6">@_current.Uncleared.ToString("N2")</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudPaper Outlined="true" Elevation="0" Class="pa-4">
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">Adjusted</MudText>
+                <MudText Typo="Typo.h6">@_current.Adjusted.ToString("N2")</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudPaper Outlined="true" Elevation="0" Class="pa-4">
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">Statement</MudText>
+                <MudText Typo="Typo.h6">@_current.StatementBalance.ToString("N2")</MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <MudAlert Severity="@(_current.IsReconciled ? Severity.Success : Severity.Warning)"
+              Variant="Variant.Outlined" Class="mt-4">
+        @if (_current.IsReconciled)
+        {
+            <text>The adjusted ledger agrees with the statement exactly.</text>
+        }
+        else
+        {
+            <text>
+                Still out by <b>@_current.Difference.ToString("N2")</b>.
+                Tick the entries that appear on the statement.
+            </text>
+        }
+    </MudAlert>
+
+    <MudPaper Outlined="true" Elevation="0" Class="mt-4">
+        <MudToolBar Dense="true">
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                @_current.Lines.Count(l => l.IsCleared) of @_current.Lines.Count ticked
+            </MudText>
+            <MudSpacer />
+            @if (!_current.IsClosed)
+            {
+                <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="SaveAsync"
+                           Disabled="_busy">Save ticks</MudButton>
+                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
+                           OnClick="CloseAsync" Disabled="@(_busy || !_current.IsReconciled)">
+                    Close
+                </MudButton>
+            }
+        </MudToolBar>
+
+        <MudSimpleTable Dense="true" Hover="true">
+            <thead>
+                <tr>
+                    <th style="width:60px">Seen</th>
+                    <th>Date</th><th>Voucher</th><th>Narration</th>
+                    <th style="text-align:right">In</th>
+                    <th style="text-align:right">Out</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var line in _current.Lines.OrderBy(l => l.Date).ThenBy(l => l.Id))
+                {
+                    <tr>
+                        <td>
+                            <MudCheckBox T="bool" Dense="true" Color="Color.Primary"
+                                         Disabled="_current.IsClosed"
+                                         Value="@_ticks.GetValueOrDefault(line.Id, line.IsCleared)"
+                                         ValueChanged="@(v => Tick(line, v))" />
+                        </td>
+                        <td>@line.Date.ToString("d MMM yy")</td>
+                        <td>@line.VoucherNumber</td>
+                        <td>@line.Narration</td>
+                        <td style="text-align:right;font-variant-numeric:tabular-nums">
+                            @(line.Debit == 0 ? "" : line.Debit.ToString("N2"))
+                        </td>
+                        <td style="text-align:right;font-variant-numeric:tabular-nums">
+                            @(line.Credit == 0 ? "" : line.Credit.ToString("N2"))
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+
+        @if (_current.Lines.Count == 0)
+        {
+            <MudText Class="pa-8 text-center mud-text-secondary">
+                Nothing was posted to this account on or before the statement date.
+            </MudText>
+        }
+    </MudPaper>
+
+    @if (_error is not null)
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-3">@_error</MudAlert>
+    }
+}
+
+@code {
+    [Parameter] public int? ReconciliationId { get; set; }
+
+    private Reconciliation? _current;
+    private IReadOnlyList<Reconciliation> _history = [];
+    private IReadOnlyList<Account> _accounts = [];
+    private readonly Dictionary<int, bool> _ticks = [];
+
+    private int? _accountId;
+    private DateTime? _statementDate;
+    private decimal _statementBalance;
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _accounts = await Chart.PostableAsync(AccountType.Asset);
+        _statementDate ??= Clock.Today.ToDateTime(TimeOnly.MinValue);
+
+        if (ReconciliationId is not null)
+        {
+            _current = await Recon.GetAsync(ReconciliationId.Value);
+            RefreshTicks();
+        }
+        else
+        {
+            _current = null;
+            _history = await Recon.ListAsync(null);
+        }
+    }
+
+    private void RefreshTicks()
+    {
+        _ticks.Clear();
+        foreach (var line in _current?.Lines ?? [])
+            _ticks[line.Id] = line.IsCleared;
+    }
+
+    /// <summary>
+    /// Ticking updates the in-memory line too, so the difference at the top
+    /// moves as you work rather than only after saving.
+    /// </summary>
+    private void Tick(ReconciliationLine line, bool cleared)
+    {
+        _ticks[line.Id] = cleared;
+        line.IsCleared = cleared;
+    }
+
+    private async Task StartAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var result = await Recon.StartAsync(
+                _accountId!.Value,
+                DateOnly.FromDateTime(_statementDate ?? DateTime.Today),
+                _statementBalance);
+
+            if (result.Failed) { _error = result.Error; return; }
+
+            Nav.NavigateTo($"/finance/reconcile/{result.Value.Id}");
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var result = await Recon.SetClearedAsync(_current!.Id, _ticks);
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Saved.", Severity.Success);
+            _current = await Recon.GetAsync(_current.Id);
+            RefreshTicks();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task CloseAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            // Ticks are saved first, so closing judges what is on screen.
+            var saved = await Recon.SetClearedAsync(_current!.Id, _ticks);
+            if (saved.Failed) { _error = saved.Error; return; }
+
+            var result = await Recon.CloseAsync(_current.Id);
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Reconciled and closed.", Severity.Success);
+            _current = await Recon.GetAsync(_current.Id);
+            RefreshTicks();
+        }
+        finally { _busy = false; }
+    }
+}

@@ -1,0 +1,87 @@
+@page "/finance/year-end"
+@attribute [Authorize(Policy = FinanceModule.YearClose)]
+@rendermode InteractiveServer
+@inject IYearEndService Years
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Fiscal years</PageTitle>
+
+<MudText Typo="Typo.h5">Fiscal years</MudText>
+<MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+    Closing a year sweeps income and expense into retained earnings and locks the period.
+    Nothing can be posted into a closed year afterwards.
+</MudText>
+
+<MudPaper Outlined="true" Elevation="0">
+    <MudDataGrid T="FiscalYear" Items="_years" Dense="true" Hover="true" Elevation="0"
+                 Loading="_loading" Filterable="false">
+        <Columns>
+            <PropertyColumn Property="@(y => y.Name)" Title="Year" />
+            <TemplateColumn Title="From">
+                <CellTemplate>@context.Item.StartDate.ToString("d MMM yyyy")</CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="To">
+                <CellTemplate>@context.Item.EndDate.ToString("d MMM yyyy")</CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Status">
+                <CellTemplate>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                             Color="@(context.Item.IsClosed ? Color.Default : Color.Success)">
+                        @(context.Item.IsClosed ? "closed" : "open")
+                    </MudChip>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="" Sortable="false">
+                <CellTemplate>
+                    <div class="d-flex justify-end">
+                        @if (!context.Item.IsClosed)
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Warning"
+                                       OnClick="@(() => Close(context.Item))">Close year</MudButton>
+                        }
+                    </div>
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+    </MudDataGrid>
+</MudPaper>
+
+@if (_error is not null)
+{
+    <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-3">@_error</MudAlert>
+}
+
+@code {
+    private IReadOnlyList<FiscalYear> _years = [];
+    private string? _error;
+    private bool _loading = true;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _years = await Years.YearsAsync();
+        _loading = false;
+    }
+
+    private async Task Close(FiscalYear year)
+    {
+        var ok = await Dialogs.ShowMessageBox(
+            $"Close {year.Name}?",
+            "Income and expense are swept into retained earnings and the period is locked. " +
+            "Nothing can ever be posted into it again. This cannot be undone.",
+            yesText: "Close the year", cancelText: "Cancel");
+
+        if (ok != true) return;
+
+        _error = null;
+        var result = await Years.CloseAsync(year.Id);
+
+        if (result.Failed) _error = result.Error;
+        else Snackbar.Add($"{year.Name} closed.", Severity.Success);
+
+        await LoadAsync();
+    }
+}

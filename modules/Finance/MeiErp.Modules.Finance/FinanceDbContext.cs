@@ -29,6 +29,8 @@ public class FinanceDbContext(
     public DbSet<PayrollRun> PayrollRuns => Set<PayrollRun>();
     public DbSet<Payslip> Payslips => Set<Payslip>();
     public DbSet<PayslipLine> PayslipLines => Set<PayslipLine>();
+    public DbSet<Reconciliation> Reconciliations => Set<Reconciliation>();
+    public DbSet<ReconciliationLine> ReconciliationLines => Set<ReconciliationLine>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -304,6 +306,37 @@ public class FinanceDbContext(
         {
             b.Property(l => l.Name).HasMaxLength(200).IsRequired();
             b.HasQueryFilter(l => !l.Payslip!.Run!.IsDeleted);
+        });
+
+        modelBuilder.Entity<Reconciliation>(b =>
+        {
+            b.Property(r => r.Notes).HasMaxLength(1000);
+
+            b.HasOne(r => r.Account).WithMany()
+             .HasForeignKey(r => r.AccountId).OnDelete(DeleteBehavior.Restrict);
+
+            b.HasMany(r => r.Lines).WithOne(l => l.Reconciliation)
+             .HasForeignKey(l => l.ReconciliationId).OnDelete(DeleteBehavior.Cascade);
+
+            // One sheet per account per statement date.
+            b.HasIndex(r => new { r.AccountId, r.StatementDate })
+             .IsUnique().HasFilter("\"IsDeleted\" = false");
+
+            b.HasIndex(r => r.IsClosed);
+
+            b.Ignore(r => r.Uncleared);
+            b.Ignore(r => r.Adjusted);
+            b.Ignore(r => r.Difference);
+            b.Ignore(r => r.IsReconciled);
+        });
+
+        modelBuilder.Entity<ReconciliationLine>(b =>
+        {
+            b.Property(l => l.VoucherNumber).HasMaxLength(30);
+            b.Property(l => l.Narration).HasMaxLength(500);
+            b.HasIndex(l => l.VoucherLineId);
+            b.Ignore(l => l.Signed);
+            b.HasQueryFilter(l => !l.Reconciliation!.IsDeleted);
         });
 
         modelBuilder.Entity<DocumentSequenceCounter>(b =>
