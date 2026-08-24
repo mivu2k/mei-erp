@@ -58,7 +58,7 @@
         try
         {
             var result = await Utilities.PayAsync(
-                BillId, _fromId!.Value, DateOnly.FromDateTime(_date ?? DateTime.Today));
+                BillId, _fromId!.Value, DateOnly.FromDateTime(_date ?? Clock.Today.ToDateTime(TimeOnly.MinValue)));
 
             if (result.Failed) { _error = result.Error; return; }
 

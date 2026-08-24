@@ -1,0 +1,9 @@
+@page "/purchase/quotations/new"
+@page "/purchase/quotations/{Id:int}"
+@attribute [Authorize(Policy = PurchaseModule.QuotationsManage)]
+@rendermode InteractiveServer
+
+@* The dialog and this page render the same editor; only the frame differs. *@
+<QuotationEditor AsDialog="false" IsPurchase="true" QuotationId="Id" />
+
+@code { [Parameter] public int? Id { get; set; } }

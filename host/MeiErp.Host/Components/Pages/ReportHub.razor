@@ -7,6 +7,7 @@
 @inject IReportCatalog Catalog
 @inject ICurrentUser User
 @inject IClock Clock
+@inject IReportPreferenceService Preferences
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
 
@@ -126,6 +127,60 @@
                             @(_running ? "Running…" : "Run")
                         </MudButton>
                     </div>
+
+                    <MudExpansionPanels Class="mt-3" Elevation="0">
+                        <MudExpansionPanel Text="Saved views and schedule">
+                            <div class="d-flex flex-wrap gap-2 align-center">
+                                <MudTextField @bind-Value="_viewName" Label="View name" Variant="Variant.Outlined"
+                                              Margin="Margin.Dense" Style="max-width:220px" />
+                                <MudCheckBox T="bool" @bind-Value="_viewDefault" Label="Default" />
+                                <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="SaveViewAsync">Save current view</MudButton>
+                                @foreach (var view in _views)
+                                {
+                                    <MudChip T="string" Size="Size.Small" OnClick="@(() => ApplyViewAsync(view))"
+                                             OnClose="@(() => DeleteViewAsync(view))">
+                                        @(view.IsDefault ? $"★ {view.Name}" : view.Name)
+                                    </MudChip>
+                                }
+                            </div>
+                            <MudDivider Class="my-3" />
+                            <div class="d-flex flex-wrap gap-2 align-center">
+                                <MudTextField @bind-Value="_scheduleName" Label="Schedule name" Variant="Variant.Outlined"
+                                              Margin="Margin.Dense" Style="max-width:220px" />
+                                <MudSelect T="ReportScheduleFrequency" @bind-Value="_frequency" Label="Frequency"
+                                           Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:150px">
+                                    @foreach (var frequency in Enum.GetValues<ReportScheduleFrequency>())
+                                    { <MudSelectItem Value="@frequency">@frequency</MudSelectItem> }
+                                </MudSelect>
+                                <MudTimePicker @bind-Time="_runAt" Label="Run at" Variant="Variant.Outlined"
+                                               Margin="Margin.Dense" Style="max-width:150px" />
+                                @if (_frequency == ReportScheduleFrequency.Weekly)
+                                {
+                                    <MudSelect T="DayOfWeek" @bind-Value="_scheduleDay" Label="Day"
+                                               Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:150px">
+                                        @foreach (var day in Enum.GetValues<DayOfWeek>())
+                                        { <MudSelectItem Value="@day">@day</MudSelectItem> }
+                                    </MudSelect>
+                                }
+                                @if (_frequency == ReportScheduleFrequency.Monthly)
+                                {
+                                    <MudNumericField T="int" @bind-Value="_dayOfMonth" Label="Day of month" Min="1" Max="28"
+                                                     Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:150px" />
+                                }
+                                <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="SaveScheduleAsync">Add schedule</MudButton>
+                            </div>
+                            @foreach (var schedule in _schedules)
+                            {
+                                <div class="d-flex align-center mt-2">
+                                    <MudText Typo="Typo.body2">@schedule.Name — @schedule.Frequency, next @FormatBusinessTime(schedule.NextRunUtc)</MudText>
+                                    @if (!string.IsNullOrWhiteSpace(schedule.LastError))
+                                    { <MudText Typo="Typo.caption" Color="Color.Error" Class="ml-2">Last run: @schedule.LastError</MudText> }
+                                    <MudSpacer />
+                                    <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" OnClick="@(() => DeleteScheduleAsync(schedule))" />
+                                </div>
+                            }
+                        </MudExpansionPanel>
+                    </MudExpansionPanels>
                 </div>
 
                 <MudDivider />
@@ -272,6 +327,14 @@
     private string? _groupBy;
     private DateTime? _from, _to, _asAt;
     private bool _running;
+    private string? _viewName, _scheduleName;
+    private bool _viewDefault;
+    private ReportScheduleFrequency _frequency = ReportScheduleFrequency.Weekly;
+    private TimeSpan? _runAt = new(8, 0, 0);
+    private DayOfWeek _scheduleDay = DayOfWeek.Monday;
+    private int _dayOfMonth = 1;
+    private IReadOnlyList<SavedReportView> _views = [];
+    private IReadOnlyList<ReportSchedule> _schedules = [];
 
     private IReadOnlyList<ReportDefinition> Visible =>
         [.. Catalog.Available(User)
@@ -285,7 +348,7 @@
     private static bool IsNumeric(ReportColumn column) =>
         column.Kind is ReportValueKind.Money or ReportValueKind.Number;
 
-    protected override void OnParametersSet()
+    protected override async Task OnParametersSetAsync()
     {
         var today = Clock.Today;
 
@@ -299,17 +362,78 @@
         if (ReportKey is not null && _current?.Key != ReportKey)
         {
             var found = Catalog.Find(ReportKey);
-            if (found is not null && User.Can(found.Permission)) _current = found;
+            if (found is not null && User.Can(found.Permission))
+            {
+                _current = found;
+                await LoadPreferencesAsync();
+            }
         }
     }
 
-    private void Select(ReportDefinition report)
+    private async Task Select(ReportDefinition report)
     {
         _current = report;
         _result = null;
         _groups = [];
         _groupBy = null;
+        await LoadPreferencesAsync();
     }
+
+    private ReportRequest CurrentRequest() => new()
+    {
+        From = _current?.Uses.HasFlag(ReportFilters.DateRange) == true && _from is not null ? DateOnly.FromDateTime(_from.Value) : null,
+        To = _current?.Uses.HasFlag(ReportFilters.DateRange) == true && _to is not null ? DateOnly.FromDateTime(_to.Value) : null,
+        AsAt = _current?.Uses.HasFlag(ReportFilters.AsAtDate) == true && _asAt is not null ? DateOnly.FromDateTime(_asAt.Value) : null,
+        Status = _status, Search = _searchTerm, GroupBy = _groupBy
+    };
+
+    private async Task LoadPreferencesAsync()
+    {
+        if (_current is null) return;
+        _views = await Preferences.ViewsAsync(_current.Key);
+        _schedules = await Preferences.SchedulesAsync(_current.Key);
+        var initial = _views.FirstOrDefault(x => x.IsDefault);
+        if (initial is not null) await ApplyViewAsync(initial);
+    }
+
+    private async Task SaveViewAsync()
+    {
+        if (_current is null || string.IsNullOrWhiteSpace(_viewName)) { Snackbar.Add("Enter a view name.", Severity.Warning); return; }
+        try
+        {
+            await Preferences.SaveViewAsync(null, _current.Key, _viewName, System.Text.Json.JsonSerializer.Serialize(CurrentRequest()), _viewDefault);
+            _viewName = null; _viewDefault = false; await LoadPreferencesAsync(); Snackbar.Add("View saved.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task ApplyViewAsync(SavedReportView view)
+    {
+        var request = System.Text.Json.JsonSerializer.Deserialize<ReportRequest>(view.FiltersJson);
+        if (request is null) return;
+        _from = request.From?.ToDateTime(TimeOnly.MinValue); _to = request.To?.ToDateTime(TimeOnly.MinValue);
+        _asAt = request.AsAt?.ToDateTime(TimeOnly.MinValue); _status = request.Status; _searchTerm = request.Search; _groupBy = request.GroupBy;
+        await RunAsync();
+    }
+
+    private async Task DeleteViewAsync(SavedReportView view) { await Preferences.DeleteViewAsync(view.Id); await LoadPreferencesAsync(); }
+
+    private async Task SaveScheduleAsync()
+    {
+        if (_current is null || string.IsNullOrWhiteSpace(_scheduleName)) { Snackbar.Add("Enter a schedule name.", Severity.Warning); return; }
+        try
+        {
+            var at = TimeOnly.FromTimeSpan(_runAt ?? new TimeSpan(8, 0, 0));
+            await Preferences.SaveScheduleAsync(null, _current.Key, _scheduleName, System.Text.Json.JsonSerializer.Serialize(CurrentRequest()), _frequency, at, _scheduleDay, _dayOfMonth, true);
+            _scheduleName = null; await LoadPreferencesAsync(); Snackbar.Add("Schedule saved.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task DeleteScheduleAsync(ReportSchedule schedule) { await Preferences.DeleteScheduleAsync(schedule.Id); await LoadPreferencesAsync(); }
+
+    private string FormatBusinessTime(DateTime utc) =>
+        TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), Clock.TimeZone).ToString("g");
 
     private async Task RunAsync()
     {

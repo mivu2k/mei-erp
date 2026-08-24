@@ -1,0 +1,135 @@
+@page "/sales/orders"
+@attribute [Authorize(Policy = SalesModule.OrdersView)]
+@rendermode InteractiveServer
+@inject ISalesService Sales
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<ListShell Title="Sales orders"
+           Subtitle="Confirming an order reserves nothing — stock is checked when goods actually go out."
+           Icon="@Icons.Material.Outlined.ShoppingCart"
+           Loading="_loading"
+           IsEmpty="@(_rows.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.ShoppingCart"
+           EmptyTitle="No sales orders yet"
+           EmptyHint="Confirm a quotation or raise an order directly to start tracking delivery against it.">
+    <Actions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+            New order
+        </MudButton>
+        <MudTooltip Text="Open as a full page instead">
+            <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Href="/sales/orders/new" />
+        </MudTooltip>
+    </Actions>
+
+    <EmptyAction>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+            New order
+        </MudButton>
+    </EmptyAction>
+
+    <ChildContent>
+    <MudDataGrid T="SalesOrder" Items="_rows" Dense="true" Hover="true" Elevation="0"
+                 Loading="_loading" Filterable="false" RowsPerPage="25">
+        <Columns>
+            <PropertyColumn Property="@(o => o.Number)" Title="Number" />
+            <TemplateColumn Title="Date">
+                <CellTemplate>@context.Item.Date.ToString("d MMM yyyy")</CellTemplate>
+            </TemplateColumn>
+            <PropertyColumn Property="@(o => o.PartyName)" Title="Customer" />
+            <TemplateColumn Title="Value" HeaderClass="text-right" CellClass="text-right">
+                <CellTemplate>
+                    <span style="font-variant-numeric:tabular-nums">@context.Item.Total.ToString("N2")</span>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Status">
+                <CellTemplate>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                             Color="@Colour(context.Item.Status)">@context.Item.Status</MudChip>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="" Sortable="false">
+                <CellTemplate>
+                    <div class="d-flex justify-end gap-1">
+                        <MudIconButton Icon="@Icons.Material.Outlined.Print" Href="@($"/print/inventory/sales-order/{context.Item.Id}")" Target="_blank" />
+                        <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small"
+                                       Href="@($"/sales/orders/{context.Item.Id}")" title="Open as a page" />
+                        @if (context.Item.Status is SalesOrderStatus.Draft)
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Text"
+                                       OnClick="@(() => Edit(context.Item))">Edit</MudButton>
+                            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                                       OnClick="@(() => Confirm(context.Item))">Confirm</MudButton>
+                        }
+                        else if (context.Item.Status is SalesOrderStatus.Confirmed
+                                                     or SalesOrderStatus.PartiallyDelivered)
+                        {
+                            <AuthorizeView Policy="@SalesModule.DeliveryPost" Context="perms">
+                                <Authorized>
+                                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
+                                               OnClick="@(() => Deliver(context.Item))">Deliver</MudButton>
+                                </Authorized>
+                            </AuthorizeView>
+                        }
+                    </div>
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+    </MudDataGrid>
+    </ChildContent>
+</ListShell>
+
+@if (_editing)
+{
+    <OrderEditor AsDialog="true" IsPurchase="false" OrderId="_editingId"
+                 Saved="LoadAsync" Closed="@(() => { _editing = false; return Task.CompletedTask; })" />
+}
+
+@code {
+    private IReadOnlyList<SalesOrder> _rows = [];
+    private bool _loading = true, _editing;
+    private int? _editingId;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _rows = await Sales.ListOrdersAsync(null);
+        _loading = false;
+    }
+
+    private static Color Colour(SalesOrderStatus status) => status switch
+    {
+        SalesOrderStatus.Delivered => Color.Success,
+        SalesOrderStatus.Confirmed => Color.Info,
+        SalesOrderStatus.PartiallyDelivered => Color.Info,
+        SalesOrderStatus.Cancelled => Color.Error,
+        _ => Color.Default
+    };
+
+    private void Edit(SalesOrder? row)
+    {
+        _editingId = row?.Id;
+        _editing = true;
+    }
+
+    private async Task Confirm(SalesOrder row)
+    {
+        var result = await Sales.ConfirmAsync(row.Id);
+        if (result.Failed) Snackbar.Add(result.Error!, Severity.Error);
+        else Snackbar.Add("Order confirmed.", Severity.Success);
+        await LoadAsync();
+    }
+
+    private async Task Deliver(SalesOrder row)
+    {
+        var parameters = new DialogParameters<DeliverDialog> { { x => x.OrderId, row.Id } };
+        var dialog = await Dialogs.ShowAsync<DeliverDialog>("Deliver goods", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+
+        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    }
+}

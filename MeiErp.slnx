@@ -18,6 +18,10 @@
   <Folder Name="/modules/Inventory/">
     <Project Path="modules/Inventory/MeiErp.Modules.Inventory/MeiErp.Modules.Inventory.csproj" />
   </Folder>
+  <Folder Name="/modules/Ledger/">
+    <Project Path="modules/Ledger/MeiErp.Modules.Ledger/MeiErp.Modules.Ledger.csproj" />
+    <Project Path="modules/Trade/MeiErp.Modules.Trade/MeiErp.Modules.Trade.csproj" />
+  </Folder>
   <Folder Name="/modules/Repair/">
     <Project Path="modules/Repair/MeiErp.Modules.Repair/MeiErp.Modules.Repair.csproj" />
   </Folder>
@@ -25,25 +29,36 @@
     <Project Path="modules/Tender/MeiErp.Modules.Tender/MeiErp.Modules.Tender.csproj" />
   </Folder>
   <Folder Name="/platform/">
+    <Project Path="platform/MeiErp.Platform.Messaging/MeiErp.Platform.Messaging.csproj" />
     <Project Path="platform/MeiErp.Platform.Identity/MeiErp.Platform.Identity.csproj" />
     <Project Path="platform/MeiErp.Platform.Kernel/MeiErp.Platform.Kernel.csproj" />
     <Project Path="platform/MeiErp.Platform.Notifications/MeiErp.Platform.Notifications.csproj" />
     <Project Path="platform/MeiErp.Platform.Persistence/MeiErp.Platform.Persistence.csproj" />
     <Project Path="platform/MeiErp.Platform.Printing/MeiErp.Platform.Printing.csproj" />
     <Project Path="platform/MeiErp.Platform.Reporting/MeiErp.Platform.Reporting.csproj" />
+    <Project Path="platform/MeiErp.Platform.Web/MeiErp.Platform.Web.csproj" />
     <Project Path="platform/MeiErp.Platform.Workflow/MeiErp.Platform.Workflow.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/MeiErp.Host.Tests/MeiErp.Host.Tests.csproj" />
+    <Project Path="tests/MeiErp.LegacyImport.Tests/MeiErp.LegacyImport.Tests.csproj" />
+    <Project Path="tests/MeiErp.Modules.Auto.Tests/MeiErp.Modules.Auto.Tests.csproj" />
     <Project Path="tests/MeiErp.Modules.Finance.Tests/MeiErp.Modules.Finance.Tests.csproj" />
     <Project Path="tests/MeiErp.Modules.GatePass.Tests/MeiErp.Modules.GatePass.Tests.csproj" />
     <Project Path="tests/MeiErp.Modules.Hr.Tests/MeiErp.Modules.Hr.Tests.csproj" />
     <Project Path="tests/MeiErp.Modules.Inventory.Tests/MeiErp.Modules.Inventory.Tests.csproj" />
+    <Project Path="tests/MeiErp.Modules.Ledger.Tests/MeiErp.Modules.Ledger.Tests.csproj" />
     <Project Path="tests/MeiErp.Modules.Repair.Tests/MeiErp.Modules.Repair.Tests.csproj" />
+    <Project Path="tests/MeiErp.Modules.Trade.Tests/MeiErp.Modules.Trade.Tests.csproj" />
     <Project Path="tests/MeiErp.Modules.Tender.Tests/MeiErp.Modules.Tender.Tests.csproj" />
     <Project Path="tests/MeiErp.Platform.Identity.Tests/MeiErp.Platform.Identity.Tests.csproj" />
+    <Project Path="tests/MeiErp.Platform.Messaging.Tests/MeiErp.Platform.Messaging.Tests.csproj" />
     <Project Path="tests/MeiErp.Platform.Notifications.Tests/MeiErp.Platform.Notifications.Tests.csproj" />
     <Project Path="tests/MeiErp.Platform.Persistence.Tests/MeiErp.Platform.Persistence.Tests.csproj" />
     <Project Path="tests/MeiErp.Platform.Printing.Tests/MeiErp.Platform.Printing.Tests.csproj" />
     <Project Path="tests/MeiErp.Platform.Workflow.Tests/MeiErp.Platform.Workflow.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/MeiErp.LegacyImport/MeiErp.LegacyImport.csproj" />
   </Folder>
 </Solution>

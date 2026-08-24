@@ -1,0 +1,196 @@
+@inject ITradeDocumentService Documents
+@inject IClock Clock
+
+@*
+    Invoices, one side of the business at a time. Same arrangement as the
+    quotation list: a dialog from here, a page from a link.
+*@
+
+<ListShell Title="@Title"
+           Subtitle="@Subtitle"
+           Icon="@Icons.Material.Outlined.ReceiptLong"
+           Loading="_loading"
+           IsEmpty="@(_rows.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.ReceiptLong"
+           EmptyTitle="No invoices yet"
+           EmptyHint="@EmptyHint">
+    <Actions>
+        @if (CanManage)
+        {
+            @* Both routes into the same editor: a dialog to keep your place in
+               the list, a page for a link or a fresh tab. Neither is forced. *@
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Open(null))">
+                New invoice
+            </MudButton>
+            <MudTooltip Text="Open as a full page instead">
+                <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew"
+                               Href="@($"{BasePath}/invoices/new")" />
+            </MudTooltip>
+        }
+    </Actions>
+
+    <Stats>
+        @if (_rows.Count > 0)
+        {
+            <StatTile Label="Invoices" Value="@_rows.Count.ToString()" />
+            <StatTile Label="@(IsPurchase ? "Owed" : "Outstanding")"
+                      Value="@_outstanding.ToString("N2")"
+                      Caption="@($"across {_openCount} posted")"
+                      Colour="@(_outstanding > 0 ? Color.Primary : Color.Default)" />
+            @if (_overdue > 0)
+            {
+                <StatTile Label="Overdue" Value="@_overdue.ToString()" Colour="Color.Error"
+                          Caption="Past their due date" />
+            }
+            @if (_awaiting > 0)
+            {
+                <StatTile Label="Awaiting approval" Value="@_awaiting.ToString()" Colour="Color.Warning" />
+            }
+        }
+    </Stats>
+
+    <EmptyAction>
+        @if (CanManage)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Open(null))">
+                New invoice
+            </MudButton>
+        }
+    </EmptyAction>
+
+    <Toolbar>
+        <MudSelect T="DocumentStatus?" Value="_status" ValueChanged="ChooseStatusAsync"
+                   Label="Status" Dense="true" Margin="Margin.Dense"
+                   Variant="Variant.Outlined" Clearable="true" Style="max-width:220px" Class="mt-0">
+            @foreach (var s in Enum.GetValues<DocumentStatus>())
+            {
+                <MudSelectItem T="DocumentStatus?" Value="@((DocumentStatus?)s)">@s</MudSelectItem>
+            }
+        </MudSelect>
+    </Toolbar>
+
+    <ChildContent>
+    <MudDataGrid T="Invoice" Items="_rows" Dense="true" Hover="true" Elevation="0"
+                 Filterable="false" RowsPerPage="25">
+        <Columns>
+            <PropertyColumn Property="@(x => x.Number)" Title="Number" />
+            <TemplateColumn Title="Date" SortBy="@(x => x.Date)">
+                <CellTemplate>@context.Item.Date.ToString("d MMM yyyy")</CellTemplate>
+            </TemplateColumn>
+            <PropertyColumn Property="@(x => x.PartyName)" Title="@PartyHeading" />
+            <TemplateColumn Title="Due">
+                <CellTemplate>
+                    @if (context.Item.DueDate is { } d)
+                    {
+                        <span>@d.ToString("d MMM yyyy")</span>
+                        @if (context.Item.IsOverdueOn(Clock.Today))
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Error"
+                                     Variant="Variant.Text" Class="ml-1">Overdue</MudChip>
+                        }
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Status">
+                <CellTemplate>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+                             Color="@Colour(context.Item.Status)">@context.Item.Status</MudChip>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Total" HeaderClass="text-right" CellClass="text-right">
+                <CellTemplate>
+                    <span style="font-variant-numeric:tabular-nums">@context.Item.Total.ToString("N2")</span>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Balance" HeaderClass="text-right" CellClass="text-right">
+                <CellTemplate>
+                    <span style="font-variant-numeric:tabular-nums">@context.Item.Balance.ToString("N2")</span>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="" Sortable="false">
+                <CellTemplate>
+                    <div class="d-flex justify-end gap-1">
+                        <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small"
+                                       Href="@($"{BasePath}/invoices/{context.Item.Id}")"
+                                       title="Open as a page" />
+                        <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small"
+                                       OnClick="@(() => Open(context.Item.Id))" />
+                    </div>
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+    </MudDataGrid>
+    </ChildContent>
+</ListShell>
+
+@if (_editing)
+{
+    <InvoiceEditor AsDialog="true" IsPurchase="IsPurchase" InvoiceId="_editingId"
+                   Saved="LoadAsync" Closed="@(() => { _editing = false; return Task.CompletedTask; })" />
+}
+
+@code {
+    [Parameter] public bool IsPurchase { get; set; }
+    [Parameter] public bool CanManage { get; set; }
+
+    private TradeDirection Direction => IsPurchase ? TradeDirection.Purchase : TradeDirection.Sales;
+    private string BasePath => IsPurchase ? "/purchase" : "/sales";
+    private string PartyHeading => IsPurchase ? "Supplier" : "Customer";
+
+    private string Title => IsPurchase ? "Supplier invoices" : "Customer invoices";
+
+    private string EmptyHint => IsPurchase
+        ? "Enter a supplier's bill here so what the business owes is visible and can be approved."
+        : "Bill a customer here. Posting an invoice is what puts it in the books.";
+
+    private string Subtitle => IsPurchase
+        ? "Bills the business owes. Posting one puts it in the books."
+        : "Bills owed to the business. Posting one puts it in the books.";
+
+    private IReadOnlyList<Invoice> _rows = [];
+    private DocumentStatus? _status;
+    private decimal _outstanding;
+    private int _openCount, _overdue, _awaiting;
+    private bool _loading = true, _editing;
+    private int? _editingId;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _rows = await Documents.InvoicesAsync(Direction, _status);
+
+        // Only posted invoices owe anything; a draft is still a working note.
+        var open = _rows.Where(x => x.Status == DocumentStatus.Posted && !x.IsSettled).ToList();
+        _openCount = open.Count;
+        _outstanding = open.Sum(x => x.Balance);
+        _overdue = open.Count(x => x.IsOverdueOn(Clock.Today));
+        _awaiting = _rows.Count(x => x.Status == DocumentStatus.PendingApproval);
+
+        _loading = false;
+    }
+
+    private async Task ChooseStatusAsync(DocumentStatus? status)
+    {
+        _status = status;
+        await LoadAsync();
+    }
+
+    private void Open(int? id)
+    {
+        _editingId = id;
+        _editing = true;
+    }
+
+    private static Color Colour(DocumentStatus s) => s switch
+    {
+        DocumentStatus.Draft => Color.Default,
+        DocumentStatus.PendingApproval or DocumentStatus.Returned => Color.Warning,
+        DocumentStatus.Posted => Color.Success,
+        DocumentStatus.Rejected or DocumentStatus.Cancelled => Color.Error,
+        _ => Color.Info
+    };
+}

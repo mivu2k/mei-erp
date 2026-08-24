@@ -313,7 +313,7 @@ else
         {
             var result = await Advances.DisburseAsync(
                 AdvanceId, _disburseAmount, _cashId!.Value,
-                DateOnly.FromDateTime(_date ?? DateTime.Today));
+                DateOnly.FromDateTime(_date ?? Clock.Today.ToDateTime(TimeOnly.MinValue)));
 
             if (result.Failed) { _error = result.Error; return; }
 
@@ -333,7 +333,7 @@ else
                 [.. _expenses
                     .Where(e => !string.IsNullOrWhiteSpace(e.Description) && e.Amount > 0)
                     .Select(e => new AdvanceExpenseInput(
-                        DateOnly.FromDateTime(e.Date ?? DateTime.Today),
+                        DateOnly.FromDateTime(e.Date ?? Clock.Today.ToDateTime(TimeOnly.MinValue)),
                         e.Description, e.Amount, e.HeadId, null))]);
 
             if (result.Failed) { _error = result.Error; return; }
@@ -352,7 +352,7 @@ else
         {
             var result = await Advances.SettleAsync(
                 AdvanceId, _handling, _cashId!.Value,
-                DateOnly.FromDateTime(_date ?? DateTime.Today));
+                DateOnly.FromDateTime(_date ?? Clock.Today.ToDateTime(TimeOnly.MinValue)));
 
             if (result.Failed) { _error = result.Error; return; }
 
@@ -370,7 +370,7 @@ else
         {
             var result = await Advances.ClearDifferenceAsync(
                 AdvanceId, _clearAmount, _cashId!.Value,
-                DateOnly.FromDateTime(_date ?? DateTime.Today));
+                DateOnly.FromDateTime(_date ?? Clock.Today.ToDateTime(TimeOnly.MinValue)));
 
             if (result.Failed) { _error = result.Error; return; }
 

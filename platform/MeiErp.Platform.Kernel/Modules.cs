@@ -45,7 +45,38 @@ public sealed record ModuleDescriptor
     /// this was added.
     /// </summary>
     public IReadOnlyList<NavItem> Nav { get; init; } = [];
+
+    /// <summary>
+    /// Shortcuts this module puts directly on the app bar, beside approvals and
+    /// the notification bell.
+    ///
+    /// For the handful of pages someone opens many times a day from wherever
+    /// they happen to be - the attendance QR code being the case that forced it.
+    /// Buried in a module's nav that was four clicks with a queue waiting at a
+    /// door; on the app bar it is one. Declared here rather than hard-coded into
+    /// the shell, so the shell needs no reference to the module that owns it and
+    /// any module can add one the same way.
+    ///
+    /// Keep this list short: everything that earns a place on the app bar takes
+    /// attention from everything already on it.
+    /// </summary>
+    public IReadOnlyList<QuickAction> QuickActions { get; init; } = [];
 }
+
+/// <summary>
+/// A module's shortcut on the app bar.
+/// </summary>
+/// <param name="Tooltip">Shown on hover; the app bar has no room for a label.</param>
+/// <param name="Path">Where it goes.</param>
+/// <param name="Icon">MudBlazor icon name, resolved by the shell.</param>
+/// <param name="Permission">
+/// Hidden unless the person holds this. Deliberately a permission check rather
+/// than a data check: the shell renders on every page, and asking the database
+/// whether this login maps to an employee record would cost a query each time.
+/// The target page explains itself when the person has no such record.
+/// </param>
+public sealed record QuickAction(
+    string Tooltip, string Path, string Icon, string? Permission = null);
 
 /// <summary>
 /// One entry in a module's own navigation.

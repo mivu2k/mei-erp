@@ -1,0 +1,92 @@
+@page "/inventory/warehouses"
+@attribute [Authorize(Policy=InventoryModule.WarehousesManage)]
+@inject IWarehouseService Service
+@inject ISnackbar Snackbar
+
+<ListShell Title="Warehouses"
+           Subtitle="The physical locations stock can be counted, transferred and delivered from."
+           Icon="@Icons.Material.Outlined.Warehouse"
+           IsEmpty="@(_rows.Count == 0 && _edit is null)"
+           EmptyIcon="@Icons.Material.Outlined.Warehouse"
+           EmptyTitle="No warehouses yet"
+           EmptyHint="Add a warehouse before transferring or counting stock at that location.">
+    <Actions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="@(()=>Edit(new Warehouse()))">New warehouse</MudButton>
+    </Actions>
+
+    <EmptyAction>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="@(()=>Edit(new Warehouse()))">New warehouse</MudButton>
+    </EmptyAction>
+
+    <ChildContent>
+    <MudTable Items="_rows" Dense Hover>
+        <HeaderContent>
+            <MudTh>Code</MudTh><MudTh>Name</MudTh><MudTh>Address</MudTh>
+            <MudTh>Default</MudTh><MudTh>Active</MudTh><MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.Code</MudTd>
+            <MudTd>@context.Name</MudTd>
+            <MudTd>@context.Address</MudTd>
+            <MudTd>@(context.IsDefault?"Yes":"—")</MudTd>
+            <MudTd>@(context.IsActive?"Yes":"No")</MudTd>
+            <MudTd>
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" OnClick="@(()=>Edit(context))"/>
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(()=>Delete(context.Id))"/>
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+    @if(_edit is not null)
+    {
+        <MudPaper Class="pa-4 ma-3" Outlined="true" Elevation="0">
+            <MudText Typo="Typo.h6">Warehouse</MudText>
+            <MudGrid>
+                <MudItem xs="12" md="3"><MudTextField @bind-Value="_edit.Code" Label="Code"/></MudItem>
+                <MudItem xs="12" md="5"><MudTextField @bind-Value="_edit.Name" Label="Name"/></MudItem>
+                <MudItem xs="12" md="4"><MudTextField @bind-Value="_edit.Address" Label="Address"/></MudItem>
+                <MudItem xs="12"><MudTextField @bind-Value="_edit.Notes" Label="Notes" Lines="2"/></MudItem>
+                <MudItem xs="12">
+                    <MudSwitch @bind-Value="_edit.IsDefault" Label="Default warehouse"/>
+                    <MudSwitch @bind-Value="_edit.IsActive" Label="Active"/>
+                </MudItem>
+            </MudGrid>
+            <div class="d-flex justify-end gap-2">
+                <MudButton OnClick="@(()=>_edit=null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">Save</MudButton>
+            </div>
+        </MudPaper>
+    }
+    </ChildContent>
+</ListShell>
+
+@code{
+    private List<Warehouse> _rows=[];
+    private Warehouse? _edit;
+
+    protected override async Task OnInitializedAsync()=>await Load();
+    private Task Load()=>Service.ListAsync().ContinueWith(t=>_rows=t.Result,TaskScheduler.Current);
+
+    private void Edit(Warehouse x)=>_edit=new(){Id=x.Id,Code=x.Code,Name=x.Name,Address=x.Address,Notes=x.Notes,IsDefault=x.IsDefault,IsActive=x.Id==0||x.IsActive};
+
+    private async Task Save()
+    {
+        try
+        {
+            await Service.SaveAsync(_edit!);
+            _edit=null;
+            _rows=await Service.ListAsync();
+            Snackbar.Add("Warehouse saved.",Severity.Success);
+        }
+        catch(Exception ex){Snackbar.Add(ex.Message,Severity.Error);}
+    }
+
+    private async Task Delete(int id)
+    {
+        try{await Service.DeleteAsync(id);_rows=await Service.ListAsync();}
+        catch(Exception ex){Snackbar.Add(ex.Message,Severity.Error);}
+    }
+}

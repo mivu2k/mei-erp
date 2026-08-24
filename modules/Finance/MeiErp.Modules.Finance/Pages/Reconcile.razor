@@ -277,7 +277,7 @@ else
         {
             var result = await Recon.StartAsync(
                 _accountId!.Value,
-                DateOnly.FromDateTime(_statementDate ?? DateTime.Today),
+                DateOnly.FromDateTime(_statementDate ?? Clock.Today.ToDateTime(TimeOnly.MinValue)),
                 _statementBalance);
 
             if (result.Failed) { _error = result.Error; return; }

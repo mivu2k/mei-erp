@@ -1,6 +1,9 @@
 @inject IAdminService Admin
 @inject IUserDirectory Directory
 @inject ISnackbar Snackbar
+@inject UserManager<ApplicationUser> Users
+@inject IAccountEmailSender AccountEmail
+@using MeiErp.Host.Services
 
 <MudDialog>
     <DialogContent>
@@ -73,6 +76,7 @@
     private MudForm? _form;
     private string _fullName = "";
     private string _email = "";
+    private string _originalEmail = "";
     private string? _employeeCode;
     private string? _designation;
     private string? _departmentId;
@@ -98,6 +102,7 @@
 
         _fullName = detail.FullName;
         _email = detail.Email ?? "";
+        _originalEmail = _email;
         _employeeCode = detail.EmployeeCode;
         _designation = detail.Designation;
         _departmentId = detail.DepartmentId;
@@ -130,9 +135,15 @@
                 _fullName.Trim(), _email.Trim(), _employeeCode, _designation,
                 _departmentId, _lineManagerId);
 
-            var result = IsNew
-                ? (await Admin.CreateUserAsync(input, _password)).AsResult()
-                : await Admin.UpdateUserAsync(UserId!, input);
+            Result result;
+            string? createdId = null;
+            if (IsNew)
+            {
+                var created = await Admin.CreateUserAsync(input, _password);
+                result = created.AsResult();
+                if (created.Ok) createdId = created.Value;
+            }
+            else result = await Admin.UpdateUserAsync(UserId!, input);
 
             if (result.Failed)
             {
@@ -140,7 +151,20 @@
                 return;
             }
 
-            Snackbar.Add(IsNew ? $"{_fullName} can now sign in." : "Saved.", Severity.Success);
+            var confirmationUserId = createdId ?? (!string.Equals(_originalEmail, _email, StringComparison.OrdinalIgnoreCase) ? UserId : null);
+            if (confirmationUserId is not null)
+            {
+                var user = await Users.FindByIdAsync(confirmationUserId);
+                var token = await Users.GenerateEmailConfirmationTokenAsync(user!);
+                var encoded = Microsoft.AspNetCore.WebUtilities.WebEncoders.Base64UrlEncode(System.Text.Encoding.UTF8.GetBytes(token));
+                var url = $"/auth/confirm-email?userId={Uri.EscapeDataString(confirmationUserId)}&token={Uri.EscapeDataString(encoded)}";
+                var delivery = await AccountEmail.SendAsync(_email, "Confirm your MEI ERP email",
+                    $"Your MEI ERP account has been created. Confirm the address, then sign in with the temporary password supplied by your administrator.", url);
+                Snackbar.Add(delivery.Ok ? $"{_fullName}'s confirmation email was sent."
+                    : $"User created, but confirmation email could not be sent: {delivery.Error}",
+                    delivery.Ok ? Severity.Success : Severity.Warning);
+            }
+            else Snackbar.Add("Saved.", Severity.Success);
             Dialog.Close(DialogResult.Ok(true));
         }
         finally

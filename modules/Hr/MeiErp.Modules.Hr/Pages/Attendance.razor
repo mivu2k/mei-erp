@@ -1,0 +1,63 @@
+@page "/hr/attendance"
+@attribute [Authorize(Policy = HrModule.AttendanceView)]
+@rendermode InteractiveServer
+@inject IAttendanceService AttendanceService
+@inject IAttendanceSyncService Sync
+@inject IClock Clock
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<PageTitle>Attendance</PageTitle>
+<MudText Typo="Typo.h5">Attendance</MudText>
+<MudTabs Class="mt-3" Rounded="true" Border="true">
+    <MudTabPanel Text="Daily register">
+        <div class="d-flex align-center gap-3 my-4">
+            <MudDatePicker Label="Date" Date="_date" DateChanged="DateChanged" Variant="Variant.Outlined" />
+            <AuthorizeView Policy="@HrModule.AttendanceManage">
+                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Refresh" OnClick="RebuildDayAsync">Recompute</MudButton>
+            </AuthorizeView>
+        </div>
+        @if (_loading) { <MudProgressLinear Indeterminate="true" /> }
+        else
+        {
+            <MudTable Items="@_days" Dense="true" Hover="true" Outlined="true" Elevation="0">
+                <HeaderContent><MudTh>Employee</MudTh><MudTh>Status</MudTh><MudTh>In</MudTh><MudTh>Out</MudTh><MudTh>Worked</MudTh><MudTh>Late</MudTh><MudTh>OT</MudTh><MudTh>Source</MudTh><MudTh></MudTh></HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.Employee?.FullName</MudTd><MudTd><MudChip T="string" Size="Size.Small">@context.Status</MudChip></MudTd>
+                    <MudTd>@context.FirstIn?.ToString("HH:mm")</MudTd><MudTd>@context.LastOut?.ToString("HH:mm")</MudTd>
+                    <MudTd>@Minutes(context.WorkedMinutes)</MudTd><MudTd>@context.LateMinutes</MudTd><MudTd>@context.OvertimeMinutes</MudTd><MudTd>@context.Source</MudTd>
+                    <MudTd><AuthorizeView Policy="@HrModule.AttendanceManage" Context="correctionAccess"><MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" OnClick="@(() => CorrectAsync(context))" /></AuthorizeView></MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudTabPanel>
+    <MudTabPanel Text="Monthly summary">
+        <div class="d-flex gap-3 my-4">
+            <MudNumericField T="int" @bind-Value="_year" Label="Year" Variant="Variant.Outlined" />
+            <MudSelect T="int" @bind-Value="_month" Label="Month" Variant="Variant.Outlined">
+                @for (var m = 1; m <= 12; m++)
+                {
+                    var month = m;
+                    <MudSelectItem Value="@month">@(new DateTime(2000, month, 1).ToString("MMMM"))</MudSelectItem>
+                }
+            </MudSelect>
+            <MudButton Variant="Variant.Filled" OnClick="LoadMonthAsync">View</MudButton>
+        </div>
+        <MudTable Items="@_monthly" Dense="true" Hover="true" Outlined="true" Elevation="0">
+            <HeaderContent><MudTh>Employee</MudTh><MudTh>Present</MudTh><MudTh>Late</MudTh><MudTh>Half</MudTh><MudTh>Absent</MudTh><MudTh>Leave</MudTh><MudTh>Incomplete</MudTh><MudTh>Payable</MudTh><MudTh>Worked</MudTh></HeaderContent>
+            <RowTemplate><MudTd>@context.EmployeeName</MudTd><MudTd>@context.Present</MudTd><MudTd>@context.Late</MudTd><MudTd>@context.HalfDays</MudTd><MudTd>@context.Absent</MudTd><MudTd>@context.OnLeave</MudTd><MudTd>@context.Incomplete</MudTd><MudTd>@context.PayableDays</MudTd><MudTd>@Minutes(context.WorkedMinutes)</MudTd></RowTemplate>
+        </MudTable>
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    private DateTime? _date; private bool _loading; private List<AttendanceDay> _days = [];
+    private int _year; private int _month; private List<MonthlyAttendance> _monthly = [];
+    protected override async Task OnInitializedAsync() { _date = Clock.Today.ToDateTime(TimeOnly.MinValue); _year = Clock.Today.Year; _month = Clock.Today.Month; await LoadDayAsync(); await LoadMonthAsync(); }
+    private async Task DateChanged(DateTime? value) { _date = value; await LoadDayAsync(); }
+    private async Task LoadDayAsync() { _loading = true; _days = [.. await AttendanceService.RegisterAsync(_date is null ? Clock.Today : DateOnly.FromDateTime(_date.Value))]; _loading = false; }
+    private async Task LoadMonthAsync() => _monthly = [.. await AttendanceService.MonthlyAsync(_year, _month)];
+    private async Task RebuildDayAsync() { var date = _date is null ? Clock.Today : DateOnly.FromDateTime(_date.Value); var count = await Sync.RebuildAsync(date, date); Snackbar.Add($"Recomputed {count} employee day(s).", Severity.Success); await LoadDayAsync(); }
+    private async Task CorrectAsync(AttendanceDay day) { var parameters = new DialogParameters { [nameof(AttendanceCorrectionDialog.Day)] = day }; var dialog = await Dialogs.ShowAsync<AttendanceCorrectionDialog>("Correct attendance", parameters); var result = await dialog.Result; if (result is { Canceled: false }) await LoadDayAsync(); }
+    private static string Minutes(int value) => $"{value / 60}h {value % 60}m";
+}

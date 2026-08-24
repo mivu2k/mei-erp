@@ -1,0 +1,47 @@
+@page "/Account/AccessDenied"
+@page "/Account/ConfirmEmail"
+@page "/Account/ConfirmEmailChange"
+@page "/Account/ForgotPassword"
+@page "/Account/ForgotPasswordConfirmation"
+@page "/Account/InvalidPasswordReset"
+@page "/Account/InvalidUser"
+@page "/Account/Lockout"
+@page "/Account/Login"
+@page "/Account/LoginWith2fa"
+@page "/Account/LoginWithRecoveryCode"
+@page "/Account/Manage"
+@page "/Account/Manage/ChangePassword"
+@page "/Account/Manage/DeletePersonalData"
+@page "/Account/Manage/Disable2fa"
+@page "/Account/Manage/Email"
+@page "/Account/Manage/EnableAuthenticator"
+@page "/Account/Manage/GenerateRecoveryCodes"
+@page "/Account/Manage/PersonalData"
+@page "/Account/Manage/ResetAuthenticator"
+@page "/Account/Manage/SetPassword"
+@page "/Account/Manage/TwoFactorAuthentication"
+@page "/Account/ResetPassword"
+@page "/Account/ResetPasswordConfirmation"
+@attribute [AllowAnonymous]
+@inject NavigationManager Nav
+
+<PageTitle>Redirecting</PageTitle>
+<MudProgressLinear Indeterminate="true" />
+
+@code {
+    protected override void OnInitialized()
+    {
+        var path = new Uri(Nav.Uri).AbsolutePath.TrimEnd('/').ToLowerInvariant();
+        var target = path switch
+        {
+            "/account/loginwith2fa" => "/two-factor",
+            "/account/loginwithrecoverycode" => "/recovery-code",
+            "/account/manage" => "/account/security",
+            var p when p.StartsWith("/account/manage/", StringComparison.Ordinal) => "/account/security",
+            "/account/forgotpassword" or "/account/forgotpasswordconfirmation" => "/forgot-password",
+            "/account/resetpassword" or "/account/resetpasswordconfirmation" or "/account/invalidpasswordreset" => "/reset-password",
+            _ => "/sign-in"
+        };
+        Nav.NavigateTo(target, replace: true);
+    }
+}

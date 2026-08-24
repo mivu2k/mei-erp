@@ -1,0 +1,120 @@
+@page "/inventory/counts"
+@attribute [Authorize(Policy=InventoryModule.CountsManage)]
+@inject IInventoryCountService Service
+@inject IWarehouseService Warehouses
+@inject ISnackbar Snackbar
+
+<ListShell Title="Stock counts"
+           Subtitle="Physical counts, compared against the system figure and posted as a correction."
+           Icon="@Icons.Material.Outlined.FactCheck"
+           IsEmpty="@(_rows.Count == 0 && _edit is null)"
+           EmptyIcon="@Icons.Material.Outlined.FactCheck"
+           EmptyTitle="No stock counts yet"
+           EmptyHint="Start a count for a warehouse to compare what is on the shelf against what the system says.">
+    <Actions>
+        <MudSelect T="int" @bind-Value="_warehouse" Label="Warehouse" Dense Style="width:220px">
+            @foreach(var w in _warehouses){<MudSelectItem Value="@w.Id">@w.Name</MudSelectItem>}
+        </MudSelect>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Create">New count</MudButton>
+    </Actions>
+
+    <EmptyAction>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Create">New count</MudButton>
+    </EmptyAction>
+
+    <ChildContent>
+    <MudTable Items="_rows" Dense Hover>
+        <HeaderContent>
+            <MudTh>Number</MudTh><MudTh>Date</MudTh><MudTh>Warehouse</MudTh>
+            <MudTh>Status</MudTh><MudTh>Variances</MudTh><MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.Number</MudTd>
+            <MudTd>@context.Date</MudTd>
+            <MudTd>@context.Warehouse?.Name</MudTd>
+            <MudTd>@context.Status</MudTd>
+            <MudTd>@context.VarianceCount</MudTd>
+            <MudTd>
+                @if(context.Status is StockCountStatus.Draft or StockCountStatus.Counted)
+                {
+                    <MudButton Size="Size.Small" OnClick="@(()=>Open(context))">Count</MudButton>
+                }
+                @if(context.Status==StockCountStatus.Counted)
+                {
+                    <MudButton Size="Size.Small" Color="Color.Primary" OnClick="@(()=>Post(context.Id))">Post</MudButton>
+                }
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+    @if(_edit is not null)
+    {
+        <MudPaper Class="pa-4 ma-3" Outlined="true" Elevation="0">
+            <MudText Typo="Typo.h6">@_edit.Number — @_edit.Warehouse?.Name</MudText>
+            <MudTable Items="_edit.Lines" Dense>
+                <HeaderContent>
+                    <MudTh>Item</MudTh><MudTh>System</MudTh><MudTh>Counted</MudTh><MudTh>Variance</MudTh><MudTh>Note</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.ItemCode — @context.ItemName</MudTd>
+                    <MudTd>@context.SystemQuantity</MudTd>
+                    <MudTd><MudNumericField @bind-Value="context.CountedQuantity" HideSpinButtons/></MudTd>
+                    <MudTd>@context.Variance</MudTd>
+                    <MudTd><MudTextField @bind-Value="context.Note"/></MudTd>
+                </RowTemplate>
+            </MudTable>
+            <div class="d-flex justify-end gap-2">
+                <MudButton OnClick="@(()=>_edit=null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Record">Finish count</MudButton>
+            </div>
+        </MudPaper>
+    }
+    </ChildContent>
+</ListShell>
+
+@code{
+    private List<InventoryCount> _rows=[];
+    private List<Warehouse> _warehouses=[];
+    private int _warehouse;
+    private InventoryCount? _edit;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _warehouses=await Warehouses.ListAsync();
+        _warehouse=_warehouses.FirstOrDefault()?.Id??0;
+        await Load();
+    }
+
+    private async Task Load()=>_rows=await Service.ListAsync();
+
+    private async Task Create()
+    {
+        var r=await Service.CreateAsync(_warehouse,null);
+        if(r.Failed) Snackbar.Add(r.Error!,Severity.Error);
+        else
+        {
+            await Load();
+            Open((await Service.GetAsync(r.Value.Id))!);
+        }
+    }
+
+    private void Open(InventoryCount x)
+    {
+        _edit=x;
+        foreach(var line in x.Lines) line.CountedQuantity??=line.SystemQuantity;
+    }
+
+    private async Task Record()
+    {
+        var r=await Service.RecordAsync(_edit!.Id,_edit.Lines.Select(x=>new CountLineInput(x.ItemId,x.CountedQuantity,x.Note)).ToList());
+        Snackbar.Add(r.Ok?"Count recorded.":r.Error!,r.Ok?Severity.Success:Severity.Error);
+        if(r.Ok) _edit=null;
+        await Load();
+    }
+
+    private async Task Post(int id)
+    {
+        var r=await Service.PostAsync(id);
+        Snackbar.Add(r.Ok?"Count posted to the stock ledger.":r.Error!,r.Ok?Severity.Success:Severity.Error);
+        await Load();
+    }
+}

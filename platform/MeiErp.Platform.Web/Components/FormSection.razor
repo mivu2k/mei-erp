@@ -1,0 +1,42 @@
+@*
+    One titled group of fields inside an editor.
+
+    A form of thirty fields in one undifferentiated stack is read by nobody:
+    everything looks equally important, so finding the one field you came to
+    change means scanning all of them. Grouping under a heading - who they are,
+    how to reach them, what they are paid - turns that scan into a jump.
+
+    The hint line is for the rule behind the group, not decoration. If there is
+    nothing worth saying, leave it off rather than inventing filler.
+*@
+
+<div class="app-form-section @Class">
+    <div class="app-form-section-head">
+        @if (Icon is not null)
+        {
+            <MudIcon Icon="@Icon" Size="Size.Small" Color="Color.Primary" />
+        }
+        <div>
+            <MudText Typo="Typo.subtitle2" Class="app-form-section-title">@Title</MudText>
+            @if (Hint is not null)
+            {
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">@Hint</MudText>
+            }
+        </div>
+    </div>
+
+    <div class="app-form-section-body">
+        @ChildContent
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = "";
+
+    /// <summary>The rule behind the group, where there is one worth stating.</summary>
+    [Parameter] public string? Hint { get; set; }
+
+    [Parameter] public string? Icon { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

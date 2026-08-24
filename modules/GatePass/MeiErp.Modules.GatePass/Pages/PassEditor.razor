@@ -1,9 +1,10 @@
 @inject IGatePassService Gate
 @inject IClock Clock
 @inject ISnackbar Snackbar
+@inject NavigationManager Nav
 
-<MudDialog>
-    <DialogContent>
+<DocumentShell @ref="_shell" AsDialog="AsDialog" Title="@Title" Error="@_error" OnClose="DismissedAsync">
+    <Body>
         <div class="d-flex gap-3 mb-4">
             <MudSelect T="PassDirection" @bind-Value="_direction" Label="Direction"
                        Variant="Variant.Outlined">
@@ -17,6 +18,16 @@
         <MudTextField @bind-Value="_partyName" Label="To / from" Required="true"
                       Variant="Variant.Outlined" Class="mb-4"
                       HelperText="Who the goods are going to, or coming from." />
+
+        <div class="d-flex gap-3 mb-4">
+            <MudTextField @bind-Value="_company" Label="Company" Variant="Variant.Outlined" />
+            <MudTextField @bind-Value="_department" Label="Department" Variant="Variant.Outlined" />
+        </div>
+
+        <div class="d-flex gap-3 mb-4">
+            <MudTextField @bind-Value="_phone" Label="Phone" Variant="Variant.Outlined" />
+            <MudTextField @bind-Value="_cnic" Label="CNIC / ID" Variant="Variant.Outlined" />
+        </div>
 
         <div class="d-flex gap-3 mb-4">
             <MudTextField @bind-Value="_vehicle" Label="Vehicle number" Variant="Variant.Outlined" />
@@ -66,23 +77,27 @@
 
         <MudTextField @bind-Value="_purpose" Label="Purpose" Lines="2"
                       Variant="Variant.Outlined" Class="mt-4" />
+        <div class="d-flex gap-3 mt-4">
+            <MudTextField @bind-Value="_referenceType" Label="Reference type" Variant="Variant.Outlined" />
+            <MudTextField @bind-Value="_referenceNumber" Label="Reference number" Variant="Variant.Outlined" />
+        </div>
+        <MudTextField @bind-Value="_notes" Label="Notes" Lines="2"
+                      Variant="Variant.Outlined" Class="mt-4" />
+    </Body>
 
-        @if (_error is not null)
-        {
-            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
-        }
-    </DialogContent>
-
-    <DialogActions>
-        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+    <Buttons>
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
                    OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
-    </DialogActions>
-</MudDialog>
+    </Buttons>
+</DocumentShell>
 
 @code {
-    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public bool AsDialog { get; set; }
     [Parameter] public int? PassId { get; set; }
+    [Parameter] public EventCallback Saved { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
+
+    private string Title => PassId is null ? "New gate pass" : "Edit pass";
 
     private sealed class ItemRow
     {
@@ -98,6 +113,13 @@
     private string? _vehicle;
     private string? _driver;
     private string? _purpose;
+    private string? _phone;
+    private string? _cnic;
+    private string? _company;
+    private string? _department;
+    private string? _notes;
+    private string? _referenceType;
+    private string? _referenceNumber;
     private bool _returnable;
     private List<ItemRow> _items = [];
     private string? _error;
@@ -118,6 +140,13 @@
                 _vehicle = existing.VehicleNumber;
                 _driver = existing.DriverName;
                 _purpose = existing.Purpose;
+                _phone = existing.PersonPhone;
+                _cnic = existing.PersonCnic;
+                _company = existing.CompanyName;
+                _department = existing.Department;
+                _notes = existing.Notes;
+                _referenceType = existing.ReferenceType;
+                _referenceNumber = existing.ReferenceNumber;
                 _returnable = existing.IsReturnable;
                 _expectedBack = existing.ExpectedBack?.ToDateTime(TimeOnly.MinValue);
                 _items = [.. existing.Items.Select(i => new ItemRow
@@ -145,18 +174,30 @@
         try
         {
             var result = await Gate.SaveAsync(new PassInput(
-                PassId, _direction, DateOnly.FromDateTime(_date ?? DateTime.Today),
+                PassId, _direction, DateOnly.FromDateTime(_date ?? Clock.Today.ToDateTime(TimeOnly.MinValue)),
                 _partyName, _returnable,
                 _expectedBack is null ? null : DateOnly.FromDateTime(_expectedBack.Value),
                 _vehicle, _driver, _purpose,
                 [.. _items.Where(i => !string.IsNullOrWhiteSpace(i.Description))
-                          .Select(i => new PassItemInput(i.Description, i.Quantity, i.Unit, null))]));
+                          .Select(i => new PassItemInput(i.Description, i.Quantity, i.Unit, null))],
+                _phone, _cnic, _company, _department, _notes, _referenceType, _referenceNumber));
 
             if (result.Failed) { _error = result.Error; return; }
 
             Snackbar.Add($"{result.Value.Number} raised.", Severity.Success);
-            Dialog.Close(DialogResult.Ok(true));
+            PassId = result.Value.Id;
+            await Saved.InvokeAsync();
+            if (AsDialog && _shell is not null) await _shell.CloseAsync();
         }
         finally { _busy = false; }
+    }
+
+    private DocumentShell? _shell;
+    
+    /// <summary>The shell has already closed itself; just react to it.</summary>
+    private async Task DismissedAsync()
+    {
+        if (Closed.HasDelegate) { await Closed.InvokeAsync(); return; }
+        Nav.NavigateTo("/gatepass/passes");
     }
 }

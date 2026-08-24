@@ -1,0 +1,7 @@
+@page "/finance/petty-cash/boxes/new"
+@attribute [Authorize(Policy = FinanceModule.PettyCashManage)]
+@rendermode InteractiveServer
+
+@* The dialog and this page render the same editor; only the frame differs.
+   No edit route: the editor only ever creates a box. *@
+<PettyBoxEditor AsDialog="false" />

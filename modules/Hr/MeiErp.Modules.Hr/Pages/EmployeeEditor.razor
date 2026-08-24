@@ -1,65 +1,136 @@
 @inject IEmployeeService Employees
 @inject IClock Clock
 @inject ISnackbar Snackbar
+@inject NavigationManager Nav
 
-<MudDialog>
-    <DialogContent>
+<DocumentShell @ref="_shell" AsDialog="AsDialog" Title="@Title" Error="@_error" OnClose="DismissedAsync">
+    <Body>
         <MudForm @ref="_form">
-            <div class="d-flex gap-3 mb-4">
-                <MudTextField @bind-Value="_model.Code" Label="Staff number" Required="true"
-                              RequiredError="Every employee needs a staff number."
-                              Variant="Variant.Outlined" />
-                <MudTextField @bind-Value="_model.FullName" Label="Full name" Required="true"
-                              RequiredError="Enter their name." Variant="Variant.Outlined" />
-            </div>
+            <FormSection Title="Who they are" Icon="@Icons.Material.Outlined.Badge"
+                         Hint="The staff number is what every other screen and report calls them by.">
+                <div class="app-form-grid">
+                    <MudTextField @bind-Value="_model.Code" Label="Staff number" Required="true"
+                                  RequiredError="Every employee needs a staff number."
+                                  Variant="Variant.Outlined" />
+                    <MudTextField @bind-Value="_model.FullName" Label="Full name" Required="true"
+                                  RequiredError="Enter their name." Variant="Variant.Outlined" />
+                    <MudTextField @bind-Value="_model.FatherName" Label="Father / guardian" Variant="Variant.Outlined" />
+                    <MudDatePicker Label="Date of birth" Variant="Variant.Outlined"
+                                   Date="_dateOfBirth" DateChanged="@(d => _dateOfBirth = d)" />
+                    <MudSelect T="Gender" @bind-Value="_model.Gender" Label="Gender" Variant="Variant.Outlined">
+                        @foreach (var gender in Enum.GetValues<Gender>())
+                        {
+                            <MudSelectItem Value="@gender">@gender</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudSelect T="MaritalStatus" @bind-Value="_model.MaritalStatus" Label="Marital status"
+                               Variant="Variant.Outlined">
+                        @foreach (var status in Enum.GetValues<MaritalStatus>())
+                        {
+                            <MudSelectItem Value="@status">@status</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudTextField @bind-Value="_model.BloodGroup" Label="Blood group" Variant="Variant.Outlined" />
+                </div>
+            </FormSection>
 
-            <div class="d-flex gap-3 mb-4">
-                <MudTextField @bind-Value="_model.Designation" Label="Designation" Variant="Variant.Outlined" />
-                <MudTextField @bind-Value="_model.DepartmentName" Label="Department" Variant="Variant.Outlined" />
-            </div>
+            <FormSection Title="The job" Icon="@Icons.Material.Outlined.WorkOutline"
+                         Hint="Joining date drives leave entitlement; status decides whether they appear on the active roll.">
+                <div class="app-form-grid">
+                    <MudTextField @bind-Value="_model.Designation" Label="Designation" Variant="Variant.Outlined" />
+                    <MudTextField @bind-Value="_model.DepartmentName" Label="Department" Variant="Variant.Outlined" />
+                    <MudSelect T="EmploymentType" @bind-Value="_model.EmploymentType" Label="Employment type"
+                               Variant="Variant.Outlined">
+                        @foreach (var type in Enum.GetValues<EmploymentType>())
+                        {
+                            <MudSelectItem Value="@type">@type</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudSelect T="EmploymentStatus" @bind-Value="_model.Status" Label="Status"
+                               Variant="Variant.Outlined">
+                        @foreach (var s in Enum.GetValues<EmploymentStatus>())
+                        {
+                            <MudSelectItem Value="@s">@s</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudDatePicker Label="Joined on" Variant="Variant.Outlined"
+                                   Date="_joined" DateChanged="@(d => _joined = d)" />
+                    <MudDatePicker Label="Confirmed on" Variant="Variant.Outlined"
+                                   Date="_confirmedOn" DateChanged="@(d => _confirmedOn = d)" />
+                    <MudTextField @bind-Value="_model.WorkLocation" Label="Work location" Variant="Variant.Outlined" />
+                    <MudTextField @bind-Value="_model.ReportsToEmployeeCode" Label="Reports to (staff no.)"
+                                  Variant="Variant.Outlined" />
+                </div>
+            </FormSection>
 
-            <div class="d-flex gap-3 mb-4">
-                <MudTextField @bind-Value="_model.Email" Label="Email" Variant="Variant.Outlined" />
-                <MudTextField @bind-Value="_model.Phone" Label="Phone" Variant="Variant.Outlined" />
-            </div>
+            <FormSection Title="How to reach them" Icon="@Icons.Material.Outlined.ContactPhone"
+                         Hint="The emergency contact is the one field here that gets used in a hurry.">
+                <div class="app-form-grid">
+                    <MudTextField @bind-Value="_model.Email" Label="Email" Variant="Variant.Outlined" />
+                    <MudTextField @bind-Value="_model.Phone" Label="Phone" Variant="Variant.Outlined" />
+                    <MudTextField @bind-Value="_model.AlternatePhone" Label="Alternate phone" Variant="Variant.Outlined" />
+                    <MudTextField @bind-Value="_model.City" Label="City" Variant="Variant.Outlined" />
+                    <MudTextField @bind-Value="_model.Address" Label="Address" Variant="Variant.Outlined"
+                                  Class="app-form-wide" />
+                    <MudTextField @bind-Value="_model.EmergencyContactName" Label="Emergency contact"
+                                  Variant="Variant.Outlined" />
+                    <MudTextField @bind-Value="_model.EmergencyContactPhone" Label="Emergency phone"
+                                  Variant="Variant.Outlined" />
+                </div>
+            </FormSection>
 
-            <div class="d-flex gap-3 mb-4">
-                <MudDatePicker Label="Joined on" Variant="Variant.Outlined"
-                               Date="_joined" DateChanged="@(d => _joined = d)" />
-                <MudSelect T="EmploymentStatus" @bind-Value="_model.Status" Label="Status"
-                           Variant="Variant.Outlined">
-                    @foreach (var s in Enum.GetValues<EmploymentStatus>())
-                    {
-                        <MudSelectItem Value="@s">@s</MudSelectItem>
-                    }
-                </MudSelect>
-            </div>
+            <AuthorizeView Policy="@HrModule.EmployeesViewSensitive">
+                <Authorized>
+                    @* Behind its own permission, so it is only rendered for people
+                       who are allowed to read it at all. *@
+                    <FormSection Title="Statutory and bank" Icon="@Icons.Material.Outlined.Lock"
+                                 Hint="Only visible to people with the sensitive-details permission.">
+                        <div class="app-form-grid">
+                            <MudTextField @bind-Value="_model.Cnic" Label="National ID / CNIC" Variant="Variant.Outlined" />
+                            <MudTextField @bind-Value="_model.TaxNumber" Label="Tax number" Variant="Variant.Outlined" />
+                            <MudTextField @bind-Value="_model.SocialSecurityNumber" Label="Social security / EOBI"
+                                          Variant="Variant.Outlined" />
+                            <MudTextField @bind-Value="_model.BankName" Label="Bank name" Variant="Variant.Outlined" />
+                            <MudTextField @bind-Value="_model.BankAccountTitle" Label="Account title" Variant="Variant.Outlined" />
+                            <MudTextField @bind-Value="_model.BankAccountNumber" Label="Account / IBAN" Variant="Variant.Outlined" />
+                        </div>
+                    </FormSection>
+                </Authorized>
+            </AuthorizeView>
 
-            <MudTextField @bind-Value="_model.UserId" Label="Linked login (user id)"
-                          Variant="Variant.Outlined"
-                          HelperText="Leave blank if they do not sign in. Links their leave to their account." />
+            <FormSection Title="Account and notes" Icon="@Icons.Material.Outlined.NoteAlt">
+                <div class="app-form-grid">
+                    <MudTextField @bind-Value="_model.UserId" Label="Linked login (user id)"
+                                  Variant="Variant.Outlined" Class="app-form-wide"
+                                  HelperText="Leave blank if they do not sign in. Links their leave to their account." />
+                    <MudTextField @bind-Value="_model.Notes" Label="Notes" Lines="3"
+                                  Variant="Variant.Outlined" Class="app-form-wide" />
+                </div>
+            </FormSection>
         </MudForm>
+    </Body>
 
-        @if (_error is not null)
-        {
-            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
-        }
-    </DialogContent>
-
-    <DialogActions>
-        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+    <Buttons>
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
                    OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
-    </DialogActions>
-</MudDialog>
+    </Buttons>
+</DocumentShell>
 
 @code {
-    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public bool AsDialog { get; set; }
     [Parameter] public int? EmployeeId { get; set; }
+
+    /// <summary>Raised after a successful save, so a list can reload behind a dialog.</summary>
+    [Parameter] public EventCallback Saved { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
+
+    private string Title => EmployeeId is null ? "New employee" : "Edit employee";
 
     private MudForm? _form;
     private Employee _model = new();
     private DateTime? _joined;
+    private DateTime? _dateOfBirth;
+    private DateTime? _confirmedOn;
     private string? _error;
     private bool _busy;
 
@@ -73,6 +144,8 @@
         _joined = _model.JoinedOn == default
             ? Clock.Today.ToDateTime(TimeOnly.MinValue)
             : _model.JoinedOn.ToDateTime(TimeOnly.MinValue);
+        _dateOfBirth = _model.DateOfBirth?.ToDateTime(TimeOnly.MinValue);
+        _confirmedOn = _model.ConfirmedOn?.ToDateTime(TimeOnly.MinValue);
     }
 
     private async Task SaveAsync()
@@ -87,15 +160,28 @@
         _busy = true;
         try
         {
-            _model.JoinedOn = DateOnly.FromDateTime(_joined ?? DateTime.Today);
+            _model.JoinedOn = DateOnly.FromDateTime(_joined ?? Clock.Today.ToDateTime(TimeOnly.MinValue));
+            _model.DateOfBirth = _dateOfBirth is null ? null : DateOnly.FromDateTime(_dateOfBirth.Value);
+            _model.ConfirmedOn = _confirmedOn is null ? null : DateOnly.FromDateTime(_confirmedOn.Value);
             if (string.IsNullOrWhiteSpace(_model.UserId)) _model.UserId = null;
 
             var result = await Employees.SaveAsync(_model);
             if (result.Failed) { _error = result.Error; return; }
 
             Snackbar.Add("Saved.", Severity.Success);
-            Dialog.Close(DialogResult.Ok(true));
+            EmployeeId = _model.Id;
+            await Saved.InvokeAsync();
+            if (AsDialog && _shell is not null) await _shell.CloseAsync();
         }
         finally { _busy = false; }
+    }
+
+    private DocumentShell? _shell;
+
+    /// <summary>The shell has already closed itself; just react to it.</summary>
+    private async Task DismissedAsync()
+    {
+        if (Closed.HasDelegate) { await Closed.InvokeAsync(); return; }
+        Nav.NavigateTo("/hr/employees");
     }
 }

@@ -45,6 +45,7 @@ public sealed class LeaveTests : IAsyncLifetime
 
             await using var db = NewDb();
             await db.Database.EnsureCreatedAsync();
+            await db.EnsureAuditTableForTestsAsync();
 
             var type = new LeaveType
             {
@@ -368,6 +369,44 @@ public sealed class LeaveTests : IAsyncLifetime
                   Decision = ApprovalDecision.Returned
               }]
     };
+
+    [SkippableFact]
+    public async Task Employee_document_content_and_metadata_round_trip()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db=NewDb();var service=new EmployeeDocumentService(db,_clock);var bytes=new byte[]{1,2,3,4};
+        var saved=await service.SaveAsync(new(null,_employeeId,"CNIC",EmployeeDocumentKind.NationalId,new DateOnly(2027,1,1),"front","cnic.pdf","application/pdf",bytes));
+        Assert.True(saved.Ok,saved.Error);var file=await service.FileAsync(saved.Value.Id);Assert.Equal(bytes,file!.Content);Assert.Equal("cnic.pdf",file.FileName);
+    }
+
+    [SkippableFact]
+    public async Task Expiry_register_keeps_overdue_and_upcoming_but_excludes_later_documents()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db=NewDb();var service=new EmployeeDocumentService(db,_clock);
+        await service.SaveAsync(new(null,_employeeId,"Expired",EmployeeDocumentKind.Contract,new DateOnly(2026,8,1),null));
+        await service.SaveAsync(new(null,_employeeId,"Soon",EmployeeDocumentKind.Licence,new DateOnly(2026,9,1),null));
+        await service.SaveAsync(new(null,_employeeId,"Later",EmployeeDocumentKind.Certificate,new DateOnly(2027,9,1),null));
+        var rows=await service.ExpiringAsync(60);Assert.Contains(rows,x=>x.Title=="Expired");Assert.Contains(rows,x=>x.Title=="Soon");Assert.DoesNotContain(rows,x=>x.Title=="Later");
+    }
+
+    [SkippableFact]
+    public async Task Editing_document_metadata_does_not_erase_the_stored_file()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db=NewDb();var service=new EmployeeDocumentService(db,_clock);var saved=await service.SaveAsync(new(null,_employeeId,"Old",EmployeeDocumentKind.Other,null,null,"a.pdf","application/pdf",[9,8]));
+        await service.SaveAsync(new(saved.Value.Id,_employeeId,"Renewed",EmployeeDocumentKind.Contract,new DateOnly(2027,1,1),"updated"));
+        var file=await service.FileAsync(saved.Value.Id);Assert.Equal("Renewed",file!.Title);Assert.Equal(new byte[]{9,8},file.Content);
+    }
+
+    [SkippableFact]
+    public async Task Deleted_employee_document_disappears_but_remains_soft_deleted_for_audit()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db=NewDb();var service=new EmployeeDocumentService(db,_clock);var saved=await service.SaveAsync(new(null,_employeeId,"Old",EmployeeDocumentKind.Other,null,null));
+        Assert.True((await service.DeleteAsync(saved.Value.Id)).Ok);Assert.Empty(await service.ForEmployeeAsync(_employeeId));
+        Assert.True(await db.EmployeeDocuments.IgnoreQueryFilters().AnyAsync(x=>x.Id==saved.Value.Id&&x.IsDeleted));
+    }
 
     /// <summary>
     /// Stands in for the approval engine. The engine's own routing is tested

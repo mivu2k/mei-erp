@@ -1,0 +1,12 @@
+@page "/auto/vehicles/{VehicleId:int}/services/new"
+@page "/auto/vehicles/{VehicleId:int}/services/{ServiceId:int}/edit"
+@attribute [Authorize(Policy = AutoModule.ServicesManage)]
+@rendermode InteractiveServer
+
+@* The dialog and this page render the same editor; only the frame differs. *@
+<ServiceEditor AsDialog="false" VehicleId="VehicleId" ServiceId="ServiceId" />
+
+@code {
+    [Parameter] public int VehicleId { get; set; }
+    [Parameter] public int? ServiceId { get; set; }
+}

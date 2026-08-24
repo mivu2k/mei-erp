@@ -6,31 +6,43 @@
 @inject ISnackbar Snackbar
 @inject IDialogService Dialogs
 
-<PageTitle>Repair jobs</PageTitle>
+<ListShell Title="Repair jobs"
+           Subtitle="A job moves through the pipeline in order — it cannot be typed into any state."
+           Icon="@Icons.Material.Outlined.Handyman"
+           Loading="_loading"
+           IsEmpty="@(_rows.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.Handyman"
+           EmptyTitle="No jobs on the bench"
+           EmptyHint="Take a device in to open a job and start tracking it through the workshop.">
+    <Actions>
+        <AuthorizeView Policy="@RepairModule.JobsManage" Context="perms">
+            <Authorized>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+                    Take in a device
+                </MudButton>
+                <MudTooltip Text="Open as a full page instead">
+                    <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Href="/repair/jobs/new" />
+                </MudTooltip>
+            </Authorized>
+        </AuthorizeView>
+    </Actions>
 
-<div class="d-flex align-center mb-1">
-    <div>
-        <MudText Typo="Typo.h5">Repair jobs</MudText>
-        <MudText Typo="Typo.body2" Class="mud-text-secondary">
-            A job moves through the pipeline in order — it cannot be typed into any state.
-        </MudText>
-    </div>
-    <MudSpacer />
-    <AuthorizeView Policy="@RepairModule.JobsManage" Context="perms">
-        <Authorized>
-            <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                       StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
-                Take in a device
-            </MudButton>
-        </Authorized>
-    </AuthorizeView>
-</div>
+    <EmptyAction>
+        <AuthorizeView Policy="@RepairModule.JobsManage" Context="perms">
+            <Authorized>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+                    Take in a device
+                </MudButton>
+            </Authorized>
+        </AuthorizeView>
+    </EmptyAction>
 
-<MudPaper Outlined="true" Elevation="0" Class="mt-4">
-    <MudToolBar Dense="true">
+    <Toolbar>
         <MudSelect T="JobStatus?" @bind-Value="_status" @bind-Value:after="LoadAsync"
-                   Label="Status" Clearable="true" Variant="Variant.Text"
-                   Margin="Margin.Dense" Class="mt-0" Style="max-width:200px">
+                   Label="Status" Clearable="true" Dense="true" Margin="Margin.Dense"
+                   Variant="Variant.Outlined" Class="mt-0" Style="max-width:200px">
             @foreach (var s in Enum.GetValues<JobStatus>())
             {
                 <MudSelectItem T="JobStatus?" Value="@s">@s</MudSelectItem>
@@ -39,11 +51,12 @@
         <MudTextField @bind-Value="_search" @bind-Value:after="LoadAsync"
                       Placeholder="Job number, customer or serial" DebounceInterval="300"
                       Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
-                      Variant="Variant.Text" Margin="Margin.Dense" Class="mt-0 ml-4" />
-    </MudToolBar>
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-0" />
+    </Toolbar>
 
+    <ChildContent>
     <MudDataGrid T="Job" Items="_rows" Dense="true" Hover="true" Elevation="0"
-                 Loading="_loading" Filterable="false" RowsPerPage="25">
+                 Filterable="false" RowsPerPage="25">
         <Columns>
             <PropertyColumn Property="@(j => j.Number)" Title="Job" />
             <TemplateColumn Title="Device">
@@ -79,10 +92,19 @@
             <TemplateColumn Title="" Sortable="false">
                 <CellTemplate>
                     <div class="d-flex justify-end gap-1">
+                        <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small"
+                                       Href="@($"/repair/jobs/{context.Item.Id}")" title="Open as a page" />
+                        <MudIconButton Icon="@Icons.Material.Outlined.PhotoLibrary" Href="@($"/repair/jobs/{context.Item.Id}/photos")" />
+                        <MudIconButton Icon="@Icons.Material.Outlined.Print" Href="@($"/print/repair/job/{context.Item.Id}")" Target="_blank" />
+                        <MudIconButton Icon="@Icons.Material.Outlined.QrCode" Href="@($"/print/repair/job/{context.Item.Id}?kind=label")" Target="_blank" />
                         <AuthorizeView Policy="@RepairModule.JobsManage" Context="perms">
                             <Authorized>
+                                <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small"
+                                               OnClick="@(() => Edit(context.Item))" title="Edit" />
                                 <MudButton Size="Size.Small" Variant="Variant.Text"
                                            OnClick="@(() => Work(context.Item))">Work</MudButton>
+                                <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small"
+                                               Href="@($"/repair/jobs/{context.Item.Id}/work")" title="Open work as a page" />
                             </Authorized>
                         </AuthorizeView>
 
@@ -112,19 +134,30 @@
                 </CellTemplate>
             </TemplateColumn>
         </Columns>
-        <NoRecordsContent>
-            <MudText Class="pa-8 text-center mud-text-secondary">No jobs on the bench.</MudText>
-        </NoRecordsContent>
     </MudDataGrid>
-</MudPaper>
+    </ChildContent>
+</ListShell>
+
+@if (_editingJob)
+{
+    <JobEditor AsDialog="true" JobId="_editingJobId"
+               Saved="LoadAsync" Closed="@(() => { _editingJob = false; return Task.CompletedTask; })" />
+}
+
+@if (_editingWork)
+{
+    <WorkEditor AsDialog="true" JobId="_editingWorkJobId"
+                Saved="LoadAsync" Closed="@(() => { _editingWork = false; return Task.CompletedTask; })" />
+}
 
 @code {
+    [SupplyParameterFromQuery(Name = "search")] public string? Search { get; set; }
     private IReadOnlyList<Job> _rows = [];
     private JobStatus? _status;
     private string? _search;
     private bool _loading = true;
 
-    protected override Task OnInitializedAsync() => LoadAsync();
+    protected override Task OnParametersSetAsync() { if (!string.IsNullOrWhiteSpace(Search)) _search = Search; return LoadAsync(); }
 
     private async Task LoadAsync()
     {
@@ -143,23 +176,22 @@
         _ => Color.Default
     };
 
-    private async Task Edit(Job? row)
-    {
-        var parameters = new DialogParameters<JobEditor> { { x => x.JobId, row?.Id } };
-        var dialog = await Dialogs.ShowAsync<JobEditor>(
-            row is null ? "Take in a device" : "Edit job", parameters,
-            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+    private bool _editingJob;
+    private int? _editingJobId;
 
-        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    private void Edit(Job? row)
+    {
+        _editingJobId = row?.Id;
+        _editingJob = true;
     }
 
-    private async Task Work(Job row)
-    {
-        var parameters = new DialogParameters<WorkEditor> { { x => x.JobId, row.Id } };
-        var dialog = await Dialogs.ShowAsync<WorkEditor>($"Work on {row.Number}", parameters,
-            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+    private bool _editingWork;
+    private int _editingWorkJobId;
 
-        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    private void Work(Job row)
+    {
+        _editingWorkJobId = row.Id;
+        _editingWork = true;
     }
 
     private async Task Move(Job row, JobStatus to)

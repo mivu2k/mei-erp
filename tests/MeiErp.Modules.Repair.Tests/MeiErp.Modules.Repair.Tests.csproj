@@ -5,6 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\modules\Repair\MeiErp.Modules.Repair\MeiErp.Modules.Repair.csproj" />
+    <ProjectReference Include="..\..\platform\MeiErp.Platform.Reporting\MeiErp.Platform.Reporting.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />

@@ -4,6 +4,7 @@
 @inject IApprovalEngine Engine
 @inject ISnackbar Snackbar
 @inject IDialogService Dialogs
+@inject IClock Clock
 
 <PageTitle>My approvals</PageTitle>
 
@@ -96,9 +97,9 @@ else
         _loading = false;
     }
 
-    private static string Ago(DateTime utc)
+    private string Ago(DateTime utc)
     {
-        var span = DateTime.UtcNow - utc;
+        var span = Clock.UtcNow - utc;
         return span.TotalMinutes < 60 ? $"{(int)span.TotalMinutes} min ago"
              : span.TotalHours < 24 ? $"{(int)span.TotalHours} hours ago"
              : $"{(int)span.TotalDays} days ago";

@@ -26,6 +26,9 @@ public class Advance : AuditableEntity, IConcurrencyChecked
 
     public string? DepartmentId { get; set; }
 
+    /// <summary>True for the legacy Director Fund flow, which clears against director capital.</summary>
+    public bool IsDirectorRequest { get; set; }
+
     /// <summary>What was asked for.</summary>
     public decimal Amount { get; set; }
 
@@ -140,7 +143,7 @@ public class AdvanceExpense : Entity
 
 public interface IAdvanceService
 {
-    Task<IReadOnlyList<Advance>> ListAsync(AdvanceStatus? status, bool mineOnly, CancellationToken ct = default);
+    Task<IReadOnlyList<Advance>> ListAsync(AdvanceStatus? status, bool mineOnly, bool directorOnly = false, CancellationToken ct = default);
     Task<Advance?> GetAsync(int id, CancellationToken ct = default);
     Task<Result<Advance>> SaveDraftAsync(AdvanceInput input, CancellationToken ct = default);
     Task<Result<Advance>> SubmitAsync(int id, CancellationToken ct = default);
@@ -168,7 +171,8 @@ public interface IAdvanceService
 
 public sealed record AdvanceInput(
     int? Id, string Purpose, decimal Amount, DateOnly NeededBy,
-    string? PersonId, string? PersonName, string? DepartmentId);
+    string? PersonId, string? PersonName, string? DepartmentId,
+    bool IsDirectorRequest = false);
 
 public sealed record AdvanceExpenseInput(
     DateOnly Date, string Description, decimal Amount, int? ExpenseAccountId, string? ReceiptNumber);
@@ -184,9 +188,10 @@ public sealed class AdvanceService(
 
     /// <summary>Where money held by staff sits until it is accounted for.</summary>
     private const string AdvanceAccountCode = "1700";
+    private const string DirectorCapitalCode = "3210";
 
     public async Task<IReadOnlyList<Advance>> ListAsync(
-        AdvanceStatus? status, bool mineOnly, CancellationToken ct = default)
+        AdvanceStatus? status, bool mineOnly, bool directorOnly = false, CancellationToken ct = default)
     {
         var query = db.Advances.AsNoTracking().Include(a => a.Expenses).AsQueryable();
 
@@ -197,6 +202,8 @@ public sealed class AdvanceService(
             var me = currentUser.UserId ?? "";
             query = query.Where(a => a.PersonId == me);
         }
+
+        query = query.Where(a => a.IsDirectorRequest == directorOnly);
 
         return await query.OrderByDescending(a => a.Id).Take(500).ToListAsync(ct);
     }
@@ -221,7 +228,7 @@ public sealed class AdvanceService(
         {
             advance = new Advance
             {
-                Reference = await NextReferenceAsync(ct),
+                Reference = await NextReferenceAsync(input.IsDirectorRequest, ct),
                 PersonId = input.PersonId ?? currentUser.UserId ?? "",
                 PersonName = input.PersonName ?? currentUser.Name ?? "",
                 Status = AdvanceStatus.Draft
@@ -250,6 +257,7 @@ public sealed class AdvanceService(
         advance.Amount = input.Amount;
         advance.NeededBy = input.NeededBy;
         advance.DepartmentId = input.DepartmentId;
+        advance.IsDirectorRequest = input.IsDirectorRequest;
 
         await db.SaveChangesAsync(ct);
         return Result.Success(advance);
@@ -268,7 +276,7 @@ public sealed class AdvanceService(
             DocumentType: DocumentType,
             DocumentId: advance.Id,
             DocumentReference: advance.Reference,
-            Summary: $"Advance of {advance.Amount:N2} to {advance.PersonName} — {advance.Purpose}",
+            Summary: (advance.IsDirectorRequest ? "Director fund of " : "Advance of ") + $"{advance.Amount:N2} to {advance.PersonName} — {advance.Purpose}",
             DocumentUrl: $"/finance/advances/{advance.Id}",
             Amount: advance.Amount,
             Currency: "PKR",
@@ -305,7 +313,7 @@ public sealed class AdvanceService(
                 "advance.over-disbursement");
         }
 
-        var advanceAccount = await AdvanceAccountAsync(ct);
+        var advanceAccount = await AdvanceAccountAsync(advance.IsDirectorRequest, ct);
         if (advanceAccount.Failed) return Result.Fail<Advance>(advanceAccount.Error!, advanceAccount.Code);
 
         // Dr the person's advance account, Cr cash. The money has left the
@@ -401,7 +409,7 @@ public sealed class AdvanceService(
         if (advance.Status is not AdvanceStatus.Justified)
             return Result.Fail<Advance>("Only a justified advance can be settled.", "advance.not-justified");
 
-        var advanceAccount = await AdvanceAccountAsync(ct);
+        var advanceAccount = await AdvanceAccountAsync(advance.IsDirectorRequest, ct);
         if (advanceAccount.Failed) return Result.Fail<Advance>(advanceAccount.Error!, advanceAccount.Code);
 
         var disbursed = advance.DisbursedAmount ?? 0;
@@ -499,7 +507,7 @@ public sealed class AdvanceService(
                 "advance.over-clearing");
         }
 
-        var advanceAccount = await AdvanceAccountAsync(ct);
+        var advanceAccount = await AdvanceAccountAsync(advance.IsDirectorRequest, ct);
         if (advanceAccount.Failed) return Result.Fail<Advance>(advanceAccount.Error!, advanceAccount.Code);
 
         var returning = advance.OutstandingDifference > 0;
@@ -532,21 +540,22 @@ public sealed class AdvanceService(
         return Result.Success(advance);
     }
 
-    private async Task<Result<Account>> AdvanceAccountAsync(CancellationToken ct)
+    private async Task<Result<Account>> AdvanceAccountAsync(bool director, CancellationToken ct)
     {
-        var account = await db.Accounts.FirstOrDefaultAsync(a => a.Code == AdvanceAccountCode, ct);
+        var code = director ? DirectorCapitalCode : AdvanceAccountCode;
+        var account = await db.Accounts.FirstOrDefaultAsync(a => a.Code == code, ct);
 
         return account is null
             ? Result.Fail<Account>(
-                $"The {AdvanceAccountCode} Employee advances head is missing from the chart of accounts.",
+                $"The {code} account needed for this advance is missing from the chart of accounts.",
                 "advance.no-account")
             : Result.Success(account);
     }
 
-    private async Task<string> NextReferenceAsync(CancellationToken ct)
+    private async Task<string> NextReferenceAsync(bool director, CancellationToken ct)
     {
         var year = clock.Today.Year;
-        var stem = $"ADV-{year % 100:D2}-";
+        var stem = $"{(director ? "DFR" : "ADV")}-{year % 100:D2}-";
         var count = await db.Advances.IgnoreQueryFilters()
             .CountAsync(a => a.Reference.StartsWith(stem), ct);
         return stem + (count + 1).ToString().PadLeft(4, '0');

@@ -310,4 +310,52 @@ public sealed class AdminServiceTests : IAsyncLifetime
         var after = await users.FindByIdAsync(id);
         Assert.True(after!.MustChangePassword);
     }
+
+    [SkippableFact]
+    public async Task Email_confirmation_tokens_are_user_bound_and_single_purpose()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        using var scope = _services.CreateScope();
+        var users = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var firstId = await AddUserAsync(scope, "First", "confirm-first@mei.local");
+        var secondId = await AddUserAsync(scope, "Second", "confirm-second@mei.local");
+        var first = (await users.FindByIdAsync(firstId))!;
+        var second = (await users.FindByIdAsync(secondId))!;
+        first.EmailConfirmed = false; second.EmailConfirmed = false;
+        await users.UpdateAsync(first); await users.UpdateAsync(second);
+
+        var token = await users.GenerateEmailConfirmationTokenAsync(first);
+        Assert.False((await users.ConfirmEmailAsync(second, token)).Succeeded);
+        Assert.True((await users.ConfirmEmailAsync(first, token)).Succeeded);
+        Assert.True((await users.FindByIdAsync(firstId))!.EmailConfirmed);
+    }
+
+    [SkippableFact]
+    public async Task A_password_reset_token_cannot_be_reused()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        using var scope = _services.CreateScope();
+        var users = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var id = await AddUserAsync(scope, "Reset", "self-reset@mei.local");
+        var user = (await users.FindByIdAsync(id))!;
+        var token = await users.GeneratePasswordResetTokenAsync(user);
+
+        Assert.True((await users.ResetPasswordAsync(user, token, "NewPassword44!")).Succeeded);
+        Assert.False((await users.ResetPasswordAsync(user, token, "AnotherPass55!")).Succeeded);
+    }
+
+    [SkippableFact]
+    public async Task Recovery_codes_are_one_time_credentials()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        using var scope = _services.CreateScope();
+        var users = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var id = await AddUserAsync(scope, "Protected", "two-factor@mei.local");
+        var user = (await users.FindByIdAsync(id))!;
+        await users.SetTwoFactorEnabledAsync(user, true);
+        var code = (await users.GenerateNewTwoFactorRecoveryCodesAsync(user, 2))!.First();
+
+        Assert.True((await users.RedeemTwoFactorRecoveryCodeAsync(user, code)).Succeeded);
+        Assert.False((await users.RedeemTwoFactorRecoveryCodeAsync(user, code)).Succeeded);
+    }
 }

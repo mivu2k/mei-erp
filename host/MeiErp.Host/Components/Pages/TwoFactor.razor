@@ -1,0 +1,23 @@
+@page "/two-factor"
+@layout EmptyLayout
+@attribute [AllowAnonymous]
+
+<PageTitle>Two-factor verification</PageTitle>
+<div class="signin-page"><div class="signin-card">
+    <div class="signin-brand"><div class="signin-mark">MEI</div><h1>Verification code</h1><p>Open your authenticator app.</p></div>
+    @if (Error is not null) { <div class="signin-error" role="alert">That code was not accepted. Try the current six-digit code.</div> }
+    <form method="post" action="/auth/two-factor" class="signin-form">
+        <input type="hidden" name="rememberMe" value="@RememberMe" /><input type="hidden" name="returnUrl" value="@ReturnUrl" />
+        <label for="code">Authenticator code</label>
+        <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" required autofocus />
+        <label class="signin-remember"><input name="rememberMachine" type="checkbox" value="true" /><span>Trust this computer</span></label>
+        <button type="submit">Verify</button>
+    </form>
+    <p class="mt-4"><a href="@RecoveryUrl">Use a recovery code</a> · <a href="/sign-in">Cancel</a></p>
+</div></div>
+@code {
+    [SupplyParameterFromQuery] private string? Error { get; set; }
+    [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
+    [SupplyParameterFromQuery] private bool RememberMe { get; set; }
+    private string RecoveryUrl => $"/recovery-code?returnUrl={Uri.EscapeDataString(ReturnUrl ?? "/")}";
+}

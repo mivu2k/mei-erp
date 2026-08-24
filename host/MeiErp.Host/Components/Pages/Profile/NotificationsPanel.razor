@@ -1,0 +1,89 @@
+@inject INotificationManagementService Notifications
+@inject ISnackbar Snackbar
+
+@*
+    Which of these actually reach you, and by which channel.
+
+    Turning a channel off here is a preference, not a silence: the notification
+    is still recorded as suppressed, so "we never told you" and "you asked us
+    not to" stay distinguishable afterwards.
+*@
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else
+{
+    <div class="d-flex justify-end mb-3">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save"
+                   Disabled="_saving" OnClick="SaveAsync">Save</MudButton>
+    </div>
+
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+        Changes affect new messages only.
+    </MudText>
+
+    <MudTable Items="@_rows" Hover="true" Outlined="true" Elevation="0">
+        <HeaderContent>
+            <MudTh>Notification</MudTh>
+            @foreach (var channel in _channels)
+            {
+                <MudTh Class="text-center">@channel</MudTh>
+            }
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Notification">@context.CategoryName</MudTd>
+            @foreach (var channel in _channels)
+            {
+                var option = context.Options.Single(o => o.ChannelName == channel);
+                <MudTd DataLabel="@channel" Class="text-center">
+                    <MudCheckBox T="bool" @bind-Value="option.Enabled" Color="Color.Primary" />
+                </MudTd>
+            }
+        </RowTemplate>
+    </MudTable>
+}
+
+@code {
+    private bool _loading = true;
+    private bool _saving;
+    private List<CategoryRow> _rows = [];
+    private List<string> _channels = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var options = await Notifications.PreferencesAsync();
+        _channels = options.Select(o => o.ChannelName).Distinct().ToList();
+        _rows = options.GroupBy(o => new { o.Category, o.CategoryName })
+            .Select(g => new CategoryRow(g.Key.CategoryName,
+                [.. g.Select(o => new Option(o.Category, o.CategoryName, o.Channel, o.ChannelName, o.Enabled))]))
+            .ToList();
+        _loading = false;
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        try
+        {
+            await Notifications.SavePreferencesAsync(
+                [.. _rows.SelectMany(r => r.Options).Select(o => new NotificationPreferenceOption(
+                    o.Category, o.CategoryName, o.Channel, o.ChannelName, o.Enabled, false))]);
+            Snackbar.Add("Notification preferences saved.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add($"Could not save: {ex.Message}", Severity.Error); }
+        finally { _saving = false; }
+    }
+
+    private sealed record CategoryRow(string CategoryName, List<Option> Options);
+
+    private sealed class Option(string category, string categoryName, string channel, string channelName, bool enabled)
+    {
+        public string Category { get; } = category;
+        public string CategoryName { get; } = categoryName;
+        public string Channel { get; } = channel;
+        public string ChannelName { get; } = channelName;
+        public bool Enabled { get; set; } = enabled;
+    }
+}

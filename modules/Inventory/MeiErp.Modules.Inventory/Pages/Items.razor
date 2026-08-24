@@ -3,44 +3,62 @@
 @attribute [Authorize(Policy = InventoryModule.ItemsView)]
 @rendermode InteractiveServer
 @inject ICatalogService Catalog
+@inject IStockDomainService Domains
+@inject StockBookContext Book
 @inject IStockService Stock
 @inject IClock Clock
 @inject ISnackbar Snackbar
 @inject IDialogService Dialogs
 
-<PageTitle>Items</PageTitle>
+<ListShell Title="Items"
+           Subtitle="Stock moves only through receipts, deliveries and counts — never by editing this list."
+           Icon="@Icons.Material.Outlined.Inventory2"
+           Loading="_loading"
+           IsEmpty="@(_rows.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.Inventory2"
+           EmptyTitle="No items yet"
+           EmptyHint="Add an item to start tracking its stock, price and reorder level.">
+    <Actions>
+        <AuthorizeView Policy="@InventoryModule.ItemsManage" Context="perms">
+            <Authorized>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+                    New item
+                </MudButton>
+                <MudTooltip Text="Open as a full page instead">
+                    <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Href="/inventory/items/new" />
+                </MudTooltip>
+            </Authorized>
+        </AuthorizeView>
+    </Actions>
 
-<div class="d-flex align-center mb-1">
-    <div>
-        <MudText Typo="Typo.h5">Items</MudText>
-        <MudText Typo="Typo.body2" Class="mud-text-secondary">
-            Stock moves only through receipts, deliveries and counts — never by editing this list.
-        </MudText>
-    </div>
-    <MudSpacer />
-    <AuthorizeView Policy="@InventoryModule.ItemsManage" Context="perms">
-        <Authorized>
-            <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                       StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
-                New item
-            </MudButton>
-        </Authorized>
-    </AuthorizeView>
-</div>
+    <EmptyAction>
+        <AuthorizeView Policy="@InventoryModule.ItemsManage" Context="perms">
+            <Authorized>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+                    New item
+                </MudButton>
+            </Authorized>
+        </AuthorizeView>
+    </EmptyAction>
 
-<MudPaper Outlined="true" Elevation="0" Class="mt-4">
-    <MudToolBar Dense="true">
+    <Toolbar>
+        @* Everything below belongs to the book named here, and nothing else. *@
+        <StockBookPicker Books="_books" Selected="_book" SelectedChanged="ChooseBookAsync" />
+
         <MudTextField @bind-Value="_search" @bind-Value:after="LoadAsync"
                       Placeholder="Search name or code" DebounceInterval="300"
                       Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
-                      Variant="Variant.Text" Margin="Margin.Dense" Class="mt-0" />
+                      Variant="Variant.Text" Margin="Margin.Dense" Class="mt-0 ml-3" />
         <MudSpacer />
         <MudSwitch T="bool" @bind-Value="_includeInactive" @bind-Value:after="LoadAsync"
                    Color="Color.Primary" Label="Include inactive" />
-    </MudToolBar>
+    </Toolbar>
 
+    <ChildContent>
     <MudDataGrid T="Item" Items="_rows" Dense="true" Hover="true" Elevation="0"
-                 Loading="_loading" Filterable="false" RowsPerPage="25">
+                 Filterable="false" RowsPerPage="25">
         <Columns>
             <PropertyColumn Property="@(i => i.Code)" Title="Code" />
             <TemplateColumn Title="Item" SortBy="@(i => i.Name)">
@@ -84,6 +102,9 @@
                         </AuthorizeView>
                         <AuthorizeView Policy="@InventoryModule.ItemsManage" Context="perms">
                             <Authorized>
+                                <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small"
+                                               Href="@($"/inventory/items/{context.Item.Id}")"
+                                               title="Open as a page" />
                                 <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small"
                                                OnClick="@(() => Edit(context.Item))" />
                             </Authorized>
@@ -92,35 +113,62 @@
                 </CellTemplate>
             </TemplateColumn>
         </Columns>
-        <NoRecordsContent>
-            <MudText Class="pa-8 text-center mud-text-secondary">No items yet.</MudText>
-        </NoRecordsContent>
     </MudDataGrid>
-</MudPaper>
+    </ChildContent>
+</ListShell>
+
+@if (_editing)
+{
+    <ItemEditor AsDialog="true" ItemId="_editingId" DomainId="_book"
+                Saved="LoadAsync" Closed="@(() => { _editing = false; return Task.CompletedTask; })" />
+}
 
 @code {
     private IReadOnlyList<Item> _rows = [];
+    private IReadOnlyList<StockDomain> _books = [];
+    private int _book;
     private string? _search;
     private bool _includeInactive;
     private bool _loading = true;
 
-    protected override Task OnInitializedAsync() => LoadAsync();
+    /// <summary>
+    /// One sequential load. Every query in here shares this circuit's single
+    /// DbContext, so nothing that touches it may run in parallel - which is why
+    /// the book picker is handed its list rather than fetching its own.
+    /// </summary>
+    protected override async Task OnInitializedAsync()
+    {
+        _books = await Domains.ListAsync();
+        _book = await Book.EnsureAsync(Domains);
+        await LoadAsync();
+    }
 
     private async Task LoadAsync()
     {
         _loading = true;
-        _rows = await Catalog.ItemsAsync(_search, _includeInactive);
+
+        // Always scoped to one book. Listing both together is the one thing
+        // this screen must never do: two identical part names from two stores
+        // sitting in one grid is how stock gets received into the wrong one.
+        _rows = await Catalog.ItemsAsync(_search, _includeInactive, _book);
+
         _loading = false;
     }
 
-    private async Task Edit(Item? row)
+    private async Task ChooseBookAsync(int domainId)
     {
-        var parameters = new DialogParameters<ItemEditor> { { x => x.ItemId, row?.Id } };
-        var dialog = await Dialogs.ShowAsync<ItemEditor>(
-            row is null ? "New item" : "Edit item", parameters,
-            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        _book = domainId;
+        Book.Select(domainId);   // so the choice follows them to the next screen
+        await LoadAsync();
+    }
 
-        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    private bool _editing;
+    private int? _editingId;
+
+    private void Edit(Item? row)
+    {
+        _editingId = row?.Id;
+        _editing = true;
     }
 
     private async Task Count(Item row)

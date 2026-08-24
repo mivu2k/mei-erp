@@ -1,0 +1,43 @@
+@page "/hr/kiosk/{Token}"
+@layout KioskLayout
+@attribute [AllowAnonymous]
+@rendermode InteractiveServer
+@implements IDisposable
+@inject IKioskService KioskService
+@inject IClock Clock
+@inject IJSRuntime JS
+
+<PageTitle>Attendance kiosk</PageTitle>
+<div class="kiosk @StateClass" @onclick="FocusAsync">
+    @if (_station is null)
+    {
+        <main><h1>Station unavailable</h1><p>Ask HR for a current kiosk link.</p></main>
+    }
+    else
+    {
+        <div class="head">
+            <strong>@_station.Name</strong>
+            <span>@_now.ToString("dddd, d MMMM yyyy — HH:mm:ss")</span>
+        </div>
+        <main>
+            <h1>@(_result?.EmployeeName ?? "Scan your card or QR code")</h1>
+            <p>@(_result?.Message ?? "Present it to the reader")</p>
+        </main>
+        <footer>@_station.Location</footer>
+        <div class="camera"><video @ref="_video" muted playsinline></video><canvas @ref="_canvas" hidden></canvas><span>@_cameraMessage</span></div>
+        <input @ref="_input" class="capture" @bind="_scan" @bind:event="oninput"
+               @onkeydown="KeyDown" autocomplete="off" autofocus />
+    }
+</div>
+<style>.kiosk{position:fixed;inset:0;background:#102238;color:white;display:flex;flex-direction:column;font-family:Arial}.head{display:flex;justify-content:space-between;padding:2rem;font-size:1.5rem}main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center}main h1{font-size:3.5rem;margin:.5rem;text-align:center}main p{font-size:1.7rem}.ok{background:#0f5132}.bad{background:#842029}footer{text-align:center;padding:1rem;font-size:1.2rem}.capture{position:absolute;opacity:0;width:1px;height:1px}.camera{display:flex;align-items:center;justify-content:center;gap:1rem;padding:1rem}.camera video{width:220px;border-radius:8px;transform:scaleX(-1);background:#000}</style>
+@code {
+ [Parameter] public string Token{get;set;}=""; private AttendanceStation? _station;private KioskResult? _result;private string _scan="";private DateTimeOffset _now;private ElementReference _input,_video,_canvas;private PeriodicTimer? _timer;private CancellationTokenSource? _cts;private IJSObjectReference? _camera;private DotNetObjectReference<Kiosk>? _self;private string? _cameraMessage;
+ private string StateClass=>_result is null?"":_result.Accepted?"ok":"bad";
+ protected override async Task OnInitializedAsync(){_station=await KioskService.ResolveStationAsync(Token);_now=Clock.Now;_cts=new();_timer=new(TimeSpan.FromSeconds(1));_=TickAsync();}
+ protected override async Task OnAfterRenderAsync(bool first){if(!first)return;await FocusAsync();if(_station is null)return;_camera=await JS.InvokeAsync<IJSObjectReference>("import","/kiosk-camera.js");_self=DotNetObjectReference.Create(this);var status=await _camera.InvokeAsync<string>("start",_video,_canvas,Token,_self);_cameraMessage=status=="ok"?"Camera QR scanner ready":status switch{"insecure"=>"Camera needs HTTPS or localhost","denied"=>"Camera permission denied","nocamera"=>"No camera found","inuse"=>"Camera is already in use",_=>"Camera unavailable"};StateHasChanged();}
+ private async Task KeyDown(KeyboardEventArgs e){if(e.Key!="Enter")return;var scanned=_scan;_scan="";_result=await KioskService.ScanAsync(Token,scanned);await FocusAsync();}
+ [JSInvokable] public async Task OnCameraScan(string scanned){_result=await KioskService.ScanAsync(Token,scanned);await InvokeAsync(StateHasChanged);}
+ private async Task FocusAsync()=>await _input.FocusAsync();
+ private async Task TickAsync(){try{while(_timer is not null&&await _timer.WaitForNextTickAsync(_cts!.Token)){_now=Clock.Now;await InvokeAsync(StateHasChanged);}}catch(OperationCanceledException){}}
+ public void Dispose(){_cts?.Cancel();_timer?.Dispose();_cts?.Dispose();_self?.Dispose();if(_camera is not null)_= _camera.InvokeVoidAsync("stop",_video);}
+}

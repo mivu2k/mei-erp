@@ -1,0 +1,91 @@
+@page "/repair/intakes"
+@attribute [Authorize(Policy = RepairModule.IntakesManage)]
+@rendermode InteractiveServer
+@inject IRepairIntakeService IntakeService
+
+<ListShell Title="Device intakes"
+           Subtitle="One counter receipt can contain several independently tracked jobs."
+           Icon="@Icons.Material.Outlined.Inbox"
+           Loading="_loading"
+           IsEmpty="@(_rows.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.Inbox"
+           EmptyTitle="No intakes yet"
+           EmptyHint="Book devices in at the counter to open a receipt and the jobs under it.">
+    <Actions>
+        <MudButton Href="/repair/intakes/new" Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Outlined.AddBox">
+            Book devices in
+        </MudButton>
+    </Actions>
+
+    <EmptyAction>
+        <MudButton Href="/repair/intakes/new" Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Outlined.AddBox">
+            Book devices in
+        </MudButton>
+    </EmptyAction>
+
+    <Toolbar>
+        <MudTextField @bind-Value="_search" @bind-Value:after="Load"
+                      Placeholder="Search intake, customer or phone" DebounceInterval="300"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-0" />
+    </Toolbar>
+
+    <ChildContent>
+    <MudTable Items="_rows" Dense="true" Hover="true" Elevation="0" Loading="_loading">
+        <HeaderContent>
+            <MudTh>Intake</MudTh>
+            <MudTh>Customer</MudTh>
+            <MudTh>Devices</MudTh>
+            <MudTh>Basis</MudTh>
+            <MudTh>Received</MudTh>
+            <MudTh>By</MudTh>
+            <MudTh />
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.Number</MudTd>
+            <MudTd>@context.CustomerName</MudTd>
+            <MudTd>
+                @foreach (var j in context.Jobs)
+                {
+                    <MudLink Href="@($"/repair/jobs?search={j.Number}")" Class="mr-2">@j.Number</MudLink>
+                }
+            </MudTd>
+            <MudTd>@context.PaymentBasis</MudTd>
+            <MudTd>@context.ReceivedUtc.ToLocalTime().ToString("g")</MudTd>
+            <MudTd>@context.ReceivedByName</MudTd>
+            <MudTd>
+                <MudIconButton Href="@($"/print/repair/intake/{context.Id}")" Target="_blank"
+                               Icon="@Icons.Material.Outlined.Print" Size="Size.Small" />
+                <MudIconButton Href="@($"/print/repair/intake/{context.Id}?size=roll")" Target="_blank"
+                               Icon="@Icons.Material.Outlined.Receipt" Size="Size.Small" />
+                <MudIconButton Href="@($"/print/repair/intake/{context.Id}?kind=labels")" Target="_blank"
+                               Icon="@Icons.Material.Outlined.Label" Size="Size.Small" />
+                <MudIconButton Href="@($"/sales/quotations/new?intakeId={context.Id}")"
+                               Icon="@Icons.Material.Outlined.RequestQuote" Size="Size.Small" />
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+    </ChildContent>
+</ListShell>
+
+@code {
+    [SupplyParameterFromQuery(Name = "search")] public string? Search { get; set; }
+    private IReadOnlyList<RepairIntake> _rows = [];
+    private string? _search;
+    private bool _loading = true;
+
+    protected override Task OnParametersSetAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(Search)) _search = Search;
+        return Load();
+    }
+
+    private async Task Load()
+    {
+        _loading = true;
+        _rows = await IntakeService.ListAsync(_search);
+        _loading = false;
+    }
+}

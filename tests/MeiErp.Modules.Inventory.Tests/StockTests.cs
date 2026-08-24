@@ -1,6 +1,8 @@
 using MeiErp.Modules.Inventory;
 using MeiErp.Platform.Kernel;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using MeiErp.Platform.Reporting;
 using Npgsql;
 using Xunit;
 
@@ -24,7 +26,8 @@ public sealed class StockTests : IAsyncLifetime
     private readonly TestUser _user = new("user-1", "Storekeeper");
 
     private bool _available;
-    private int _itemId, _customerId, _supplierId;
+    private int _itemId;
+    private int _mainDomainId, _spareDomainId;
 
     private string Connection => BaseConnection + $"Database={_database};";
 
@@ -40,16 +43,22 @@ public sealed class StockTests : IAsyncLifetime
 
             await using var db = NewDb();
             await db.Database.EnsureCreatedAsync();
+            await db.EnsureAuditTableForTestsAsync();
 
-            var item = new Item { Code = "W-1", Name = "Widget", Unit = "each", IsActive = true };
-            var customer = new Party { Code = "CUST", Name = "A Customer", IsCustomer = true, IsActive = true };
-            var supplier = new Party { Code = "SUPP", Name = "A Supplier", IsSupplier = true, IsActive = true };
-
-            db.Items.Add(item);
-            db.Parties.AddRange(customer, supplier);
+            // The two stock books, as the seeder creates them. Everything else
+            // in this fixture belongs to the main one; the spare book exists so
+            // the tests can prove the two never leak into each other.
+            var main = new StockDomain { Code = StockDomainCodes.Main, Name = "Main Store", IsDefault = true };
+            var spare = new StockDomain { Code = StockDomainCodes.Spare, Name = "Spare Parts" };
+            db.StockDomains.AddRange(main, spare);
             await db.SaveChangesAsync();
 
-            _itemId = item.Id; _customerId = customer.Id; _supplierId = supplier.Id;
+            var item = new Item { Code = "W-1", Name = "Widget", Unit = "each", IsActive = true, DomainId = main.Id };
+            db.Items.Add(item);
+            await db.SaveChangesAsync();
+
+            _itemId = item.Id;
+            _mainDomainId = main.Id; _spareDomainId = spare.Id;
             _available = true;
         }
         catch (NpgsqlException) { _available = false; }
@@ -75,6 +84,106 @@ public sealed class StockTests : IAsyncLifetime
     private Task<Result<StockMovement>> Receive(StockService stock, decimal qty, decimal cost) =>
         stock.ReceiveAsync(_itemId, qty, cost, _clock.Today,
             StockMovementType.Receipt, "TEST", null, null);
+
+    [SkippableFact]
+    public async Task A_receipt_is_attributed_to_the_default_warehouse()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db=NewDb();await Receive(NewStock(db),10,100);
+        var warehouse=await db.Warehouses.SingleAsync();var balance=await db.WarehouseBalances.SingleAsync();
+        Assert.True(warehouse.IsDefault);Assert.Equal(10,balance.Quantity);
+        Assert.Equal(warehouse.Id,(await db.StockMovements.SingleAsync()).WarehouseId);
+    }
+
+    [SkippableFact]
+    public async Task Transfer_dispatch_and_short_receipt_preserve_the_visible_gap()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db=NewDb();await Receive(NewStock(db),10,100);
+        var destination=new Warehouse{Name="Branch",Code="BR",DomainId=_mainDomainId};db.Add(destination);await db.SaveChangesAsync();
+        var source=await db.Warehouses.SingleAsync(x=>x.IsDefault);var service=new TransferService(db,_clock,_user);
+        var saved=await service.SaveAsync(new(null,_clock.Today,source.Id,destination.Id,null,null,[new(_itemId,6)]));
+        Assert.True(saved.Ok,saved.Error);Assert.True((await service.DispatchAsync(saved.Value.Id,"Storekeeper")).Ok);
+        var line=(await service.GetAsync(saved.Value.Id))!.Lines.Single();Assert.True((await service.ReceiveAsync(saved.Value.Id,new Dictionary<int,decimal>{{line.Id,5}},"Receiver")).Ok);
+        var balances=await db.WarehouseBalances.OrderBy(x=>x.WarehouseId).ToListAsync();
+        Assert.Equal(9,balances.Sum(x=>x.Quantity));Assert.Equal(-1,(await service.GetAsync(saved.Value.Id))!.Lines.Single().Shortfall);
+    }
+
+    [SkippableFact]
+    public async Task Posting_a_warehouse_count_updates_location_total_and_ledger_once()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db=NewDb();await Receive(NewStock(db),10,100);var warehouse=await db.Warehouses.SingleAsync();
+        var service=new InventoryCountService(db,_clock,_user);var count=await service.CreateAsync(warehouse.Id,"Monthly count");
+        Assert.True((await service.RecordAsync(count.Value.Id,[new(_itemId,8,"Two damaged")])).Ok);
+        Assert.True((await service.PostAsync(count.Value.Id)).Ok);Assert.False((await service.PostAsync(count.Value.Id)).Ok);
+        Assert.Equal(8,(await db.Items.SingleAsync()).QuantityOnHand);Assert.Equal(8,(await db.WarehouseBalances.SingleAsync()).Quantity);
+        Assert.Equal(1,await db.StockMovements.CountAsync(x=>x.Reference==count.Value.Number));
+    }
+
+    [SkippableFact]
+    public async Task Serialized_receipt_requires_exact_unique_serials_and_delivery_marks_them_sold()
+    {
+        Skip.IfNot(_available,"No PostgreSQL available.");await using var db=NewDb();var item=await db.Items.SingleAsync();item.IsSerialized=true;await db.SaveChangesAsync();
+        var tracking=new StockTrackingService(db,_clock);
+        Assert.False((await tracking.StageReceiptAsync(new(_itemId,2,100,_clock.Today,null,null,["SN-1"],"GR-1"))).Ok);
+        Assert.True((await tracking.StageReceiptAsync(new(_itemId,2,100,_clock.Today,null,null,["SN-1","SN-2"],"GR-1"))).Ok);await Receive(NewStock(db),2,100);
+        Assert.False((await tracking.StageIssueAsync(_itemId,1,["MISSING"],_clock.Today,"Customer","DN-1")).Ok);
+        Assert.True((await tracking.StageIssueAsync(_itemId,1,["SN-1"],_clock.Today,"Customer","DN-1")).Ok);await db.SaveChangesAsync();
+        var units=await tracking.UnitsAsync(_itemId);Assert.Equal(2,units.Count);Assert.Equal(StockUnitStatus.Sold,units.Single(x=>x.SerialNumber=="SN-1").Status);
+    }
+
+    [SkippableFact]
+    public async Task Batch_receipt_requires_a_batch_and_issue_uses_earliest_expiry_first()
+    {
+        Skip.IfNot(_available,"No PostgreSQL available.");await using var db=NewDb();var item=await db.Items.SingleAsync();item.IsBatchTracked=true;await db.SaveChangesAsync();var tracking=new StockTrackingService(db,_clock);
+        Assert.False((await tracking.StageReceiptAsync(new(_itemId,5,10,_clock.Today,null,null,[],"GR-1"))).Ok);
+        Assert.True((await tracking.StageReceiptAsync(new(_itemId,3,10,_clock.Today,"LATE",_clock.Today.AddDays(60),[],"GR-1"))).Ok);Assert.True((await tracking.StageReceiptAsync(new(_itemId,2,10,_clock.Today,"EARLY",_clock.Today.AddDays(10),[],"GR-2"))).Ok);await Receive(NewStock(db),5,10);
+        Assert.True((await tracking.StageIssueAsync(_itemId,3,[],_clock.Today,"Customer","DN-1")).Ok);await db.SaveChangesAsync();
+        var batches=await tracking.BatchesAsync(_itemId);Assert.Equal(0,batches.Single(x=>x.BatchNumber=="EARLY").RemainingQuantity);Assert.Equal(2,batches.Single(x=>x.BatchNumber=="LATE").RemainingQuantity);
+    }
+
+    [SkippableFact]
+    public async Task Product_family_organizes_models_and_accessories_without_duplicating_stock()
+    {
+        Skip.IfNot(_available,"No PostgreSQL available.");await using var db=NewDb();var hierarchy=new ProductHierarchyService(db);var catalog=new CatalogService(db);
+        var family=await hierarchy.SaveAsync(new(){Name="Laptop",SkuPrefix="LAP"});var model=await db.Items.SingleAsync();model.ProductFamilyId=family.Id;model.Kind=InventoryItemKind.Model;await db.SaveChangesAsync();
+        var accessory=await catalog.SaveItemAsync(new(){Code="CHG-1",Name="Charger",Unit="each",Kind=InventoryItemKind.Accessory,ParentItemId=model.Id,ProductFamilyId=family.Id,IsActive=true});
+        Assert.True(accessory.Ok,accessory.Error);var loaded=(await hierarchy.ListAsync()).Single();Assert.Equal(2,loaded.Items.Count);Assert.Equal(model.Id,loaded.Items.Single(x=>x.Kind==InventoryItemKind.Accessory).ParentItemId);
+    }
+
+    [SkippableFact]
+    public async Task Accessory_cannot_be_attached_to_a_different_product_family()
+    {
+        Skip.IfNot(_available,"No PostgreSQL available.");await using var db=NewDb();var hierarchy=new ProductHierarchyService(db);var catalog=new CatalogService(db);var first=await hierarchy.SaveAsync(new(){Name="Laptop"});var second=await hierarchy.SaveAsync(new(){Name="Printer"});var model=await db.Items.SingleAsync();model.ProductFamilyId=first.Id;await db.SaveChangesAsync();
+        var result=await catalog.SaveItemAsync(new(){Code="INK",Name="Ink",Kind=InventoryItemKind.Accessory,ParentItemId=model.Id,ProductFamilyId=second.Id,IsActive=true});Assert.True(result.Failed);Assert.Equal("item.family-mismatch",result.Code);
+    }
+
+    [SkippableFact]
+    public async Task Customer_and_supplier_returns_are_separate_auditable_ledger_movements()
+    {
+        Skip.IfNot(_available,"No PostgreSQL available.");await using var db=NewDb();await Receive(NewStock(db),10,100);var service=new InventoryReturnService(db,NewStock(db),_clock,_user);
+        var customer=await service.PostAsync(new(InventoryReturnKind.SalesReturn,101,"A Customer",_clock.Today,"DN-1","Customer rejected",null,[new(_itemId,2)]));Assert.True(customer.Ok,customer.Error);
+        var supplier=await service.PostAsync(new(InventoryReturnKind.PurchaseReturn,202,"A Supplier",_clock.Today,"GR-1","Faulty goods",null,[new(_itemId,3)]));Assert.True(supplier.Ok,supplier.Error);
+        Assert.Equal(9,(await db.Items.SingleAsync()).QuantityOnHand);var moves=await db.StockMovements.Where(x=>x.SourceDocumentType=="inventory-return").OrderBy(x=>x.Id).ToListAsync();Assert.Equal([2m,-3m],moves.Select(x=>x.Quantity));Assert.Equal(2,await db.InventoryReturns.CountAsync());
+    }
+
+    [SkippableFact]
+    public async Task Return_requires_a_reason_and_cannot_send_more_to_supplier_than_is_held()
+    {
+        Skip.IfNot(_available,"No PostgreSQL available.");await using var db=NewDb();await Receive(NewStock(db),2,100);var service=new InventoryReturnService(db,NewStock(db),_clock,_user);
+        Assert.Equal("return.no-reason",(await service.PostAsync(new(InventoryReturnKind.PurchaseReturn,202,"A Supplier",_clock.Today,null," ",null,[new(_itemId,1)]))).Code);
+        Assert.Equal("return.insufficient",(await service.PostAsync(new(InventoryReturnKind.PurchaseReturn,202,"A Supplier",_clock.Today,null,"Faulty",null,[new(_itemId,3)]))).Code);
+        Assert.Equal(2,(await db.Items.SingleAsync()).QuantityOnHand);
+    }
+
+    [SkippableFact]
+    public async Task Every_inventory_report_executes_against_the_real_schema()
+    {
+        Skip.IfNot(_available,"No PostgreSQL available.");await using var db=NewDb();await Receive(NewStock(db),2,100);
+        var services=new ServiceCollection().AddSingleton(db).AddSingleton<IClock>(_clock).AddInventoryReports();using var provider=services.BuildServiceProvider();var reports=provider.GetServices<ReportDefinition>().ToList();
+        foreach(var report in reports){var result=await report.Run(new ReportRequest{From=_clock.Today.AddDays(-7),To=_clock.Today,AsAt=_clock.Today},default);Assert.NotNull(result.Columns);Assert.NotNull(result.Rows);}
+    }
 
     // ---------- weighted average ----------
 
@@ -252,175 +361,12 @@ public sealed class StockTests : IAsyncLifetime
 
     // ---------- the cost snapshot ----------
 
-    [SkippableFact]
-    public async Task A_delivery_keeps_the_cost_it_went_out_at_when_prices_rise_later()
-    {
-        Skip.IfNot(_available, "No PostgreSQL available.");
 
-        await using var db = NewDb();
-        var stock = NewStock(db);
-        var sales = new SalesService(db, stock, _clock);
 
-        await Receive(stock, 10, 100);
 
-        var order = await sales.SaveOrderAsync(new SalesOrderInput(
-            null, _customerId, _clock.Today, null,
-            [new SalesOrderLineInput(_itemId, 5, 150)]));
-        Assert.True(order.Ok, order.Error);
-        await sales.ConfirmAsync(order.Value.Id);
 
-        var delivered = await sales.DeliverAsync(new DeliveryInput(
-            order.Value.Id, _clock.Today, "Someone", null,
-            [new DeliveryLineInput(_itemId, 5)]));
-        Assert.True(delivered.Ok, delivered.Error);
 
-        // Prices go up after the goods left. The weighted average moves.
-        await Receive(stock, 100, 500);
 
-        db.ChangeTracker.Clear();
-        var line = await db.DeliveryLines.SingleAsync();
-        var item = await db.Items.SingleAsync();
-
-        // The delivery still says what it actually cost. Reading the average
-        // live would silently rewrite last month's margin every time somebody
-        // bought at a new price - the sale would show a loss it never made.
-        Assert.Equal(100, line.UnitCost);
-        Assert.Equal(250, line.Margin);       // (150 - 100) x 5
-        Assert.NotEqual(item.AverageCost, line.UnitCost);
-    }
-
-    // ---------- buying and selling ----------
-
-    [SkippableFact]
-    public async Task Goods_cannot_be_received_against_an_unapproved_order()
-    {
-        Skip.IfNot(_available, "No PostgreSQL available.");
-
-        await using var db = NewDb();
-        var stock = NewStock(db);
-        var purchasing = new PurchasingService(db, stock, new NoApprovals(), _clock);
-
-        var order = await purchasing.SaveOrderAsync(new PurchaseOrderInput(
-            null, _supplierId, _clock.Today, null,
-            [new PurchaseOrderLineInput(_itemId, 10, 100)]));
-
-        var received = await purchasing.ReceiveAsync(new ReceiptInput(
-            order.Value.Id, _clock.Today, null,
-            [new ReceiptLineInput(_itemId, 10, 100)]));
-
-        // Otherwise someone commits the company to a purchase by unloading a van.
-        Assert.True(received.Failed);
-        Assert.Equal("po.not-approved", received.Code);
-    }
-
-    [SkippableFact]
-    public async Task More_cannot_be_received_than_was_ordered()
-    {
-        Skip.IfNot(_available, "No PostgreSQL available.");
-
-        await using var db = NewDb();
-        var stock = NewStock(db);
-        var purchasing = new PurchasingService(db, stock, new NoApprovals(), _clock);
-
-        var order = await purchasing.SaveOrderAsync(new PurchaseOrderInput(
-            null, _supplierId, _clock.Today, null,
-            [new PurchaseOrderLineInput(_itemId, 10, 100)]));
-
-        var approved = await db.PurchaseOrders.FirstAsync(o => o.Id == order.Value.Id);
-        approved.Status = PurchaseOrderStatus.Approved;
-        await db.SaveChangesAsync();
-
-        var received = await purchasing.ReceiveAsync(new ReceiptInput(
-            order.Value.Id, _clock.Today, null,
-            [new ReceiptLineInput(_itemId, 15, 100)]));
-
-        Assert.True(received.Failed);
-        Assert.Equal("receipt.over-receipt", received.Code);
-    }
-
-    [SkippableFact]
-    public async Task A_partial_receipt_leaves_the_order_open()
-    {
-        Skip.IfNot(_available, "No PostgreSQL available.");
-
-        await using var db = NewDb();
-        var stock = NewStock(db);
-        var purchasing = new PurchasingService(db, stock, new NoApprovals(), _clock);
-
-        var order = await purchasing.SaveOrderAsync(new PurchaseOrderInput(
-            null, _supplierId, _clock.Today, null,
-            [new PurchaseOrderLineInput(_itemId, 10, 100)]));
-
-        var live = await db.PurchaseOrders.FirstAsync(o => o.Id == order.Value.Id);
-        live.Status = PurchaseOrderStatus.Approved;
-        await db.SaveChangesAsync();
-
-        await purchasing.ReceiveAsync(new ReceiptInput(
-            order.Value.Id, _clock.Today, null, [new ReceiptLineInput(_itemId, 4, 100)]));
-
-        db.ChangeTracker.Clear();
-        var after = await db.PurchaseOrders.Include(o => o.Lines)
-            .FirstAsync(o => o.Id == order.Value.Id);
-
-        Assert.Equal(PurchaseOrderStatus.PartiallyReceived, after.Status);
-        Assert.Equal(6, after.Lines.Single().Outstanding);
-        Assert.Equal(4, (await db.Items.SingleAsync()).QuantityOnHand);
-    }
-
-    [SkippableFact]
-    public async Task A_delivery_short_of_stock_moves_nothing_at_all()
-    {
-        Skip.IfNot(_available, "No PostgreSQL available.");
-
-        await using var db = NewDb();
-        var stock = NewStock(db);
-        var sales = new SalesService(db, stock, _clock);
-
-        await Receive(stock, 3, 100);
-
-        var order = await sales.SaveOrderAsync(new SalesOrderInput(
-            null, _customerId, _clock.Today, null,
-            [new SalesOrderLineInput(_itemId, 5, 150)]));
-        await sales.ConfirmAsync(order.Value.Id);
-
-        var delivered = await sales.DeliverAsync(new DeliveryInput(
-            order.Value.Id, _clock.Today, null, null,
-            [new DeliveryLineInput(_itemId, 5)]));
-
-        Assert.True(delivered.Failed);
-        Assert.Equal("delivery.insufficient-stock", delivered.Code);
-
-        db.ChangeTracker.Clear();
-
-        // Checked before anything moves, so the refusal leaves no half-posted
-        // delivery to unpick by hand.
-        Assert.Equal(3, (await db.Items.SingleAsync()).QuantityOnHand);
-        Assert.Empty(await db.Deliveries.ToListAsync());
-    }
-
-    [SkippableFact]
-    public async Task Confirming_a_sales_order_reserves_nothing()
-    {
-        Skip.IfNot(_available, "No PostgreSQL available.");
-
-        await using var db = NewDb();
-        var stock = NewStock(db);
-        var sales = new SalesService(db, stock, _clock);
-
-        await Receive(stock, 10, 100);
-
-        var order = await sales.SaveOrderAsync(new SalesOrderInput(
-            null, _customerId, _clock.Today, null,
-            [new SalesOrderLineInput(_itemId, 10, 150)]));
-        await sales.ConfirmAsync(order.Value.Id);
-
-        db.ChangeTracker.Clear();
-
-        // Deliberate: a soft reservation the stock figure does not honour is
-        // worse than none, because two orders can still be promised the same
-        // unit while both look safe.
-        Assert.Equal(10, (await db.Items.SingleAsync()).QuantityOnHand);
-    }
 
     // ---------- master data ----------
 
@@ -462,21 +408,7 @@ public sealed class StockTests : IAsyncLifetime
         Assert.Equal("item.has-history", result.Code);
     }
 
-    [SkippableFact]
-    public async Task A_party_that_is_neither_customer_nor_supplier_is_refused()
-    {
-        Skip.IfNot(_available, "No PostgreSQL available.");
 
-        await using var db = NewDb();
-        var catalog = new CatalogService(db);
-
-        var result = await catalog.SavePartyAsync(new Party { Name = "Nobody" });
-
-        // Such a record could not be used anywhere, so saving it only creates
-        // confusion later.
-        Assert.True(result.Failed);
-        Assert.Equal("party.no-side", result.Code);
-    }
 
     [SkippableFact]
     public async Task Editing_an_item_cannot_change_its_stock_or_cost()
@@ -505,34 +437,120 @@ public sealed class StockTests : IAsyncLifetime
         Assert.Equal(100, saved.AverageCost);
     }
 
-    /// <summary>Approval is tested against the engine itself; purchasing only needs a stand-in.</summary>
-    private sealed class NoApprovals : MeiErp.Platform.Workflow.IApprovalEngine
+    // ---- The two stock books -------------------------------------------------
+    //
+    // The workshop's spares and the main store's goods share one implementation
+    // and must never share a figure. These pin the seams where they could leak.
+
+    [SkippableFact]
+    public async Task The_same_item_code_is_free_in_each_stock_book()
     {
-        public Task<Result<MeiErp.Platform.Workflow.ApprovalRequest>> SubmitAsync(
-            MeiErp.Platform.Workflow.SubmitApproval request, CancellationToken ct = default) =>
-            Task.FromResult(Result.Success(new MeiErp.Platform.Workflow.ApprovalRequest { Id = 1 }));
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db = NewDb();
+        var catalog = new CatalogService(db);
 
-        public Task<Result<MeiErp.Platform.Workflow.ApprovalRequest>> DecideAsync(
-            int requestId, MeiErp.Platform.Workflow.ApprovalDecision decision,
-            string? comment, CancellationToken ct = default) => throw new NotSupportedException();
+        // "W-1" is already taken in the main book by the fixture.
+        var clash = await catalog.SaveItemAsync(
+            new Item { Code = "W-1", Name = "Another widget", DomainId = _mainDomainId });
+        Assert.False(clash.Ok);
 
-        public Task<Result> CancelAsync(int requestId, string? reason, CancellationToken ct = default) =>
-            Task.FromResult(Result.Success());
-
-        public Task<Result<MeiErp.Platform.Workflow.ApprovalRequest>> ResubmitAsync(
-            int requestId, CancellationToken ct = default) => throw new NotSupportedException();
-
-        public Task<IReadOnlyList<MeiErp.Platform.Workflow.ApprovalInboxItem>> InboxAsync(
-            CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<MeiErp.Platform.Workflow.ApprovalInboxItem>>([]);
-
-        public Task<Result> CanDecideAsync(int requestId, CancellationToken ct = default) =>
-            Task.FromResult(Result.Success());
-
-        public Task<MeiErp.Platform.Workflow.ApprovalHistory?> HistoryAsync(
-            string documentType, int documentId, CancellationToken ct = default) =>
-            Task.FromResult<MeiErp.Platform.Workflow.ApprovalHistory?>(null);
+        // The workshop numbers its parts independently, so the same code there
+        // is not a clash at all.
+        var spare = await catalog.SaveItemAsync(
+            new Item { Code = "W-1", Name = "Widget spare", DomainId = _spareDomainId });
+        Assert.True(spare.Ok, spare.Error);
     }
+
+    [SkippableFact]
+    public async Task Listing_a_book_never_shows_the_other_books_items()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db = NewDb();
+        var catalog = new CatalogService(db);
+        Assert.True((await catalog.SaveItemAsync(
+            new Item { Code = "SP-1", Name = "Gasket", IsActive = true, DomainId = _spareDomainId })).Ok);
+
+        var main = await catalog.ItemsAsync(domainId: _mainDomainId);
+        var spare = await catalog.ItemsAsync(domainId: _spareDomainId);
+
+        Assert.Equal(["W-1"], main.Select(x => x.Code));
+        Assert.Equal(["SP-1"], spare.Select(x => x.Code));
+
+        // Null spans both, which is what a group-wide valuation wants.
+        Assert.Equal(2, (await catalog.ItemsAsync()).Count);
+    }
+
+    [SkippableFact]
+    public async Task A_receipt_lands_on_its_own_books_default_warehouse()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db = NewDb();
+        var catalog = new CatalogService(db);
+        var part = await catalog.SaveItemAsync(
+            new Item { Code = "SP-9", Name = "Belt", IsActive = true, DomainId = _spareDomainId });
+        Assert.True(part.Ok, part.Error);
+
+        var stock = NewStock(db);
+        Assert.True((await Receive(stock, 10, 100)).Ok);                       // main book
+        Assert.True((await stock.ReceiveAsync(part.Value.Id, 4, 25, _clock.Today,
+            StockMovementType.Receipt, "TEST", null, null)).Ok);               // spare book
+
+        // Each book got its own default shelf; unscoped, the spare would have
+        // landed on the main store's and both valuations would be wrong.
+        var warehouses = await db.Warehouses.ToListAsync();
+        Assert.Equal(2, warehouses.Count);
+        Assert.Equal([_mainDomainId, _spareDomainId], warehouses.Select(x => x.DomainId).Order());
+        Assert.All(warehouses, w => Assert.True(w.IsDefault));
+
+        // And the ledger reads one book at a time.
+        var mainLedger = await stock.MovementsAsync(null, null, null, _mainDomainId);
+        var spareLedger = await stock.MovementsAsync(null, null, null, _spareDomainId);
+        Assert.Equal(10, Assert.Single(mainLedger).Quantity);
+        Assert.Equal(4, Assert.Single(spareLedger).Quantity);
+    }
+
+    [SkippableFact]
+    public async Task A_transfer_cannot_cross_stock_books()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db = NewDb();
+        await Receive(NewStock(db), 10, 100);
+
+        var source = await db.Warehouses.SingleAsync(x => x.DomainId == _mainDomainId);
+        var workshop = new Warehouse { Name = "Workshop bin", Code = "WS", DomainId = _spareDomainId };
+        db.Add(workshop);
+        await db.SaveChangesAsync();
+
+        var result = await new TransferService(db, _clock, _user)
+            .SaveAsync(new(null, _clock.Today, source.Id, workshop.Id, null, null, [new(_itemId, 1)]));
+
+        // Getting goods from one book to the other is a sale and a purchase,
+        // which is also how the money should read.
+        Assert.False(result.Ok);
+        Assert.Contains("stock book", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [SkippableFact]
+    public async Task An_items_book_is_fixed_at_creation()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db = NewDb();
+        await Receive(NewStock(db), 10, 100);
+
+        var catalog = new CatalogService(db);
+        var item = await catalog.GetItemAsync(_itemId);
+        item!.DomainId = _spareDomainId;
+        item.Name = "Renamed";
+
+        Assert.True((await catalog.SaveItemAsync(item)).Ok);
+
+        // The rename lands; the move does not. Its stock history, balances and
+        // movements all sit in the main book and would have been left behind.
+        var saved = await db.Items.AsNoTracking().SingleAsync(x => x.Id == _itemId);
+        Assert.Equal("Renamed", saved.Name);
+        Assert.Equal(_mainDomainId, saved.DomainId);
+    }
+
 
     private sealed class TestUser(string id, string name) : ICurrentUser
     {

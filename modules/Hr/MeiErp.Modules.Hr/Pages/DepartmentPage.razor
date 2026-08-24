@@ -1,0 +1,11 @@
+@page "/hr/departments/new"
+@page "/hr/departments/{Id}"
+@attribute [Authorize(Policy = PlatformPermissions.DepartmentsManage)]
+@rendermode InteractiveServer
+
+@* The dialog and this page render the same editor; only the frame differs. *@
+<DepartmentEditor AsDialog="false" DepartmentId="Id" />
+
+@code {
+    [Parameter] public string? Id { get; set; }
+}

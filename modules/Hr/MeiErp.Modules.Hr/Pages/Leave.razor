@@ -6,60 +6,59 @@
 @inject IClock Clock
 @inject ISnackbar Snackbar
 @inject IDialogService Dialogs
+@* IDialogService still used for the withdraw confirmation box. *@
 
-<PageTitle>Leave</PageTitle>
+<ListShell Title="Leave"
+           Subtitle="Requests are routed for approval automatically."
+           Icon="@Icons.Material.Outlined.BeachAccess"
+           Loading="_loading"
+           IsEmpty="@(!_loading && _me is not null && _rows.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.BeachAccess"
+           EmptyTitle="No leave requests yet"
+           EmptyHint="Request leave here; it is routed for approval automatically once submitted.">
+    <Actions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))"
+                   Disabled="_me is null">
+            Request leave
+        </MudButton>
+        <MudTooltip Text="Open as a full page instead">
+            <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Href="/hr/leave/new" Disabled="_me is null" />
+        </MudTooltip>
+    </Actions>
 
-<div class="d-flex align-center mb-1">
-    <div>
-        <MudText Typo="Typo.h5">Leave</MudText>
-        <MudText Typo="Typo.body2" Class="mud-text-secondary">
-            Requests are routed for approval automatically.
-        </MudText>
-    </div>
-    <MudSpacer />
-    <MudButton Variant="Variant.Filled" Color="Color.Primary"
-               StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))"
-               Disabled="_me is null">
-        Request leave
-    </MudButton>
-</div>
-
-@if (_me is null)
-{
-    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mt-4">
-        Your login is not linked to an employee record, so you cannot request leave.
-        Ask HR to set the linked login on your employee record.
-    </MudAlert>
-}
-else
-{
-    <MudGrid Class="mt-2">
-        @foreach (var balance in _balances)
+    <Stats>
+        @if (_me is not null)
         {
-            <MudItem xs="12" sm="6" md="3">
-                <MudPaper Class="pa-4" Outlined="true" Elevation="0">
-                    <MudText Typo="Typo.overline" Class="mud-text-secondary">
-                        @balance.LeaveType?.Name
-                    </MudText>
-                    <MudText Typo="Typo.h4">@balance.Available.ToString("0.#")</MudText>
-                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                        days left of @((balance.Entitled + balance.CarriedForward).ToString("0.#"))
-                        @if (balance.Pending > 0)
-                        {
-                            @* Held, not spent: two pending requests must not be
-                               able to spend the same entitlement. *@
-                            <text> · @balance.Pending.ToString("0.#") awaiting approval</text>
-                        }
-                    </MudText>
-                </MudPaper>
-            </MudItem>
+            @foreach (var balance in _balances)
+            {
+                <StatTile Label="@balance.LeaveType?.Name"
+                          Value="@balance.Available.ToString("0.#")"
+                          Caption="@BalanceCaption(balance)" />
+            }
         }
-    </MudGrid>
-}
+    </Stats>
 
-<MudPaper Outlined="true" Elevation="0" Class="mt-4">
+    <EmptyAction>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))"
+                   Disabled="_me is null">
+            Request leave
+        </MudButton>
+    </EmptyAction>
+
+    <ChildContent>
+    @if (_me is null)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="ma-4">
+            Your login is not linked to an employee record, so you cannot request leave.
+            Ask HR to set the linked login on your employee record.
+        </MudAlert>
+    }
+    else
+    {
     <MudDataGrid T="LeaveRequest" Items="_rows" Dense="true" Hover="true" Elevation="0"
-                 Loading="_loading" Filterable="false">
+                 Filterable="false">
         <Columns>
             <PropertyColumn Property="@(r => r.Reference)" Title="Reference" />
             <PropertyColumn Property="@(r => r.LeaveTypeName)" Title="Type" />
@@ -91,6 +90,9 @@ else
                     <div class="d-flex justify-end gap-1">
                         @if (context.Item.Status is LeaveStatus.Draft or LeaveStatus.Returned)
                         {
+                            <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small"
+                                           Href="@($"/hr/leave/{context.Item.Id}")"
+                                           title="Open as a page" />
                             <MudButton Size="Size.Small" Variant="Variant.Text"
                                        OnClick="@(() => Edit(context.Item))">Edit</MudButton>
                             <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
@@ -105,17 +107,24 @@ else
                 </CellTemplate>
             </TemplateColumn>
         </Columns>
-        <NoRecordsContent>
-            <MudText Class="pa-8 text-center mud-text-secondary">No leave requests yet.</MudText>
-        </NoRecordsContent>
     </MudDataGrid>
-</MudPaper>
+    }
+    </ChildContent>
+</ListShell>
+
+@if (_editing && _me is not null)
+{
+    <LeaveEditor AsDialog="true" RequestId="_editingId" EmployeeId="_me.Id"
+                 Saved="LoadAsync" Closed="@(() => { _editing = false; return Task.CompletedTask; })" />
+}
 
 @code {
     private Employee? _me;
     private IReadOnlyList<LeaveRequest> _rows = [];
     private IReadOnlyList<LeaveBalance> _balances = [];
     private bool _loading = true;
+    private bool _editing;
+    private int? _editingId;
 
     protected override Task OnInitializedAsync() => LoadAsync();
 
@@ -133,6 +142,13 @@ else
         _loading = false;
     }
 
+    private static string BalanceCaption(LeaveBalance balance)
+    {
+        var caption = $"days left of {(balance.Entitled + balance.CarriedForward):0.#}";
+        // Held, not spent: two pending requests must not be able to spend the same entitlement.
+        return balance.Pending > 0 ? $"{caption} · {balance.Pending:0.#} awaiting approval" : caption;
+    }
+
     private static Color StatusColour(LeaveStatus status) => status switch
     {
         LeaveStatus.Approved => Color.Success,
@@ -142,21 +158,12 @@ else
         _ => Color.Default
     };
 
-    private async Task Edit(LeaveRequest? row)
+    private void Edit(LeaveRequest? row)
     {
         if (_me is null) return;
 
-        var parameters = new DialogParameters<LeaveEditor>
-        {
-            { x => x.RequestId, row?.Id },
-            { x => x.EmployeeId, _me.Id }
-        };
-
-        var dialog = await Dialogs.ShowAsync<LeaveEditor>(
-            row is null ? "Request leave" : "Edit request", parameters,
-            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
-
-        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+        _editingId = row?.Id;
+        _editing = true;
     }
 
     private async Task Submit(LeaveRequest row)

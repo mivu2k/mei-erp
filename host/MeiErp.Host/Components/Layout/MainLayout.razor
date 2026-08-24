@@ -1,4 +1,5 @@
 @inherits LayoutComponentBase
+@inject IModuleCatalog Catalog
 
 <MudThemeProvider Theme="Theme" @bind-IsDarkMode="_dark" />
 <MudPopoverProvider />
@@ -7,11 +8,20 @@
 
 <AuthorizeView>
     <Authorized>
-        <MudLayout>
-            <MudAppBar Elevation="0" Class="border-b">
+        <MudLayout Class="app-shell">
+            <MudAppBar Elevation="0" Class="app-header border-b">
                 <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit"
-                               Edge="Edge.Start" OnClick="@(() => _navOpen = !_navOpen)" />
-                <MudText Typo="Typo.h6" Class="ml-2">MEI</MudText>
+                               Edge="Edge.Start" OnClick="ToggleNavigation"
+                               aria-label="Toggle navigation" />
+                <a href="/" class="app-brand" aria-label="MEI ERP home">
+                    <span class="app-brand-mark">M</span>
+                    <span class="app-brand-copy">
+                        <span>MEI</span>
+                        <small>Enterprise</small>
+                    </span>
+                </a>
+
+                <GlobalSearch />
 
                 <MudSpacer />
 
@@ -20,6 +30,31 @@
                     <MudIconButton Icon="@Icons.Material.Outlined.FactCheck"
                                    Color="Color.Inherit" Href="/approvals" />
                 </MudTooltip>
+
+                @* Module-declared shortcuts - the attendance QR code being the
+                   one that forced this. A module contributes them through its
+                   descriptor, so this file never learns about HR. *@
+                @foreach (var action in Catalog.All.SelectMany(m => m.QuickActions))
+                {
+                    @if (action.Permission is null)
+                    {
+                        <MudTooltip Text="@action.Tooltip">
+                            <MudIconButton Icon="@ResolveIcon(action.Icon)"
+                                           Color="Color.Inherit" Href="@action.Path" />
+                        </MudTooltip>
+                    }
+                    else
+                    {
+                        <AuthorizeView Policy="@action.Permission" Context="quick">
+                            <Authorized>
+                                <MudTooltip Text="@action.Tooltip">
+                                    <MudIconButton Icon="@ResolveIcon(action.Icon)"
+                                                   Color="Color.Inherit" Href="@action.Path" />
+                                </MudTooltip>
+                            </Authorized>
+                        </AuthorizeView>
+                    }
+                }
 
                 @* The bell the approval engine finally has. Without it, someone
                    raises a request and their manager never finds out unless they
@@ -38,19 +73,22 @@
                         <b>@context.User.FindFirst("full_name")?.Value</b>
                     </MudText>
                     <MudDivider />
-                    <MudMenuItem Href="/change-password">Change password</MudMenuItem>
+                    <MudMenuItem Href="/profile">My profile</MudMenuItem>
+                    <MudMenuItem Href="/profile?tab=security">Security</MudMenuItem>
+                    <MudMenuItem Href="/profile?tab=notifications">Notifications</MudMenuItem>
                     <MudDivider />
                     <MudMenuItem Href="/sign-out-now">Sign out</MudMenuItem>
                 </MudMenu>
             </MudAppBar>
 
             <MudDrawer @bind-Open="_navOpen" Elevation="0" ClipMode="DrawerClipMode.Always"
-                       Variant="DrawerVariant.Persistent" Class="border-r">
+                       Variant="DrawerVariant.Responsive" Breakpoint="Breakpoint.Md"
+                       Class="app-navigation border-r">
                 <NavMenu />
             </MudDrawer>
 
-            <MudMainContent Class="pt-16 px-4">
-                <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
+            <MudMainContent Class="app-content pt-16">
+                <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="app-page">
                     @Body
                 </MudContainer>
             </MudMainContent>
@@ -66,12 +104,26 @@
 <div id="blazor-error-ui" data-nosnippet>
     Something went wrong.
     <a href="." class="reload">Reload</a>
-    <span class="dismiss">🗙</span>
+    <a class="dismiss" role="button" aria-label="Dismiss error">&#x2715;</a>
 </div>
 
 @code {
     private bool _navOpen = true;
     private bool _dark;
+
+    private void ToggleNavigation() => _navOpen = !_navOpen;
+
+    /// <summary>
+    /// A module names its icon as a string, because the catalog lives in the
+    /// Kernel and the Kernel must not depend on MudBlazor. Falls back to a
+    /// generic icon rather than throwing, so a typo in a descriptor costs a
+    /// wrong picture, not a broken app bar.
+    /// </summary>
+    private static string ResolveIcon(string name)
+    {
+        var field = typeof(Icons.Material.Outlined).GetField(name);
+        return field?.GetValue(null) as string ?? Icons.Material.Outlined.Apps;
+    }
 
     /// <summary>
     /// A blue-grey ground rather than MudBlazor's default purple: this is a

@@ -7,44 +7,67 @@
 @inject ISnackbar Snackbar
 @inject IDialogService Dialogs
 
-<PageTitle>Fleet</PageTitle>
+<ListShell Title="Fleet"
+           Subtitle="Vehicles, servicing and what each one costs to run."
+           Icon="@Icons.Material.Outlined.DirectionsCar"
+           Loading="_loading"
+           IsEmpty="@(_rows.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.DirectionsCar"
+           EmptyTitle="No vehicles yet"
+           EmptyHint="Add a vehicle to start tracking servicing, expiries and what it costs to run.">
+    <Actions>
+        <AuthorizeView Policy="@AutoModule.VehiclesManage" Context="perms">
+            <Authorized>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+                    New vehicle
+                </MudButton>
+                <MudTooltip Text="Open as a full page instead">
+                    <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Href="/auto/vehicles/new" />
+                </MudTooltip>
+            </Authorized>
+        </AuthorizeView>
+    </Actions>
 
-<div class="d-flex align-center mb-1">
-    <div>
-        <MudText Typo="Typo.h5">Fleet</MudText>
-        <MudText Typo="Typo.body2" Class="mud-text-secondary">
-            Vehicles, servicing and what each one costs to run.
-        </MudText>
-    </div>
-    <MudSpacer />
-    <AuthorizeView Policy="@AutoModule.VehiclesManage" Context="perms">
-        <Authorized>
-            <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                       StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
-                New vehicle
-            </MudButton>
-        </Authorized>
-    </AuthorizeView>
-</div>
+    <EmptyAction>
+        <AuthorizeView Policy="@AutoModule.VehiclesManage" Context="perms">
+            <Authorized>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+                    New vehicle
+                </MudButton>
+            </Authorized>
+        </AuthorizeView>
+    </EmptyAction>
 
-@if (_expiring.Count > 0)
-{
-    @* Surfaced rather than buried in a report: an expired registration is a
-       vehicle that legally cannot leave the yard. *@
-    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mt-4">
-        <b>@_expiring.Count</b>
-        @(_expiring.Count == 1 ? "vehicle has" : "vehicles have")
-        registration or insurance falling due within 30 days:
-        @string.Join(", ", _expiring.Select(v => v.Registration))
-    </MudAlert>
-}
-
-<MudPaper Outlined="true" Elevation="0" Class="mt-4">
-    <MudToolBar Dense="true">
+    <Toolbar>
         <MudSpacer />
         <MudSwitch T="bool" @bind-Value="_includeDisposed" @bind-Value:after="LoadAsync"
                    Color="Color.Primary" Label="Include sold and scrapped" />
-    </MudToolBar>
+    </Toolbar>
+
+    <ChildContent>
+    @if (_expiring.Count > 0)
+    {
+        @* Surfaced rather than buried in a report: an expired registration is a
+           vehicle that legally cannot leave the yard. *@
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="ma-3">
+            <b>@_expiring.Count</b>
+            @(_expiring.Count == 1 ? "vehicle has" : "vehicles have")
+            registration or insurance falling due within 30 days:
+            @string.Join(", ", _expiring.Select(v => v.Registration))
+        </MudAlert>
+    }
+
+    @if (_upcomingServices.Count > 0)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="ma-3">
+            <b>@_upcomingServices.Count</b>
+            @(_upcomingServices.Count == 1 ? "service is" : "services are")
+            due within 30 days:
+            @string.Join(", ", _upcomingServices.Select(s => $"{s.VehicleRegistration} ({s.NextDueDate:yyyy-MM-dd})"))
+        </MudAlert>
+    }
 
     <MudDataGrid T="Vehicle" Items="_rows" Dense="true" Hover="true" Elevation="0"
                  Loading="_loading" Filterable="false" RowsPerPage="25">
@@ -52,7 +75,9 @@
             <PropertyColumn Property="@(v => v.Registration)" Title="Registration" />
             <TemplateColumn Title="Vehicle">
                 <CellTemplate>
-                    <MudText Typo="Typo.body2"><b>@context.Item.Make @context.Item.Model</b></MudText>
+                    <a href="@($"/auto/vehicles/{context.Item.Id}")">
+                        <MudText Typo="Typo.body2"><b>@context.Item.Make @context.Item.Model</b></MudText>
+                    </a>
                     <MudText Typo="Typo.caption" Class="mud-text-secondary">
                         @context.Item.Year
                     </MudText>
@@ -91,14 +116,20 @@
             <TemplateColumn Title="" Sortable="false">
                 <CellTemplate>
                     <div class="d-flex justify-end gap-1">
+                        <MudIconButton Icon="@Icons.Material.Outlined.Print" Href="@($"/print/auto/vehicle/{context.Item.Id}")" Target="_blank" />
                         <AuthorizeView Policy="@AutoModule.ServicesManage" Context="perms">
                             <Authorized>
+                                <MudButton Size="Size.Small" Variant="Variant.Text"
+                                           OnClick="@(() => History(context.Item))">History</MudButton>
                                 <MudButton Size="Size.Small" Variant="Variant.Text"
                                            OnClick="@(() => AddService(context.Item))">Log service</MudButton>
                             </Authorized>
                         </AuthorizeView>
                         <AuthorizeView Policy="@AutoModule.VehiclesManage" Context="perms">
                             <Authorized>
+                                <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small"
+                                               Href="@($"/auto/vehicles/{context.Item.Id}/edit")"
+                                               title="Open as a page" />
                                 <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small"
                                                OnClick="@(() => Edit(context.Item))" />
                             </Authorized>
@@ -107,15 +138,27 @@
                 </CellTemplate>
             </TemplateColumn>
         </Columns>
-        <NoRecordsContent>
-            <MudText Class="pa-8 text-center mud-text-secondary">No vehicles yet.</MudText>
-        </NoRecordsContent>
     </MudDataGrid>
-</MudPaper>
+    </ChildContent>
+</ListShell>
+
+@if (_editing)
+{
+    <VehicleEditor AsDialog="true" VehicleId="_editingId"
+                    Saved="LoadAsync" Closed="@(() => { _editing = false; return Task.CompletedTask; })" />
+}
+
+@if (_addingServiceFor is { } addTo)
+{
+    <ServiceEditor AsDialog="true" VehicleId="addTo.Id" Registration="addTo.Registration"
+                    LastOdometer="addTo.CurrentOdometer"
+                    Saved="LoadAsync" Closed="@(() => { _addingServiceFor = null; return Task.CompletedTask; })" />
+}
 
 @code {
     private IReadOnlyList<Vehicle> _rows = [];
     private IReadOnlyList<Vehicle> _expiring = [];
+    private IReadOnlyList<VehicleService> _upcomingServices = [];
     private bool _includeDisposed;
     private bool _loading = true;
 
@@ -126,30 +169,33 @@
         _loading = true;
         _rows = await Fleet.ListAsync(_includeDisposed);
         _expiring = await Fleet.ExpiringAsync();
+        _upcomingServices = await Fleet.UpcomingServicesAsync();
         _loading = false;
     }
 
-    private async Task Edit(Vehicle? row)
-    {
-        var parameters = new DialogParameters<VehicleEditor> { { x => x.VehicleId, row?.Id } };
-        var dialog = await Dialogs.ShowAsync<VehicleEditor>(
-            row is null ? "New vehicle" : "Edit vehicle", parameters,
-            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+    private bool _editing;
+    private int? _editingId;
+    private Vehicle? _addingServiceFor;
 
-        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    private void Edit(Vehicle? row)
+    {
+        _editingId = row?.Id;
+        _editing = true;
     }
 
-    private async Task AddService(Vehicle row)
+    private void AddService(Vehicle row) => _addingServiceFor = row;
+
+    private async Task History(Vehicle row)
     {
-        var parameters = new DialogParameters<ServiceEditor>
+        var parameters = new DialogParameters<ServiceHistory>
         {
             { x => x.VehicleId, row.Id },
             { x => x.Registration, row.Registration },
             { x => x.LastOdometer, row.CurrentOdometer }
         };
-        var dialog = await Dialogs.ShowAsync<ServiceEditor>("Log service", parameters,
-            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
-
-        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+        var dialog = await Dialogs.ShowAsync<ServiceHistory>("Service history", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true });
+        await dialog.Result;
+        await LoadAsync();
     }
 }

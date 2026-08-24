@@ -9,7 +9,7 @@
 
 <PageTitle>Payroll</PageTitle>
 
-<div class="d-flex align-center mb-1">
+<div class="app-page-header d-flex flex-wrap align-center gap-3 mb-4">
     <div>
         <MudText Typo="Typo.h5">Payroll</MudText>
         <MudText Typo="Typo.body2" Class="mud-text-secondary">
@@ -30,7 +30,7 @@
     </AuthorizeView>
 </div>
 
-<MudPaper Outlined="true" Elevation="0" Class="mt-4">
+<MudPaper Outlined="true" Elevation="0" Class="app-list-surface overflow-hidden">
     <MudDataGrid T="PayrollRun" Items="_runs" Dense="true" Hover="true" Elevation="0"
                  Loading="_loading" Filterable="false" RowsPerPage="24">
         <Columns>

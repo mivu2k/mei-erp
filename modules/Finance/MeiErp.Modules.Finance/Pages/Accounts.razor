@@ -4,31 +4,43 @@
 @rendermode InteractiveServer
 @inject IAccountService Chart
 @inject ISnackbar Snackbar
-@inject IDialogService Dialogs
 
-<PageTitle>Chart of accounts</PageTitle>
+<ListShell Title="Chart of accounts"
+           Subtitle="Only the accounts shown in black can be posted to. Headings just group them."
+           Icon="@Icons.Material.Outlined.AccountBalance"
+           Loading="_loading"
+           IsEmpty="@(_rows.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.AccountBalance"
+           EmptyTitle="No accounts yet"
+           EmptyHint="Build the chart of accounts before anything can be posted.">
+    <Actions>
+        <AuthorizeView Policy="@FinanceModule.AccountsManage" Context="perms">
+            <Authorized>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+                    New account
+                </MudButton>
+                <MudTooltip Text="Open as a full page instead">
+                    <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Href="/finance/accounts/new" />
+                </MudTooltip>
+            </Authorized>
+        </AuthorizeView>
+    </Actions>
 
-<div class="d-flex align-center mb-1">
-    <div>
-        <MudText Typo="Typo.h5">Chart of accounts</MudText>
-        <MudText Typo="Typo.body2" Class="mud-text-secondary">
-            Only the accounts shown in black can be posted to. Headings just group them.
-        </MudText>
-    </div>
-    <MudSpacer />
-    <AuthorizeView Policy="@FinanceModule.AccountsManage" Context="perms">
-        <Authorized>
-            <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                       StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
-                New account
-            </MudButton>
-        </Authorized>
-    </AuthorizeView>
-</div>
+    <EmptyAction>
+        <AuthorizeView Policy="@FinanceModule.AccountsManage" Context="perms">
+            <Authorized>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+                    New account
+                </MudButton>
+            </Authorized>
+        </AuthorizeView>
+    </EmptyAction>
 
-<MudPaper Outlined="true" Elevation="0" Class="mt-4">
+    <ChildContent>
     <MudDataGrid T="Account" Items="_rows" Dense="true" Hover="true" Elevation="0"
-                 Loading="_loading" Filterable="false" RowsPerPage="50" Groupable="false">
+                 Filterable="false" RowsPerPage="50" Groupable="false">
         <Columns>
             <PropertyColumn Property="@(a => a.Code)" Title="Code" />
             <TemplateColumn Title="Account">
@@ -64,7 +76,10 @@
                 <CellTemplate>
                     <AuthorizeView Policy="@FinanceModule.AccountsManage" Context="perms">
                         <Authorized>
-                            <div class="d-flex justify-end">
+                            <div class="d-flex justify-end gap-1">
+                                <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small"
+                                               Href="@($"/finance/accounts/{context.Item.Id}")"
+                                               title="Open as a page" />
                                 <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small"
                                                OnClick="@(() => Edit(context.Item))" />
                             </div>
@@ -74,7 +89,14 @@
             </TemplateColumn>
         </Columns>
     </MudDataGrid>
-</MudPaper>
+    </ChildContent>
+</ListShell>
+
+@if (_editing)
+{
+    <AccountEditor AsDialog="true" AccountId="_editingId"
+                    Saved="LoadAsync" Closed="@(() => { _editing = false; return Task.CompletedTask; })" />
+}
 
 @code {
     private IReadOnlyList<Account> _rows = [];
@@ -95,13 +117,12 @@
         _loading = false;
     }
 
-    private async Task Edit(Account? row)
-    {
-        var parameters = new DialogParameters<AccountEditor> { { x => x.AccountId, row?.Id } };
-        var dialog = await Dialogs.ShowAsync<AccountEditor>(
-            row is null ? "New account" : "Edit account", parameters,
-            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+    private bool _editing;
+    private int? _editingId;
 
-        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    private void Edit(Account? row)
+    {
+        _editingId = row?.Id;
+        _editing = true;
     }
 }

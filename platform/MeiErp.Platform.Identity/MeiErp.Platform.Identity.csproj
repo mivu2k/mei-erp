@@ -6,6 +6,7 @@
     <ProjectReference Include="..\MeiErp.Platform.Kernel\MeiErp.Platform.Kernel.csproj" />
     <ProjectReference Include="..\MeiErp.Platform.Workflow\MeiErp.Platform.Workflow.csproj" />
     <ProjectReference Include="..\MeiErp.Platform.Notifications\MeiErp.Platform.Notifications.csproj" />
+    <ProjectReference Include="..\MeiErp.Platform.Persistence\MeiErp.Platform.Persistence.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- Authorization policy types (AuthorizationHandler, policy provider) live in

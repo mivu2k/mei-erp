@@ -1,55 +1,71 @@
 @inject IPayrollService Wages
 @inject IAccountService Chart
 @inject ISnackbar Snackbar
+@inject NavigationManager Nav
 
-<MudDialog>
-    <DialogContent>
+<DocumentShell @ref="_shell" AsDialog="AsDialog" Title="@Title" Error="@_error" OnClose="DismissedAsync">
+    <Body>
         <MudForm @ref="_form">
-            <MudTextField @bind-Value="_model.Name" Label="Name" Required="true"
-                          RequiredError="Give it a name." Variant="Variant.Outlined" Class="mb-3" />
+            <FormSection Title="What it is" Icon="@Icons.Material.Outlined.Category"
+                         Hint="The kind decides the sign: an earning adds to pay, a deduction comes off it.">
+                <div class="app-form-grid">
+                    <MudTextField @bind-Value="_model.Name" Label="Name" Required="true"
+                                  RequiredError="Give it a name." Variant="Variant.Outlined" />
 
-            <MudSelect T="PayComponentKind" @bind-Value="_model.Kind" Label="Kind"
-                       Variant="Variant.Outlined" Class="mb-3">
-                <MudSelectItem Value="PayComponentKind.Earning">Earning — adds to pay</MudSelectItem>
-                <MudSelectItem Value="PayComponentKind.Deduction">Deduction — taken off pay</MudSelectItem>
-            </MudSelect>
+                    <MudSelect T="PayComponentKind" @bind-Value="_model.Kind" Label="Kind"
+                               Variant="Variant.Outlined">
+                        <MudSelectItem Value="PayComponentKind.Earning">Earning — adds to pay</MudSelectItem>
+                        <MudSelectItem Value="PayComponentKind.Deduction">Deduction — taken off pay</MudSelectItem>
+                    </MudSelect>
+                </div>
+            </FormSection>
 
-            <MudSelect T="int?" @bind-Value="_model.AccountId" Label="Post to"
-                       Variant="Variant.Outlined" Clearable="true" Class="mb-3"
-                       HelperText="An earning is a cost; a deduction is owed to somebody.">
-                @foreach (var head in _heads)
-                {
-                    <MudSelectItem T="int?" Value="@head.Id">@head.Code — @head.Name</MudSelectItem>
-                }
-            </MudSelect>
+            <FormSection Title="How it posts" Icon="@Icons.Material.Outlined.AccountBalance"
+                         Hint="Only leaf heads can be posted to; a heading with its own balance double-counts itself.">
+                <div class="app-form-grid">
+                    <MudSelect T="int?" @bind-Value="_model.AccountId" Label="Post to"
+                               Variant="Variant.Outlined" Clearable="true" Class="app-form-wide"
+                               HelperText="An earning is a cost; a deduction is owed to somebody.">
+                        @foreach (var head in _heads)
+                        {
+                            <MudSelectItem T="int?" Value="@head.Id">@head.Code — @head.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </div>
+            </FormSection>
 
             @if (_model.Kind == PayComponentKind.Earning)
             {
-                <MudSwitch T="bool" @bind-Value="_model.ProRateOnAttendance" Color="Color.Primary"
-                           Label="Reduce this when somebody is absent" />
-                <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">
-                    Turn it off for a fixed allowance — a phone bill does not shrink because
-                    somebody took a day off.
-                </MudText>
+                <FormSection Title="Attendance" Icon="@Icons.Material.Outlined.EventAvailable">
+                    <div class="app-form-grid">
+                        <div class="app-form-wide">
+                            <MudSwitch T="bool" @bind-Value="_model.ProRateOnAttendance" Color="Color.Primary"
+                                       Label="Reduce this when somebody is absent" />
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">
+                                Turn it off for a fixed allowance — a phone bill does not shrink because
+                                somebody took a day off.
+                            </MudText>
+                        </div>
+                    </div>
+                </FormSection>
             }
         </MudForm>
+    </Body>
 
-        @if (_error is not null)
-        {
-            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-3">@_error</MudAlert>
-        }
-    </DialogContent>
-
-    <DialogActions>
-        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+    <Buttons>
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
                    OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
-    </DialogActions>
-</MudDialog>
+    </Buttons>
+</DocumentShell>
 
 @code {
-    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public bool AsDialog { get; set; }
+    [Parameter] public int? ComponentId { get; set; }
     [Parameter] public PayComponent? Existing { get; set; }
+    [Parameter] public EventCallback Saved { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
+
+    private string Title => Existing is null && ComponentId is null ? "New component" : "Edit component";
 
     private MudForm? _form;
     private PayComponent _model = new();
@@ -61,13 +77,18 @@
     {
         _heads = await Chart.PostableAsync();
 
-        _model = Existing is null
+        // The dialog is handed the row directly; the routed page only has an
+        // id, so it looks the row up from the same list the dialog's caller reads.
+        var existing = Existing
+            ?? (ComponentId is null ? null : (await Wages.ComponentsAsync()).FirstOrDefault(c => c.Id == ComponentId));
+
+        _model = existing is null
             ? new PayComponent { IsActive = true, ProRateOnAttendance = true }
             : new PayComponent
             {
-                Id = Existing.Id, Name = Existing.Name, Code = Existing.Code,
-                Kind = Existing.Kind, AccountId = Existing.AccountId,
-                ProRateOnAttendance = Existing.ProRateOnAttendance, IsActive = Existing.IsActive
+                Id = existing.Id, Name = existing.Name, Code = existing.Code,
+                Kind = existing.Kind, AccountId = existing.AccountId,
+                ProRateOnAttendance = existing.ProRateOnAttendance, IsActive = existing.IsActive
             };
     }
 
@@ -87,8 +108,19 @@
             if (result.Failed) { _error = result.Error; return; }
 
             Snackbar.Add("Saved.", Severity.Success);
-            Dialog.Close(DialogResult.Ok(true));
+            ComponentId = _model.Id;
+            await Saved.InvokeAsync();
+            if (AsDialog && _shell is not null) await _shell.CloseAsync();
         }
         finally { _busy = false; }
+    }
+
+    private DocumentShell? _shell;
+    
+    /// <summary>The shell has already closed itself; just react to it.</summary>
+    private async Task DismissedAsync()
+    {
+        if (Closed.HasDelegate) { await Closed.InvokeAsync(); return; }
+        Nav.NavigateTo("/finance/payroll/setup");
     }
 }

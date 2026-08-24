@@ -150,6 +150,9 @@ namespace MeiErp.Modules.Finance.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsDirectorRequest")
+                        .HasColumnType("boolean");
+
                     b.Property<decimal?>("JustifiedAmount")
                         .HasColumnType("numeric(18,4)");
 
@@ -205,6 +208,8 @@ namespace MeiErp.Modules.Finance.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("IsDeleted");
+
+                    b.HasIndex("IsDirectorRequest");
 
                     b.HasIndex("Reference")
                         .IsUnique()
@@ -419,6 +424,9 @@ namespace MeiErp.Modules.Finance.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsDirectorRequest")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("ModifiedBy")
                         .HasColumnType("text");
 
@@ -477,6 +485,8 @@ namespace MeiErp.Modules.Finance.Migrations
 
                     b.HasIndex("IsDeleted");
 
+                    b.HasIndex("IsDirectorRequest");
+
                     b.HasIndex("PaidFromAccountId");
 
                     b.HasIndex("Reference")
@@ -488,6 +498,67 @@ namespace MeiErp.Modules.Finance.Migrations
                     b.HasIndex("VoucherId");
 
                     b.ToTable("PaymentRequests", "finance");
+                });
+
+            modelBuilder.Entity("MeiErp.Modules.Finance.PaymentRequestLine", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<string>("Category")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("DeletedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int?>("ExpenseAccountId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("ModifiedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("PaymentRequestId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpenseAccountId");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("PaymentRequestId");
+
+                    b.ToTable("PaymentRequestLines", "finance");
                 });
 
             modelBuilder.Entity("MeiErp.Modules.Finance.PayrollEmployee", b =>
@@ -884,6 +955,69 @@ namespace MeiErp.Modules.Finance.Migrations
                     b.HasIndex("BoxId", "Date");
 
                     b.ToTable("PettyCashEntries", "finance");
+                });
+
+            modelBuilder.Entity("MeiErp.Modules.Finance.PostingRule", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("CreditAccountId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("DebitAccountId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("DeletedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("ModifiedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreditAccountId");
+
+                    b.HasIndex("DebitAccountId");
+
+                    b.HasIndex("EventType")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.ToTable("PostingRules", "finance");
                 });
 
             modelBuilder.Entity("MeiErp.Modules.Finance.Reconciliation", b =>
@@ -1354,6 +1488,10 @@ namespace MeiErp.Modules.Finance.Migrations
                     b.Property<string>("SourceDocumentType")
                         .HasColumnType("text");
 
+                    b.Property<string>("SourceIdempotencyKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<string>("SourceModule")
                         .HasColumnType("text");
 
@@ -1383,6 +1521,10 @@ namespace MeiErp.Modules.Finance.Migrations
                     b.HasIndex("Date", "Status");
 
                     b.HasIndex("SourceModule", "SourceDocumentType", "SourceDocumentId");
+
+                    b.HasIndex("SourceModule", "SourceDocumentType", "SourceIdempotencyKey")
+                        .IsUnique()
+                        .HasFilter("\"SourceIdempotencyKey\" IS NOT NULL AND \"IsDeleted\" = false");
 
                     b.ToTable("Vouchers", "finance");
                 });
@@ -1436,6 +1578,57 @@ namespace MeiErp.Modules.Finance.Migrations
                     b.HasIndex("VoucherId");
 
                     b.ToTable("VoucherLines", "finance");
+                });
+
+            modelBuilder.Entity("MeiErp.Platform.Persistence.AuditLogEntry", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("EntityId")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("EntityName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.Property<string>("ModuleKey")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("NewValues")
+                        .HasColumnType("text");
+
+                    b.Property<string>("OldValues")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("TimestampUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UserId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("UserName")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("AuditLogs", "platform", t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
                 });
 
             modelBuilder.Entity("MeiErp.Platform.Persistence.DocumentSequenceCounter", b =>
@@ -1575,6 +1768,24 @@ namespace MeiErp.Modules.Finance.Migrations
                     b.Navigation("Voucher");
                 });
 
+            modelBuilder.Entity("MeiErp.Modules.Finance.PaymentRequestLine", b =>
+                {
+                    b.HasOne("MeiErp.Modules.Finance.Account", "ExpenseAccount")
+                        .WithMany()
+                        .HasForeignKey("ExpenseAccountId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("MeiErp.Modules.Finance.PaymentRequest", "PaymentRequest")
+                        .WithMany("Lines")
+                        .HasForeignKey("PaymentRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ExpenseAccount");
+
+                    b.Navigation("PaymentRequest");
+                });
+
             modelBuilder.Entity("MeiErp.Modules.Finance.Payslip", b =>
                 {
                     b.HasOne("MeiErp.Modules.Finance.PayrollRun", "Run")
@@ -1624,6 +1835,25 @@ namespace MeiErp.Modules.Finance.Migrations
                     b.Navigation("Box");
 
                     b.Navigation("ExpenseAccount");
+                });
+
+            modelBuilder.Entity("MeiErp.Modules.Finance.PostingRule", b =>
+                {
+                    b.HasOne("MeiErp.Modules.Finance.Account", "CreditAccount")
+                        .WithMany()
+                        .HasForeignKey("CreditAccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("MeiErp.Modules.Finance.Account", "DebitAccount")
+                        .WithMany()
+                        .HasForeignKey("DebitAccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("CreditAccount");
+
+                    b.Navigation("DebitAccount");
                 });
 
             modelBuilder.Entity("MeiErp.Modules.Finance.Reconciliation", b =>
@@ -1738,6 +1968,11 @@ namespace MeiErp.Modules.Finance.Migrations
             modelBuilder.Entity("MeiErp.Modules.Finance.Advance", b =>
                 {
                     b.Navigation("Expenses");
+                });
+
+            modelBuilder.Entity("MeiErp.Modules.Finance.PaymentRequest", b =>
+                {
+                    b.Navigation("Lines");
                 });
 
             modelBuilder.Entity("MeiErp.Modules.Finance.PayrollEmployee", b =>

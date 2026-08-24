@@ -1,0 +1,11 @@
+@page "/finance/accounts/new"
+@page "/finance/accounts/{Id:int}"
+@attribute [Authorize(Policy = FinanceModule.AccountsManage)]
+@rendermode InteractiveServer
+
+@* The dialog and this page render the same editor; only the frame differs. *@
+<AccountEditor AsDialog="false" AccountId="Id" />
+
+@code {
+    [Parameter] public int? Id { get; set; }
+}

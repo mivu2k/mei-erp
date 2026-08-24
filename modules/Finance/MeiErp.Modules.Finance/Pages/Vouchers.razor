@@ -5,28 +5,40 @@
 @inject ISnackbar Snackbar
 @inject IDialogService Dialogs
 
-<PageTitle>Vouchers</PageTitle>
+<ListShell Title="Vouchers"
+           Subtitle="Every entry in the books. A posted voucher cannot be edited — only reversed."
+           Icon="@Icons.Material.Outlined.Receipt"
+           Loading="_loading"
+           IsEmpty="@(_rows.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.Receipt"
+           EmptyTitle="No vouchers yet"
+           EmptyHint="Nothing has posted to the books yet.">
+    <Actions>
+        <AuthorizeView Policy="@FinanceModule.VouchersPost" Context="perms">
+            <Authorized>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+                    New entry
+                </MudButton>
+                <MudTooltip Text="Open as a full page instead">
+                    <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Href="/finance/vouchers/new" />
+                </MudTooltip>
+            </Authorized>
+        </AuthorizeView>
+    </Actions>
 
-<div class="d-flex align-center mb-1">
-    <div>
-        <MudText Typo="Typo.h5">Vouchers</MudText>
-        <MudText Typo="Typo.body2" Class="mud-text-secondary">
-            Every entry in the books. A posted voucher cannot be edited — only reversed.
-        </MudText>
-    </div>
-    <MudSpacer />
-    <AuthorizeView Policy="@FinanceModule.VouchersPost" Context="perms">
-        <Authorized>
-            <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                       StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
-                New entry
-            </MudButton>
-        </Authorized>
-    </AuthorizeView>
-</div>
+    <EmptyAction>
+        <AuthorizeView Policy="@FinanceModule.VouchersPost" Context="perms">
+            <Authorized>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+                    New entry
+                </MudButton>
+            </Authorized>
+        </AuthorizeView>
+    </EmptyAction>
 
-<MudPaper Outlined="true" Elevation="0" Class="mt-4">
-    <MudToolBar Dense="true">
+    <Toolbar>
         <MudSelect T="VoucherStatus?" @bind-Value="_status" @bind-Value:after="LoadAsync"
                    Label="Status" Clearable="true" Variant="Variant.Text"
                    Margin="Margin.Dense" Class="mt-0" Style="max-width:180px">
@@ -39,10 +51,11 @@
                       Placeholder="Search number or narration" DebounceInterval="300"
                       Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
                       Variant="Variant.Text" Margin="Margin.Dense" Class="mt-0 ml-4" />
-    </MudToolBar>
+    </Toolbar>
 
+    <ChildContent>
     <MudDataGrid T="Voucher" Items="_rows" Dense="true" Hover="true" Elevation="0"
-                 Loading="_loading" Filterable="false" RowsPerPage="25">
+                 Filterable="false" RowsPerPage="25">
         <Columns>
             <PropertyColumn Property="@(v => v.Number)" Title="Number" />
             <TemplateColumn Title="Date">
@@ -78,8 +91,12 @@
             <TemplateColumn Title="" Sortable="false">
                 <CellTemplate>
                     <div class="d-flex justify-end gap-1">
+                        <MudIconButton Icon="@Icons.Material.Outlined.Print" Href="@($"/print/finance/voucher/{context.Item.Id}")" Target="_blank" />
                         @if (context.Item.Status == VoucherStatus.Draft)
                         {
+                            <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small"
+                                           Href="@($"/finance/vouchers/{context.Item.Id}")"
+                                           title="Open as a page" />
                             <MudButton Size="Size.Small" Variant="Variant.Text"
                                        OnClick="@(() => Edit(context.Item))">Edit</MudButton>
                             <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
@@ -95,7 +112,14 @@
             </TemplateColumn>
         </Columns>
     </MudDataGrid>
-</MudPaper>
+    </ChildContent>
+</ListShell>
+
+@if (_editing)
+{
+    <VoucherEditor AsDialog="true" VoucherId="_editingId"
+                   Saved="LoadAsync" Closed="@(() => { _editing = false; return Task.CompletedTask; })" />
+}
 
 @code {
     private IReadOnlyList<Voucher> _rows = [];
@@ -112,14 +136,13 @@
         _loading = false;
     }
 
-    private async Task Edit(Voucher? row)
-    {
-        var parameters = new DialogParameters<VoucherEditor> { { x => x.VoucherId, row?.Id } };
-        var dialog = await Dialogs.ShowAsync<VoucherEditor>(
-            row is null ? "New entry" : "Edit entry", parameters,
-            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+    private bool _editing;
+    private int? _editingId;
 
-        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    private void Edit(Voucher? row)
+    {
+        _editingId = row?.Id;
+        _editing = true;
     }
 
     private async Task Post(Voucher row)

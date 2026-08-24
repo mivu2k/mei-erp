@@ -1,0 +1,21 @@
+@inject IAttendanceService Attendance
+@inject ISnackbar Snackbar
+<MudDialog><DialogContent>
+    <MudText Typo="Typo.body2" Class="mb-3">@Day.Employee?.FullName — @Day.Date.ToString("d MMM yyyy")</MudText>
+    <div class="d-flex gap-3"><MudTimePicker Label="First in" Time="_first" TimeChanged="@(v => _first = v)" /><MudTimePicker Label="Last out" Time="_last" TimeChanged="@(v => _last = v)" /></div>
+    <MudSelect T="AttendanceStatus" @bind-Value="_status" Label="Status" Variant="Variant.Outlined" Class="mt-3">@foreach (var status in Enum.GetValues<AttendanceStatus>()) { <MudSelectItem Value="@status">@status</MudSelectItem> }</MudSelect>
+    <MudTextField @bind-Value="_reason" Label="Reason" Required="true" Lines="2" Variant="Variant.Outlined" Class="mt-3" />
+    <MudTextField @bind-Value="_notes" Label="Notes" Lines="2" Variant="Variant.Outlined" Class="mt-3" />
+    @if (_error is not null) { <MudAlert Severity="Severity.Error" Class="mt-3">@_error</MudAlert> }
+</DialogContent><DialogActions>
+    @if (Day.Source == AttendanceSource.Manual) { <MudButton Color="Color.Warning" OnClick="RevertAsync">Revert to device</MudButton> }
+    <MudSpacer/><MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton><MudButton Variant="Variant.Filled" OnClick="SaveAsync">Save</MudButton>
+</DialogActions></MudDialog>
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public AttendanceDay Day { get; set; } = default!;
+    private TimeSpan? _first; private TimeSpan? _last; private AttendanceStatus _status; private string _reason = ""; private string? _notes; private string? _error;
+    protected override void OnInitialized() { _first = Day.FirstIn?.ToTimeSpan(); _last = Day.LastOut?.ToTimeSpan(); _status = Day.Status; _notes = Day.Notes; }
+    private async Task SaveAsync() { var result = await Attendance.SaveManualAsync(new(Day.EmployeeId, Day.Date, _first is null ? null : TimeOnly.FromTimeSpan(_first.Value), _last is null ? null : TimeOnly.FromTimeSpan(_last.Value), _status, _reason, _notes)); if (result.Failed) { _error = result.Error; return; } Snackbar.Add("Attendance corrected.", Severity.Success); Dialog.Close(DialogResult.Ok(true)); }
+    private async Task RevertAsync() { var result = await Attendance.RevertAsync(Day.Id); if (result.Failed) { _error = result.Error; return; } Dialog.Close(DialogResult.Ok(true)); }
+}

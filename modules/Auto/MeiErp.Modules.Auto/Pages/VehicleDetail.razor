@@ -1,0 +1,149 @@
+@page "/auto/vehicles/{Id:int}"
+@attribute [Authorize(Policy = AutoModule.VehiclesView)]
+@rendermode InteractiveServer
+@inject IFleetService Fleet
+@inject IClock Clock
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_vehicle is null ? "Vehicle" : _vehicle.Registration)</PageTitle>
+
+@if (_vehicle is null)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <div class="d-flex align-center mb-4 gap-2">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/auto/vehicles" />
+        <div>
+            <MudText Typo="Typo.h5">@_vehicle.Registration</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                @_vehicle.Make @_vehicle.Model @(_vehicle.Year is null ? "" : $"({_vehicle.Year})")
+            </MudText>
+        </div>
+        <MudSpacer />
+        <MudIconButton Icon="@Icons.Material.Outlined.Print"
+                       Href="@($"/print/auto/vehicle/{_vehicle.Id}")" Target="_blank" />
+        <AuthorizeView Policy="@AutoModule.VehiclesManage">
+            <Authorized>
+                <MudButton Variant="Variant.Outlined" OnClick="Edit">Edit</MudButton>
+            </Authorized>
+        </AuthorizeView>
+    </div>
+
+    <MudGrid>
+        <MudItem xs="12" md="5">
+            <MudPaper Outlined="true" Class="pa-4">
+                <MudText Typo="Typo.subtitle1">Vehicle details</MudText>
+                <MudList T="string" Dense="true">
+                    <MudListItem T="string" Text="Assigned to" SecondaryText="@(_vehicle.AssignedTo ?? "—")" />
+                    <MudListItem T="string" Text="Color" SecondaryText="@(_vehicle.Color ?? "—")" />
+                    <MudListItem T="string" Text="Chassis / VIN" SecondaryText="@(_vehicle.ChassisNumber ?? "—")" />
+                    <MudListItem T="string" Text="Engine number" SecondaryText="@(_vehicle.EngineNumber ?? "—")" />
+                    <MudListItem T="string" Text="Current odometer" SecondaryText="@(_vehicle.CurrentOdometer?.ToString("N0") ?? "—")" />
+                    <MudListItem T="string" Text="Purchase date" SecondaryText="@(_vehicle.PurchasedOn?.ToString() ?? "—")" />
+                    <MudListItem T="string" Text="Purchase cost" SecondaryText="@(_vehicle.PurchaseCost?.ToString("N2") ?? "—")" />
+                    <MudListItem T="string" Text="Status" SecondaryText="@_vehicle.Status.ToString()" />
+                    <MudListItem T="string" Text="Registration expiry" SecondaryText="@(_vehicle.RegistrationExpiry?.ToString() ?? "—")" />
+                    <MudListItem T="string" Text="Insurance expiry" SecondaryText="@(_vehicle.InsuranceExpiry?.ToString() ?? "—")" />
+                </MudList>
+                @if (!string.IsNullOrWhiteSpace(_vehicle.Notes))
+                {
+                    <MudText Typo="Typo.body2" Class="mt-2">@_vehicle.Notes</MudText>
+                }
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="7">
+            <MudPaper Outlined="true" Class="pa-4">
+                <div class="d-flex align-center mb-2">
+                    <MudText Typo="Typo.subtitle1">Service history</MudText>
+                    <MudSpacer />
+                    <AuthorizeView Policy="@AutoModule.ServicesManage">
+                        <Authorized>
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AddService">
+                                Log service
+                            </MudButton>
+                        </Authorized>
+                    </AuthorizeView>
+                </div>
+                <MudTable Items="_services" Dense="true" Hover="true">
+                    <HeaderContent>
+                        <MudTh>Date</MudTh><MudTh>Kind</MudTh><MudTh>Description</MudTh>
+                        <MudTh>Odometer</MudTh><MudTh>Cost</MudTh><MudTh>Next due</MudTh><MudTh></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.Date</MudTd>
+                        <MudTd>@context.Kind</MudTd>
+                        <MudTd>@context.Description</MudTd>
+                        <MudTd>@(context.Odometer?.ToString("N0") ?? "—")</MudTd>
+                        <MudTd>@context.Cost.ToString("N2")</MudTd>
+                        <MudTd>@(context.NextDueDate?.ToString() ?? "—")</MudTd>
+                        <MudTd>
+                            <AuthorizeView Policy="@AutoModule.ServicesManage" Context="auth">
+                                <Authorized>
+                                    <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small"
+                                                   OnClick="@(() => EditService(context))" />
+                                    <MudIconButton Icon="@Icons.Material.Outlined.Delete" Color="Color.Error" Size="Size.Small"
+                                                   OnClick="@(() => DeleteServiceAsync(context))" />
+                                </Authorized>
+                            </AuthorizeView>
+                        </MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent><MudText Class="pa-4 mud-text-secondary">No service records yet.</MudText></NoRecordsContent>
+                </MudTable>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    @if (_editing)
+    {
+        <VehicleEditor AsDialog="true" VehicleId="Id"
+                        Saved="LoadAsync" Closed="@(() => { _editing = false; return Task.CompletedTask; })" />
+    }
+
+    @if (_addingService || _editingServiceId is not null)
+    {
+        <ServiceEditor AsDialog="true" VehicleId="Id" ServiceId="_editingServiceId"
+                        Registration="_vehicle.Registration" LastOdometer="_vehicle.CurrentOdometer"
+                        Saved="LoadAsync"
+                        Closed="@(() => { _addingService = false; _editingServiceId = null; return Task.CompletedTask; })" />
+    }
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+    private Vehicle? _vehicle;
+    private IReadOnlyList<VehicleService> _services = [];
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _vehicle = await Fleet.GetAsync(Id);
+        if (_vehicle is null)
+        {
+            Nav.NavigateTo("/not-found");
+            return;
+        }
+        _services = await Fleet.ServicesAsync(Id);
+    }
+
+    private bool _editing;
+    private bool _addingService;
+    private int? _editingServiceId;
+
+    private void Edit() => _editing = true;
+
+    private void AddService() => _addingService = true;
+
+    private void EditService(VehicleService service) => _editingServiceId = service.Id;
+
+    private async Task DeleteServiceAsync(VehicleService service)
+    {
+        var result = await Fleet.DeleteServiceAsync(service.Id);
+        Snackbar.Add(result.Ok ? "Service record removed." : result.Error!,
+            result.Ok ? Severity.Success : Severity.Error);
+        if (result.Ok) await LoadAsync();
+    }
+}

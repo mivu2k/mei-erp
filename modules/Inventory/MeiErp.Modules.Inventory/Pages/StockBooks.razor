@@ -1,0 +1,155 @@
+@page "/inventory/domains"
+@attribute [Authorize(Policy = InventoryModule.DomainsManage)]
+@rendermode InteractiveServer
+@inject IStockDomainService Books
+@inject ISnackbar Snackbar
+
+<ListShell Title="Stock books"
+           Subtitle="Each book keeps its own items, warehouses, stock figures and valuation. Nothing is ever counted across two of them."
+           Icon="@Icons.Material.Outlined.LibraryBooks"
+           Loading="_loading"
+           IsEmpty="@(_rows.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.LibraryBooks"
+           EmptyTitle="No stock books yet"
+           EmptyHint="Add a stock book to keep a second store's items, warehouses and figures apart from the main one.">
+    <Actions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="@(() => Open(null))">New stock book</MudButton>
+    </Actions>
+
+    <EmptyAction>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="@(() => Open(null))">New stock book</MudButton>
+    </EmptyAction>
+
+    <ChildContent>
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="ma-3">
+        An item belongs to one book for its whole life, so stock cannot be
+        transferred between books. Moving goods from one to the other is a sale out
+        of the first and a purchase into the second — which is also how the money
+        should read.
+    </MudAlert>
+
+    <MudDataGrid T="StockDomain" Items="_rows" Dense="true" Hover="true"
+                 Elevation="0" Filterable="false">
+        <Columns>
+            <PropertyColumn Property="@(x => x.Code)" Title="Code" />
+            <TemplateColumn Title="Book" SortBy="@(x => x.Name)">
+                <CellTemplate>
+                    <MudText Typo="Typo.body2"><b>@context.Item.Name</b></MudText>
+                    @if (!string.IsNullOrWhiteSpace(context.Item.Description))
+                    {
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                            @context.Item.Description
+                        </MudText>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="" Sortable="false">
+                <CellTemplate>
+                    <div class="d-flex justify-end align-center gap-2">
+                        @if (context.Item.IsDefault)
+                        {
+                            <MudTooltip Text="Screens open on this book unless another is chosen">
+                                <MudChip T="string" Size="Size.Small" Color="Color.Primary"
+                                         Variant="Variant.Text">Default</MudChip>
+                            </MudTooltip>
+                        }
+                        @if (!context.Item.IsActive)
+                        {
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text">Inactive</MudChip>
+                        }
+                        <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small"
+                                       OnClick="@(() => Open(context.Item))" />
+                    </div>
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+    </MudDataGrid>
+    </ChildContent>
+</ListShell>
+
+@if (_editing is not null)
+{
+    <MudDialog Visible="true" Options="_dialogOptions" VisibleChanged="@(v => { if (!v) _editing = null; })">
+        <TitleContent>@(_editing.Id == 0 ? "New stock book" : _editing.Name)</TitleContent>
+        <DialogContent>
+            @if (_error is not null)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@_error</MudAlert>
+            }
+
+            <MudTextField @bind-Value="_editing.Code" Label="Code" Variant="Variant.Outlined"
+                          Class="mb-3" Disabled="@(_editing.Id != 0)"
+                          HelperText="Short handle, e.g. MAIN or SPARE. Fixed once the book is in use." />
+            <MudTextField @bind-Value="_editing.Name" Label="Name" Variant="Variant.Outlined" Class="mb-3" />
+            <MudTextField @bind-Value="_editing.Description" Label="Description"
+                          Variant="Variant.Outlined" Lines="2" Class="mb-3" />
+            <MudSwitch T="bool" @bind-Value="_editing.IsDefault" Color="Color.Primary"
+                       Label="Screens open on this book by default" />
+            <MudSwitch T="bool" @bind-Value="_editing.IsActive" Color="Color.Primary" Label="Active" />
+        </DialogContent>
+        <DialogActions>
+            <MudButton OnClick="@(() => _editing = null)">Cancel</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
+        </DialogActions>
+    </MudDialog>
+}
+
+@code {
+    private static readonly DialogOptions _dialogOptions =
+        new() { MaxWidth = MaxWidth.Small, FullWidth = true };
+
+    private IReadOnlyList<StockDomain> _rows = [];
+    private StockDomain? _editing;
+    private string? _error;
+    private bool _loading = true, _busy;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _rows = await Books.ListAsync();
+        _loading = false;
+    }
+
+    private void Open(StockDomain? row)
+    {
+        _error = null;
+
+        // A copy, so cancelling leaves the row in the grid untouched.
+        _editing = row is null
+            ? new StockDomain { IsActive = true }
+            : new StockDomain
+            {
+                Id = row.Id,
+                Code = row.Code,
+                Name = row.Name,
+                Description = row.Description,
+                IsDefault = row.IsDefault,
+                IsActive = row.IsActive
+            };
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_editing is null) return;
+
+        _busy = true;
+        _error = null;
+
+        var result = await Books.SaveAsync(_editing);
+
+        _busy = false;
+
+        if (!result.Ok) { _error = result.Error; return; }
+
+        _editing = null;
+        Snackbar.Add("Stock book saved.", Severity.Success);
+        await LoadAsync();
+    }
+}

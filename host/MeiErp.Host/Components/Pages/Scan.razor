@@ -1,0 +1,171 @@
+@page "/scan"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject IEnumerable<IScanResolver> Resolvers
+@inject IModuleCatalog Catalog
+@inject ICurrentUser User
+@inject NavigationManager Nav
+@inject ILogger<Scan> Log
+
+@*
+    One scan screen for the whole suite.
+
+    The person at the counter holds a scanner, not a mental map of which module
+    owns which sticker. Every module that has something scannable contributes an
+    IScanResolver; this page asks all of them and shows what came back. Nothing
+    here knows a single module by name.
+*@
+
+<PageTitle>Scan</PageTitle>
+
+<div class="app-page-header d-flex align-center mb-4">
+    <div>
+        <MudText Typo="Typo.h5">Scan</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            Any code in the suite - a job, a file, a serial, a gate pass, a document.
+            Scan it or type it and press Enter.
+        </MudText>
+    </div>
+</div>
+
+<MudPaper Outlined="true" Elevation="0" Class="app-detail-surface pa-6" Style="max-width:720px">
+    <MudTextField @ref="_field" @bind-Value="_code" Label="Barcode or number"
+                  Immediate="true" AutoFocus="true" Disabled="_busy"
+                  Adornment="Adornment.Start"
+                  AdornmentIcon="@Icons.Material.Outlined.QrCodeScanner"
+                  OnKeyDown="Key" />
+
+    @if (_busy)
+    {
+        <MudProgressLinear Indeterminate="true" Class="mt-3" />
+    }
+
+    @if (_message is not null)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mt-4">@_message</MudAlert>
+    }
+
+    @if (_broken.Count > 0)
+    {
+        @* One module failing must not look like "nothing matches" - that would
+           send somebody away believing the record does not exist. *@
+        <MudAlert Severity="Severity.Error" Class="mt-4">
+            Could not search @string.Join(", ", _broken.Select(ModuleName)). Anything there will not be listed.
+        </MudAlert>
+    }
+</MudPaper>
+
+@if (_hits.Count > 1)
+{
+    <MudText Typo="Typo.subtitle2" Class="mt-6 mb-2">
+        @_hits.Count matches for "@_scanned" - pick the right one.
+    </MudText>
+
+    <MudPaper Outlined="true" Elevation="0" Class="app-detail-surface" Style="max-width:720px">
+        <MudList T="string" Dense="false">
+            @foreach (var group in _hits.GroupBy(h => h.ModuleKey))
+            {
+                <MudListSubheader>@ModuleName(group.Key)</MudListSubheader>
+
+                @foreach (var hit in group)
+                {
+                    <MudListItem T="string" Href="@hit.Url" Icon="@ResolveIcon(hit.Icon)">
+                        <MudText Typo="Typo.body1">@hit.Title</MudText>
+                        @if (hit.Subtitle is { Length: > 0 })
+                        {
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">@hit.Subtitle</MudText>
+                        }
+                    </MudListItem>
+                }
+            }
+        </MudList>
+    </MudPaper>
+}
+
+@code {
+    private MudTextField<string>? _field;
+    private string? _code;
+    private string _scanned = "";
+    private string? _message;
+    private bool _busy;
+
+    private readonly List<ScanHit> _hits = [];
+    private readonly List<string> _broken = [];
+
+    private async Task Key(KeyboardEventArgs e)
+    {
+        if (e.Key is "Enter" or "NumpadEnter") await Lookup();
+    }
+
+    private async Task Lookup()
+    {
+        var code = _code?.Trim() ?? "";
+        if (code.Length == 0 || _busy) return;
+
+        _busy = true;
+        _scanned = code;
+        _message = null;
+        _hits.Clear();
+        _broken.Clear();
+
+        try
+        {
+            // Sequentially, deliberately. A Blazor Server circuit shares one
+            // DbContext per module, and two queries in flight on the same
+            // context throw. Task.WhenAll over the resolvers would look faster
+            // and fail under the first person who scans anything.
+            foreach (var resolver in Resolvers)
+            {
+                // A module the person may not enter is not searched at all -
+                // no query, and nothing to leak in the results.
+                if (!User.InModule(resolver.ModuleKey)) continue;
+
+                try
+                {
+                    var found = await resolver.ResolveAsync(code);
+
+                    // The target page will demand this permission anyway;
+                    // listing a hit that opens onto a refusal is worse than not
+                    // listing it, because it confirms the record exists.
+                    _hits.AddRange(found.Where(h => h.Permission is null || User.Can(h.Permission)));
+                }
+                catch (Exception ex)
+                {
+                    // One broken module must not take scanning down for the
+                    // other six. Recorded on screen and logged, not swallowed.
+                    Log.LogError(ex, "Scan resolver for module {Module} failed on code {Code}.",
+                        resolver.ModuleKey, code);
+                    _broken.Add(resolver.ModuleKey);
+                }
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+
+        if (_hits.Count == 1)
+        {
+            // The whole point of the screen, with a queue waiting.
+            Nav.NavigateTo(_hits[0].Url);
+            return;
+        }
+
+        if (_hits.Count == 0 && _broken.Count == 0)
+            _message = $"Nothing matches '{code}'.";
+
+        // Cleared and focused for the next scan either way.
+        _code = "";
+        if (_field is not null) await _field.FocusAsync();
+    }
+
+    private string ModuleName(string key) => Catalog.Find(key)?.Name ?? key;
+
+    private static string ResolveIcon(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return Icons.Material.Outlined.QrCode2;
+
+        var field = typeof(Icons.Material.Outlined).GetField(name);
+        return field?.GetValue(null) as string ?? Icons.Material.Outlined.QrCode2;
+    }
+}

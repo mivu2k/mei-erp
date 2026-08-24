@@ -1,0 +1,32 @@
+@page "/admin/labels"
+@attribute [Authorize(Policy = PlatformPermissions.LabelsManage)]
+@rendermode InteractiveServer
+@inject ILabelTemplateService Templates
+@inject AuthenticationStateProvider Authentication
+@inject ISnackbar Snackbar
+
+<PageTitle>Label templates</PageTitle>
+<div class="d-flex align-center mb-4"><MudText Typo="Typo.h5">Label templates</MudText><MudSpacer/><MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="New">New template</MudButton></div>
+<MudAlert Severity="Severity.Info" Class="mb-4">Set the printer stock size and choose which device fields appear. The default is used by Repair label buttons; a specific template can be selected with <code>?template=id</code>.</MudAlert>
+<MudTable Items="_rows" Dense Hover>
+ <HeaderContent><MudTh>Name</MudTh><MudTh>Size (mm)</MudTh><MudTh>Fields</MudTh><MudTh>Codes</MudTh><MudTh>Default</MudTh><MudTh></MudTh></HeaderContent>
+ <RowTemplate><MudTd>@context.Name</MudTd><MudTd>@context.WidthMm × @(context.HeightMm?.ToString("0.##")??"continuous")</MudTd><MudTd>@string.Join(", ",context.SelectedFields())</MudTd><MudTd>@(context.ShowBarcode?"Barcode ":"")@(context.ShowQrCode?"QR":"")</MudTd><MudTd>@(context.IsDefault?"Yes":"—")</MudTd><MudTd><MudIconButton Icon="@Icons.Material.Filled.Edit" OnClick="@(()=>Edit(context))"/><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(()=>Delete(context.Id))"/></MudTd></RowTemplate>
+</MudTable>
+@if(_edit is not null)
+{
+ <MudPaper Class="pa-4 mt-4"><MudText Typo="Typo.h6">@(_edit.Id==0?"New label template":"Edit label template")</MudText>
+ <MudGrid Spacing="2"><MudItem xs="12" md="4"><MudTextField @bind-Value="_edit.Name" Label="Name"/></MudItem><MudItem xs="4" md="2"><MudNumericField @bind-Value="_edit.WidthMm" Label="Width mm"/></MudItem><MudItem xs="4" md="2"><MudNumericField @bind-Value="_edit.HeightMm" Label="Height mm" Clearable HelperText="Blank = continuous"/></MudItem><MudItem xs="4" md="2"><MudNumericField @bind-Value="_edit.MarginMm" Label="Margin mm"/></MudItem><MudItem xs="4" md="2"><MudNumericField @bind-Value="_edit.FontScale" Label="Font scale" Min="0.5M" Max="3M"/></MudItem>
+ <MudItem xs="12"><MudText Typo="Typo.subtitle2">Fields, in print order</MudText>@foreach(var field in _available){<MudCheckBox T="bool" Label="@field.Label" Value="@_chosen.Contains(field.Key)" ValueChanged="@(on=>Toggle(field.Key,on))"/>}</MudItem>
+ <MudItem xs="12"><MudSwitch @bind-Value="_edit.ShowTitle" Label="Title"/><MudSwitch @bind-Value="_edit.ShowCompanyName" Label="Company"/><MudSwitch @bind-Value="_edit.ShowBarcode" Label="Barcode"/><MudSwitch @bind-Value="_edit.ShowQrCode" Label="QR code"/><MudSwitch @bind-Value="_edit.IsDefault" Label="Default"/></MudItem></MudGrid>
+ <div class="d-flex justify-end gap-2"><MudButton OnClick="Cancel">Cancel</MudButton><MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">Save</MudButton></div></MudPaper>
+}
+@code{
+ private List<LabelTemplate> _rows=[];private LabelTemplate? _edit;private List<string> _chosen=[];private IReadOnlyList<LabelField> _available=[];
+ protected override async Task OnInitializedAsync()=>_rows=await Templates.ListAsync();
+ private void New()=>Edit(new LabelTemplate{Name="Device label",DocumentType=LabelDocumentTypes.RepairDevice,IsDefault=_rows.Count==0});
+ private void Edit(LabelTemplate row){_edit=new(){Id=row.Id,Name=row.Name,DocumentType=row.DocumentType,WidthMm=row.WidthMm,HeightMm=row.HeightMm,MarginMm=row.MarginMm,FieldKeys=row.FieldKeys,ShowTitle=row.ShowTitle,ShowCompanyName=row.ShowCompanyName,ShowBarcode=row.ShowBarcode,ShowQrCode=row.ShowQrCode,FontScale=row.FontScale,IsDefault=row.IsDefault};_chosen=_edit.SelectedFields().ToList();_available=LabelFieldCatalog.For(_edit.DocumentType);}
+ private void Toggle(string key,bool on){if(on&&!_chosen.Contains(key))_chosen.Add(key);if(!on)_chosen.Remove(key);}
+ private void Cancel()=>_edit=null;
+ private async Task Save(){try{_edit!.FieldKeys=string.Join(',',_chosen);var user=(await Authentication.GetAuthenticationStateAsync()).User.Identity?.Name;await Templates.SaveAsync(_edit,user);_edit=null;_rows=await Templates.ListAsync();Snackbar.Add("Label template saved.",Severity.Success);}catch(Exception ex){Snackbar.Add(ex.Message,Severity.Error);}}
+ private async Task Delete(int id){await Templates.DeleteAsync(id);_rows=await Templates.ListAsync();Snackbar.Add("Label template deleted.",Severity.Success);}
+}

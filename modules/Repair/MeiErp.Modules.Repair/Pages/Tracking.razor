@@ -1,0 +1,8 @@
+@page "/repair/tracking"
+@attribute [Authorize(Policy = RepairModule.JobsView)]
+@rendermode InteractiveServer
+@inject IRepairService Workshop
+<PageTitle>Repair tracking</PageTitle>
+<MudText Typo="Typo.h5">Workshop tracking</MudText><MudText Typo="Typo.body2" Class="mb-4">Every open device, grouped by its current stage.</MudText>
+<MudGrid>@foreach(var stage in JobWorkflow.Open){var rows=_jobs.Where(x=>x.Status==stage).OrderBy(x=>x.ModifiedUtc??x.CreatedUtc).ToList();<MudItem xs="12" sm="6" lg="@ColumnWidth"><MudPaper Class="pa-3" Style="height:100%"><div class="d-flex"><MudText Typo="Typo.subtitle1">@stage</MudText><MudSpacer/><MudChip T="int" Size="Size.Small">@rows.Count</MudChip></div>@foreach(var j in rows){var since=j.ModifiedUtc??j.CreatedUtc;var age=Math.Max(0,(Clock.UtcNow-since).TotalDays);<MudPaper Class="pa-2 mt-2" Outlined="true"><MudLink Href="@($"/repair/jobs?search={j.Number}")"><b>@j.Number</b></MudLink><MudText Typo="Typo.caption" Class="d-block">@j.DeviceType @j.Make @j.Model</MudText><MudText Typo="Typo.caption" Class="d-block">@j.CustomerName</MudText><MudText Typo="Typo.caption" Color="@(age>7?Color.Error:Color.Default)">@age.ToString("0") day(s) here · @j.Priority</MudText></MudPaper>}</MudPaper></MudItem>}</MudGrid>
+@code{private IReadOnlyList<Job> _jobs=[];private int ColumnWidth=>JobWorkflow.Open.Count<=4?3:4;protected override async Task OnInitializedAsync()=>_jobs=await Workshop.ListAsync(null,null);}

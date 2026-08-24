@@ -1,0 +1,7 @@
+[Unit]
+Description=Check MEI ERP health
+[Service]
+Type=oneshot
+User=meierp
+Environment=MEIERP_BASE_URL=http://127.0.0.1:5090
+ExecStart=/opt/mei-erp/current/ops/monitor.sh

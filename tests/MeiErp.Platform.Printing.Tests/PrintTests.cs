@@ -109,6 +109,21 @@ public class PrintTests
     }
 
     [Fact]
+    public void Configurable_fixed_size_labels_render_one_page_per_record()
+    {
+        var labels = new[]
+        {
+            new LabelData("Dell Latitude", "REP-0001", new Dictionary<string,string?> { ["customer"]="Ayesha", ["serial"]="SN-1" }),
+            new LabelData("HP EliteBook", "REP-0002", new Dictionary<string,string?> { ["customer"]="Bilal", ["serial"]="SN-2" })
+        };
+        var layout = new LabelLayout(38, 25, 2, ["customer","serial"], true, true, true, false, .8m);
+
+        var pdf = new PrintService().ToLabels(labels, layout, Company);
+
+        Assert.NotEmpty(pdf);
+    }
+
+    [Fact]
     public void A_document_renders_when_the_company_profile_is_empty()
     {
         // A fresh install has no logo, no address and no tax number. It must

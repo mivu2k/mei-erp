@@ -1,0 +1,116 @@
+@inject ITradeStockPort Stock
+
+@*
+    Goods coming back, one direction at a time.
+
+    A customer return puts stock back on the shelf; a supplier return sends it
+    off. The arithmetic is a mirror image, so one screen filtered by side beats
+    two that would drift apart.
+
+    The stock rules behind it - serial status, batch quantities, refusing to
+    send back more than is held - live with the stock in Inventory. This screen
+    only gathers the document.
+*@
+
+<ListShell Title="@Title"
+           Subtitle="@Subtitle"
+           Icon="@Icons.Material.Outlined.AssignmentReturn"
+           Loading="_loading"
+           IsEmpty="@(_rows.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.AssignmentReturn"
+           EmptyTitle="Nothing returned yet"
+           EmptyHint="@EmptyHint">
+    <Actions>
+        @if (CanPost)
+        {
+            @* Both routes into the same editor: a dialog to keep your place in
+               the list, a page for a link or a fresh tab. Neither is forced. *@
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => _editing = true)">
+                Record @Noun
+            </MudButton>
+            <MudTooltip Text="Open as a full page instead">
+                <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew"
+                               Href="@($"{BasePath}/returns/new")" />
+            </MudTooltip>
+        }
+    </Actions>
+
+    <Stats>
+        @if (_rows.Count > 0)
+        {
+            <StatTile Label="Returns" Value="@_rows.Count.ToString()" />
+            <StatTile Label="Value" Value="@_rows.Sum(x => x.Total).ToString("N2")" />
+            <StatTile Label="Lines" Value="@_rows.Sum(x => x.LineCount).ToString()" />
+        }
+    </Stats>
+
+    <EmptyAction>
+        @if (CanPost)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => _editing = true)">
+                Record @Noun
+            </MudButton>
+        }
+    </EmptyAction>
+
+    <ChildContent>
+        <MudDataGrid T="TradeReturn" Items="_rows" Dense="true" Hover="true"
+                     Elevation="0" Filterable="false" RowsPerPage="25">
+            <Columns>
+                <PropertyColumn Property="@(x => x.Number)" Title="Number" />
+                <TemplateColumn Title="Date" SortBy="@(x => x.Date)">
+                    <CellTemplate>@context.Item.Date.ToString("d MMM yyyy")</CellTemplate>
+                </TemplateColumn>
+                <PropertyColumn Property="@(x => x.PartyName)" Title="@PartyHeading" />
+                <PropertyColumn Property="@(x => x.SourceReference)" Title="Against" />
+                <PropertyColumn Property="@(x => x.Reason)" Title="Reason" />
+                <TemplateColumn Title="Lines" HeaderClass="text-right" CellClass="text-right">
+                    <CellTemplate>@context.Item.LineCount</CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Value" HeaderClass="text-right" CellClass="text-right">
+                    <CellTemplate>
+                        <span style="font-variant-numeric:tabular-nums">@context.Item.Total.ToString("N2")</span>
+                    </CellTemplate>
+                </TemplateColumn>
+            </Columns>
+        </MudDataGrid>
+    </ChildContent>
+</ListShell>
+
+@if (_editing)
+{
+    <ReturnEditor AsDialog="true" SupplierReturns="SupplierReturns"
+                  Saved="LoadAsync" Closed="@(() => { _editing = false; return Task.CompletedTask; })" />
+}
+
+@code {
+    [Parameter] public bool SupplierReturns { get; set; }
+    [Parameter] public bool CanPost { get; set; }
+
+    private string BasePath => SupplierReturns ? "/purchase" : "/sales";
+    private string PartyHeading => SupplierReturns ? "Supplier" : "Customer";
+    private string Noun => SupplierReturns ? "supplier return" : "customer return";
+    private string Title => SupplierReturns ? "Supplier returns" : "Customer returns";
+
+    private string Subtitle => SupplierReturns
+        ? "Faulty or surplus goods going back. Stock comes off the shelf."
+        : "Goods a customer has sent back. Stock goes onto the shelf.";
+
+    private string EmptyHint => SupplierReturns
+        ? "When goods go back to a supplier, record it here so the stock figure and the reason both survive."
+        : "When a customer sends goods back, record it here so the stock figure and the reason both survive.";
+
+    private IReadOnlyList<TradeReturn> _rows = [];
+    private bool _loading = true, _editing;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _rows = await Stock.ReturnsAsync(SupplierReturns);
+        _loading = false;
+    }
+}

@@ -1,0 +1,11 @@
+@page "/finance/utilities/bills/new"
+@page "/finance/utilities/bills/{Id:int}"
+@attribute [Authorize(Policy = FinanceModule.UtilitiesManage)]
+@rendermode InteractiveServer
+
+@* The dialog and this page render the same editor; only the frame differs. *@
+<BillEditor AsDialog="false" BillId="Id" />
+
+@code {
+    [Parameter] public int? Id { get; set; }
+}

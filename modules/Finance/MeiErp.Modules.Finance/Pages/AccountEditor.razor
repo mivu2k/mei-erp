@@ -1,59 +1,67 @@
 @inject IAccountService Accounts
 @inject ISnackbar Snackbar
+@inject NavigationManager Nav
 
-<MudDialog>
-    <DialogContent>
+<DocumentShell @ref="_shell" AsDialog="AsDialog" Title="@Title" Error="@_error" OnClose="DismissedAsync">
+    <Body>
         <MudForm @ref="_form">
-            <div class="d-flex gap-3 mb-4">
-                <MudTextField @bind-Value="_model.Code" Label="Code" Required="true"
-                              RequiredError="Give it a code." Variant="Variant.Outlined" />
-                <MudSelect T="AccountType" @bind-Value="_model.Type" Label="Type"
-                           Variant="Variant.Outlined">
-                    @foreach (var t in Enum.GetValues<AccountType>())
-                    {
-                        <MudSelectItem Value="@t">@t</MudSelectItem>
-                    }
-                </MudSelect>
-            </div>
+            <FormSection Title="The head" Icon="@Icons.Material.Outlined.AccountBalance"
+                         Hint="Type decides which side of the trial balance and which statement it lands on.">
+                <div class="app-form-grid">
+                    <MudTextField @bind-Value="_model.Code" Label="Code" Required="true"
+                                  RequiredError="Give it a code." Variant="Variant.Outlined" />
+                    <MudSelect T="AccountType" @bind-Value="_model.Type" Label="Type"
+                               Variant="Variant.Outlined">
+                        @foreach (var t in Enum.GetValues<AccountType>())
+                        {
+                            <MudSelectItem Value="@t">@t</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudTextField @bind-Value="_model.Name" Label="Name" Required="true"
+                                  RequiredError="Give it a name." Variant="Variant.Outlined"
+                                  Class="app-form-wide" />
+                </div>
+            </FormSection>
 
-            <MudTextField @bind-Value="_model.Name" Label="Name" Required="true"
-                          RequiredError="Give it a name." Variant="Variant.Outlined" Class="mb-4" />
+            <FormSection Title="Where it sits" Icon="@Icons.Material.Outlined.AccountTree"
+                         Hint="Only leaves can be posted to — a heading with its own balance double-counts itself against its children in every report.">
+                <div class="app-form-grid">
+                    <MudSelect T="int?" @bind-Value="_model.ParentId" Label="Sits under"
+                               Variant="Variant.Outlined" Clearable="true" Class="app-form-wide">
+                        @foreach (var a in _all.Where(a => a.Id != _model.Id))
+                        {
+                            <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudSwitch T="bool" @bind-Value="_model.IsPostable" Color="Color.Primary"
+                               Class="app-form-wide"
+                               Label="Entries can be posted to this account" />
+                </div>
+            </FormSection>
 
-            <MudSelect T="int?" @bind-Value="_model.ParentId" Label="Sits under"
-                       Variant="Variant.Outlined" Clearable="true" Class="mb-4">
-                @foreach (var a in _all.Where(a => a.Id != _model.Id))
-                {
-                    <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
-                }
-            </MudSelect>
-
-            <MudSwitch T="bool" @bind-Value="_model.IsPostable" Color="Color.Primary"
-                       Label="Entries can be posted to this account" />
-            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-2">
-                Turn this off for a heading that only groups other accounts. A heading with its
-                own balance would be counted twice in every report.
-            </MudText>
-
-            <MudSwitch T="bool" @bind-Value="_model.IsActive" Color="Color.Primary"
-                       Label="Active" />
+            <FormSection Title="In use" Icon="@Icons.Material.Outlined.ToggleOn"
+                         Hint="An account with entries can never be deleted, only deactivated.">
+                <div class="app-form-grid">
+                    <MudSwitch T="bool" @bind-Value="_model.IsActive" Color="Color.Primary"
+                               Class="app-form-wide" Label="Active" />
+                </div>
+            </FormSection>
         </MudForm>
+    </Body>
 
-        @if (_error is not null)
-        {
-            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
-        }
-    </DialogContent>
-
-    <DialogActions>
-        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+    <Buttons>
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
                    OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
-    </DialogActions>
-</MudDialog>
+    </Buttons>
+</DocumentShell>
 
 @code {
-    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public bool AsDialog { get; set; }
     [Parameter] public int? AccountId { get; set; }
+    [Parameter] public EventCallback Saved { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
+
+    private string Title => AccountId is null ? "New account" : "Edit account";
 
     private MudForm? _form;
     private Account _model = new();
@@ -85,8 +93,19 @@
             if (result.Failed) { _error = result.Error; return; }
 
             Snackbar.Add("Saved.", Severity.Success);
-            Dialog.Close(DialogResult.Ok(true));
+            AccountId = _model.Id;
+            await Saved.InvokeAsync();
+            if (AsDialog && _shell is not null) await _shell.CloseAsync();
         }
         finally { _busy = false; }
+    }
+
+    private DocumentShell? _shell;
+    
+    /// <summary>The shell has already closed itself; just react to it.</summary>
+    private async Task DismissedAsync()
+    {
+        if (Closed.HasDelegate) { await Closed.InvokeAsync(); return; }
+        Nav.NavigateTo("/finance/accounts");
     }
 }

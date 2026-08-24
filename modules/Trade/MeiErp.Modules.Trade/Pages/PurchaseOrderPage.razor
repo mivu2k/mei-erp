@@ -1,0 +1,9 @@
+@page "/purchase/orders/new"
+@page "/purchase/orders/{Id:int}"
+@attribute [Authorize(Policy = PurchaseModule.OrdersView)]
+@rendermode InteractiveServer
+
+@* The dialog and this page render the same editor; only the frame differs. *@
+<OrderEditor AsDialog="false" IsPurchase="true" OrderId="Id" />
+
+@code { [Parameter] public int? Id { get; set; } }

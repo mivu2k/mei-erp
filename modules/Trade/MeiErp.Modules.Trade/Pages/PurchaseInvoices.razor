@@ -1,0 +1,10 @@
+@page "/purchase/invoices"
+@attribute [Authorize(Policy = PurchaseModule.InvoicesView)]
+@rendermode InteractiveServer
+
+<PageTitle>Supplier invoices</PageTitle>
+
+<AuthorizeView Policy="@PurchaseModule.InvoicesManage" Context="manage">
+    <Authorized><InvoiceList IsPurchase="true" CanManage="true" /></Authorized>
+    <NotAuthorized><InvoiceList IsPurchase="true" CanManage="false" /></NotAuthorized>
+</AuthorizeView>

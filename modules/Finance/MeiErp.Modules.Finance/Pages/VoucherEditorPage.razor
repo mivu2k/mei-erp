@@ -1,0 +1,11 @@
+@page "/finance/vouchers/new"
+@page "/finance/vouchers/{Id:int}"
+@attribute [Authorize(Policy = FinanceModule.VouchersPost)]
+@rendermode InteractiveServer
+
+@* The dialog and this page render the same editor; only the frame differs. *@
+<VoucherEditor AsDialog="false" VoucherId="Id" />
+
+@code {
+    [Parameter] public int? Id { get; set; }
+}

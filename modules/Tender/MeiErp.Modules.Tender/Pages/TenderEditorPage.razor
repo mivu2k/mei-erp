@@ -1,0 +1,12 @@
+@page "/tender/tenders/new"
+@page "/tender/tenders/{Id:int}/edit"
+@attribute [Authorize(Policy = TenderModule.TendersManage)]
+@rendermode InteractiveServer
+
+@* The dialog and this page render the same editor; only the frame differs.
+   Kept off /tender/tenders/{Id:int} because that route is TenderDetail. *@
+<TenderEditor AsDialog="false" TenderId="Id" />
+
+@code {
+    [Parameter] public int? Id { get; set; }
+}

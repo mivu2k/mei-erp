@@ -1,0 +1,43 @@
+@*
+    The switch between the main store and the workshop's spares.
+
+    It sits in the toolbar of every screen that reads stock, and it is the one
+    thing standing between "two books" and "one confusing list": whatever is on
+    screen belongs to the book named here, and nothing else.
+
+    Deliberately does no data access of its own. A child component's
+    OnInitializedAsync runs while the parent page's is still awaiting, and both
+    share one scoped DbContext - querying here raised "a second operation was
+    started on this context" and took the whole page to a 500. The page loads
+    the books as part of its own sequential load and hands them down.
+
+    Hidden entirely when only one book exists, so an install that never split
+    its stock is not asked to choose between one option.
+*@
+
+@if (Books.Count > 1)
+{
+    <MudSelect T="int" Value="Selected" ValueChanged="OnChanged" Dense="true"
+               Margin="Margin.Dense" Variant="Variant.Outlined" Class="mt-0"
+               Style="max-width:230px"
+               Adornment="Adornment.Start"
+               AdornmentIcon="@Icons.Material.Outlined.LibraryBooks">
+        @foreach (var book in Books)
+        {
+            <MudSelectItem T="int" Value="@book.Id">@book.Name</MudSelectItem>
+        }
+    </MudSelect>
+}
+
+@code {
+    /// <summary>The books to choose between, loaded by the host page.</summary>
+    [Parameter] public IReadOnlyList<StockDomain> Books { get; set; } = [];
+
+    /// <summary>The book currently on screen.</summary>
+    [Parameter] public int Selected { get; set; }
+
+    /// <summary>Raised with the newly chosen book, for the page to act on.</summary>
+    [Parameter] public EventCallback<int> SelectedChanged { get; set; }
+
+    private Task OnChanged(int value) => SelectedChanged.InvokeAsync(value);
+}

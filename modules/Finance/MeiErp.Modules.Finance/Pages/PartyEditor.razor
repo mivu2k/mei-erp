@@ -1,43 +1,47 @@
 @inject IThirdPartyService Parties
 @inject ISnackbar Snackbar
+@inject NavigationManager Nav
 
-<MudDialog>
-    <DialogContent>
+<DocumentShell @ref="_shell" AsDialog="AsDialog" Title="@Title" Error="@_error" OnClose="DismissedAsync">
+    <Body>
         <MudForm @ref="_form">
-            <MudTextField @bind-Value="_model.Name" Label="Name" Required="true"
-                          RequiredError="Give them a name." Variant="Variant.Outlined" Class="mb-4" />
+            <FormSection Title="Who they are" Icon="@Icons.Material.Outlined.Handshake"
+                         Hint="The side decides whether their account sits under Receivables or Payables.">
+                <div class="app-form-grid">
+                    <MudTextField @bind-Value="_model.Name" Label="Name" Required="true"
+                                  RequiredError="Give them a name." Variant="Variant.Outlined" />
+                    <MudSelect T="ThirdPartySide" @bind-Value="_model.Side" Label="Side"
+                               Variant="Variant.Outlined">
+                        <MudSelectItem Value="ThirdPartySide.Receivable">They owe us</MudSelectItem>
+                        <MudSelectItem Value="ThirdPartySide.Payable">We owe them</MudSelectItem>
+                    </MudSelect>
+                </div>
+            </FormSection>
 
-            <MudSelect T="ThirdPartySide" @bind-Value="_model.Side" Label="Side"
-                       Variant="Variant.Outlined" Class="mb-4"
-                       HelperText="Decides whether their account sits under Receivables or Payables.">
-                <MudSelectItem Value="ThirdPartySide.Receivable">They owe us</MudSelectItem>
-                <MudSelectItem Value="ThirdPartySide.Payable">We owe them</MudSelectItem>
-            </MudSelect>
-
-            <div class="d-flex gap-3 mb-4">
-                <MudTextField @bind-Value="_model.Phone" Label="Phone" Variant="Variant.Outlined" />
-                <MudTextField @bind-Value="_model.Cnic" Label="CNIC" Variant="Variant.Outlined" />
-            </div>
-
-            <MudTextField @bind-Value="_model.Notes" Label="Notes" Lines="2" Variant="Variant.Outlined" />
+            <FormSection Title="Contact and notes" Icon="@Icons.Material.Outlined.ContactPhone">
+                <div class="app-form-grid">
+                    <MudTextField @bind-Value="_model.Phone" Label="Phone" Variant="Variant.Outlined" />
+                    <MudTextField @bind-Value="_model.Cnic" Label="CNIC" Variant="Variant.Outlined" />
+                    <MudTextField @bind-Value="_model.Notes" Label="Notes" Lines="2"
+                                  Variant="Variant.Outlined" Class="app-form-wide" />
+                </div>
+            </FormSection>
         </MudForm>
+    </Body>
 
-        @if (_error is not null)
-        {
-            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
-        }
-    </DialogContent>
-
-    <DialogActions>
-        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+    <Buttons>
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
                    OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
-    </DialogActions>
-</MudDialog>
+    </Buttons>
+</DocumentShell>
 
 @code {
-    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public bool AsDialog { get; set; }
     [Parameter] public int? PartyId { get; set; }
+    [Parameter] public EventCallback Saved { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
+
+    private string Title => PartyId is null ? "New party" : "Edit party";
 
     private MudForm? _form;
     private ThirdParty _model = new();
@@ -65,8 +69,19 @@
             if (result.Failed) { _error = result.Error; return; }
 
             Snackbar.Add("Saved.", Severity.Success);
-            Dialog.Close(DialogResult.Ok(true));
+            PartyId = _model.Id;
+            await Saved.InvokeAsync();
+            if (AsDialog && _shell is not null) await _shell.CloseAsync();
         }
         finally { _busy = false; }
+    }
+
+    private DocumentShell? _shell;
+    
+    /// <summary>The shell has already closed itself; just react to it.</summary>
+    private async Task DismissedAsync()
+    {
+        if (Closed.HasDelegate) { await Closed.InvokeAsync(); return; }
+        Nav.NavigateTo("/finance/third-parties");
     }
 }

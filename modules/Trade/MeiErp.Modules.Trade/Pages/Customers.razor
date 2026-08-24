@@ -1,0 +1,11 @@
+@page "/sales/customers"
+@attribute [Authorize(Policy = SalesModule.CustomersView)]
+@rendermode InteractiveServer
+
+<PageTitle>Customers</PageTitle>
+
+@* Same master, same component, filtered to the side Sales cares about. *@
+<AuthorizeView Policy="@SalesModule.CustomersManage" Context="manage">
+    <Authorized><PartyList Suppliers="false" CanManage="true" /></Authorized>
+    <NotAuthorized><PartyList Suppliers="false" CanManage="false" /></NotAuthorized>
+</AuthorizeView>

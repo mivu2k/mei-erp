@@ -42,6 +42,7 @@ public sealed class LedgerTests : IAsyncLifetime
 
             await using var db = NewDb();
             await db.Database.EnsureCreatedAsync();
+            await db.EnsureAuditTableForTestsAsync();
 
             var cash = new Account { Code = "1100", Name = "Cash", Type = AccountType.Asset, IsPostable = true };
             var salaries = new Account { Code = "5210", Name = "Salaries", Type = AccountType.Expense, IsPostable = true };
@@ -498,6 +499,81 @@ public sealed class LedgerTests : IAsyncLifetime
 
         Assert.True(deleted.Failed);
         Assert.Equal("account.system", deleted.Code);
+    }
+
+    [SkippableFact]
+    public async Task Replaying_a_system_document_returns_the_original_voucher()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db = NewDb();
+        var service = NewService(db);
+        var command = new SystemVoucher(VoucherType.Journal, _clock.Today, "Receipt",
+            [new(_salaries, 1000, 0), new(_cash, 0, 1000)],
+            "inventory", "goods-receipt", 0, "GR-001", "GR-001");
+
+        var first = await service.PostSystemVoucherAsync(command);
+        var replay = await service.PostSystemVoucherAsync(command);
+
+        Assert.True(first.Ok); Assert.True(replay.Ok);
+        Assert.Equal(first.Value.Id, replay.Value.Id);
+        Assert.Equal(1, await db.Vouchers.CountAsync(v => v.SourceReference == "GR-001"));
+    }
+
+    [SkippableFact]
+    public async Task Goods_receipt_handler_uses_the_configured_posting_rule()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db = NewDb();
+        db.PostingRules.Add(new PostingRule
+        {
+            Name = "Goods receipt", EventType = GoodsReceiptPostingHandler.Event,
+            DebitAccountId = _salaries, CreditAccountId = _cash, IsActive = true
+        });
+        await db.SaveChangesAsync();
+        var handler = new GoodsReceiptPostingHandler(db, NewService(db));
+
+        var result = await handler.HandleAsync(
+            "{\"Number\":\"GR-009\",\"Date\":\"2026-08-21\",\"PartyId\":7,\"PartyName\":\"Supplier\",\"Amount\":2500}", null);
+
+        Assert.True(result.Ok, result.Error);
+        var voucher = await db.Vouchers.Include(v => v.Lines).SingleAsync(v => v.SourceReference == "GR-009");
+        Assert.Equal(2500, voucher.TotalDebit); Assert.Equal(2500, voucher.TotalCredit);
+    }
+
+    [SkippableFact]
+    public async Task Repair_order_handler_posts_receivable_once()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db = NewDb();
+        db.PostingRules.Add(new PostingRule { Name="Repair receivable", EventType=RepairOrderPostingHandler.Event,
+            DebitAccountId=_cash, CreditAccountId=_sales, IsActive=true });
+        await db.SaveChangesAsync();
+        var handler = new RepairOrderPostingHandler(db, NewService(db));
+        const string payload = "{\"Number\":\"RO-001\",\"Date\":\"2026-08-21\",\"CustomerId\":9,\"CustomerName\":\"Client\",\"Amount\":4800}";
+        Assert.True((await handler.HandleAsync(payload,null)).Ok);
+        Assert.True((await handler.HandleAsync(payload,null)).Ok);
+        var voucher=await db.Vouchers.Include(v=>v.Lines).SingleAsync(v=>v.SourceIdempotencyKey=="RO-001");
+        Assert.Equal(4800,voucher.TotalDebit);Assert.Equal(4800,voucher.TotalCredit);
+    }
+
+    [SkippableFact]
+    public async Task Personal_ledger_returns_only_posted_lines_tagged_to_current_user()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db = NewDb();
+        var service = NewService(db);
+        var mine = await service.SaveDraftAsync(new(null, VoucherType.Payment, _clock.Today, "My advance",
+            [new(_salaries, 500, 0, PersonId:"user-1", PersonName:"Accountant"), new(_cash, 0, 500)]));
+        await service.PostAsync(mine.Value.Id);
+        var other = await service.SaveDraftAsync(new(null, VoucherType.Payment, _clock.Today, "Other advance",
+            [new(_salaries, 900, 0, PersonId:"user-2", PersonName:"Other"), new(_cash, 0, 900)]));
+        await service.PostAsync(other.Value.Id);
+
+        var rows = await new PersonalLedgerService(db, _user).MineAsync();
+
+        var account = Assert.Single(rows);
+        Assert.Equal(500, account.Balance);
+        Assert.Equal("My advance", Assert.Single(account.Rows).Narration);
     }
 
     private sealed class TestUser(string id, string name) : ICurrentUser

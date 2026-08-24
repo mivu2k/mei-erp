@@ -1,45 +1,57 @@
 @inject IPayrollService Wages
 @inject IAccountService Chart
+@inject IClock Clock
 @inject ISnackbar Snackbar
+@inject NavigationManager Nav
 
-<MudDialog>
-    <DialogContent>
+<DocumentShell AsDialog="AsDialog" Title="@Title" Error="@_error" OnClose="CloseAsync">
+    <Body>
         <MudForm @ref="_form">
-            <div class="d-flex gap-3 mb-3">
-                <MudTextField @bind-Value="_model.Code" Label="Staff number" Required="true"
-                              RequiredError="Every person needs a staff number."
-                              Variant="Variant.Outlined" />
-                <MudTextField @bind-Value="_model.Designation" Label="Designation"
-                              Variant="Variant.Outlined" />
-            </div>
+            <FormSection Title="Who they are" Icon="@Icons.Material.Outlined.Badge"
+                         Hint="The staff number is what payslips and the payroll register call them by.">
+                <div class="app-form-grid">
+                    <MudTextField @bind-Value="_model.Code" Label="Staff number" Required="true"
+                                  RequiredError="Every person needs a staff number."
+                                  Variant="Variant.Outlined" />
+                    <MudTextField @bind-Value="_model.Designation" Label="Designation"
+                                  Variant="Variant.Outlined" />
+                    <MudTextField @bind-Value="_model.FullName" Label="Full name" Required="true"
+                                  RequiredError="Enter their name." Variant="Variant.Outlined"
+                                  Class="app-form-wide" />
+                </div>
+            </FormSection>
 
-            <MudTextField @bind-Value="_model.FullName" Label="Full name" Required="true"
-                          RequiredError="Enter their name." Variant="Variant.Outlined" Class="mb-3" />
-
-            <MudTextField @bind-Value="_model.UserId" Label="Linked login (user id)"
-                          Variant="Variant.Outlined" Class="mb-3"
-                          HelperText="Needed for advance recovery and self-service payslips." />
-
-            <MudDatePicker Label="Joined on" Variant="Variant.Outlined"
-                           Date="_joined" DateChanged="@(d => _joined = d)" />
+            <FormSection Title="On the payroll" Icon="@Icons.Material.Outlined.CalendarMonth"
+                         Hint="Joining date decides which runs they appear in.">
+                <div class="app-form-grid">
+                    <MudDatePicker Label="Joined on" Variant="Variant.Outlined"
+                                   Date="_joined" DateChanged="@(d => _joined = d)" />
+                    <MudTextField @bind-Value="_model.UserId" Label="Linked login (user id)"
+                                  Variant="Variant.Outlined"
+                                  HelperText="Needed for advance recovery and self-service payslips." />
+                </div>
+            </FormSection>
         </MudForm>
+    </Body>
 
-        @if (_error is not null)
+    <Buttons>
+        @if (AsDialog)
         {
-            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-3">@_error</MudAlert>
+            <MudButton OnClick="CloseAsync">Cancel</MudButton>
         }
-    </DialogContent>
-
-    <DialogActions>
-        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
                    OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
-    </DialogActions>
-</MudDialog>
+    </Buttons>
+</DocumentShell>
 
 @code {
-    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public bool AsDialog { get; set; }
+    [Parameter] public int? EmployeeId { get; set; }
     [Parameter] public PayrollEmployee? Existing { get; set; }
+    [Parameter] public EventCallback Saved { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
+
+    private string Title => Existing is null && EmployeeId is null ? "Add to payroll" : "Edit";
 
     private MudForm? _form;
     private PayrollEmployee _model = new();
@@ -47,17 +59,24 @@
     private string? _error;
     private bool _busy;
 
-    protected override void OnInitialized()
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
     {
-        _model = Existing is null
-            ? new PayrollEmployee { IsActive = true, JoinedOn = DateOnly.FromDateTime(DateTime.Today) }
+        // The dialog is handed the row directly; the routed page only has an
+        // id, so it looks the row up from the same list the dialog's caller reads.
+        var existing = Existing
+            ?? (EmployeeId is null ? null : (await Wages.EmployeesAsync(includeLeavers: true)).FirstOrDefault(e => e.Id == EmployeeId));
+
+        _model = existing is null
+            ? new PayrollEmployee { IsActive = true, JoinedOn = Clock.Today }
             : new PayrollEmployee
             {
-                Id = Existing.Id, Code = Existing.Code, FullName = Existing.FullName,
-                UserId = Existing.UserId, Designation = Existing.Designation,
-                DepartmentId = Existing.DepartmentId, JoinedOn = Existing.JoinedOn,
-                LeftOn = Existing.LeftOn, IsActive = Existing.IsActive,
-                SalaryAccountId = Existing.SalaryAccountId
+                Id = existing.Id, Code = existing.Code, FullName = existing.FullName,
+                UserId = existing.UserId, Designation = existing.Designation,
+                DepartmentId = existing.DepartmentId, JoinedOn = existing.JoinedOn,
+                LeftOn = existing.LeftOn, IsActive = existing.IsActive,
+                SalaryAccountId = existing.SalaryAccountId
             };
 
         _joined = _model.JoinedOn.ToDateTime(TimeOnly.MinValue);
@@ -75,15 +94,23 @@
         _busy = true;
         try
         {
-            _model.JoinedOn = DateOnly.FromDateTime(_joined ?? DateTime.Today);
+            _model.JoinedOn = DateOnly.FromDateTime(_joined ?? Clock.Today.ToDateTime(TimeOnly.MinValue));
             if (string.IsNullOrWhiteSpace(_model.UserId)) _model.UserId = null;
 
             var result = await Wages.SaveEmployeeAsync(_model);
             if (result.Failed) { _error = result.Error; return; }
 
             Snackbar.Add("Saved.", Severity.Success);
-            Dialog.Close(DialogResult.Ok(true));
+            EmployeeId = _model.Id;
+            await Saved.InvokeAsync();
+            if (AsDialog) await CloseAsync();
         }
         finally { _busy = false; }
+    }
+
+    private async Task CloseAsync()
+    {
+        if (Closed.HasDelegate) { await Closed.InvokeAsync(); return; }
+        Nav.NavigateTo("/finance/payroll/setup");
     }
 }

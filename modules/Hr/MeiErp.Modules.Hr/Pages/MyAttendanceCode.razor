@@ -1,0 +1,21 @@
+@page "/hr/attendance/code"
+@attribute [Authorize(Policy = HrModule.AttendanceView)]
+@rendermode InteractiveServer
+@implements IDisposable
+@inject IAttendanceAdminService Admin
+@inject IAttendanceTokenService Tokens
+@inject IClock Clock
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>My attendance code</PageTitle>
+<MudText Typo="Typo.h5">My attendance code</MudText>
+@if (_employee is null) { <MudAlert Severity="Severity.Warning" Class="mt-4">Your login is not linked to an employee record. Ask HR to link it before using attendance.</MudAlert> }
+else { <MudPaper Class="pa-6 mt-4 text-center mx-auto" Style="max-width:440px" Outlined="true"><MudText Typo="Typo.h6">@_employee.FullName</MudText>@if(_qr is not null){<MudImage Src="@_qr" Alt="Rotating attendance QR" Width="300" Height="300"/><MudText>Refreshes in @_remaining seconds</MudText>}<MudButton Class="mt-4" Color="Color.Warning" Variant="Variant.Text" OnClick="ReissueAsync">Lost phone? Re-issue code</MudButton></MudPaper>}
+@code {
+ private Employee? _employee; private string? _secret; private string? _qr; private int _remaining; private Timer? _timer;
+ protected override async Task OnInitializedAsync(){_employee=await Admin.MeAsync();if(_employee is null)return;var r=await Admin.EnsureQrSecretAsync(_employee.Id,false);if(r.Failed){Snackbar.Add(r.Error!,Severity.Error);return;}_secret=r.Value;Refresh();_timer=new Timer(_=>InvokeAsync(()=>{Refresh();StateHasChanged();}),null,1000,1000);}
+ private void Refresh(){if(_employee is null||_secret is null)return;var payload=Tokens.Issue(_employee.Id,_secret,Clock.UtcNow);_qr=$"data:image/png;base64,{Convert.ToBase64String(Symbology.QrCode(payload,300))}";_remaining=Tokens.SecondsRemaining(Clock.UtcNow);}
+ private async Task ReissueAsync(){if(_employee is null)return;var r=await Admin.EnsureQrSecretAsync(_employee.Id,true);if(r.Ok){_secret=r.Value;Refresh();Snackbar.Add("Attendance code re-issued.",Severity.Warning);}}
+ public void Dispose()=>_timer?.Dispose();
+}

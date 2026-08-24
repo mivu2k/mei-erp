@@ -1,55 +1,62 @@
 @inject IUtilityService Utilities
 @inject IAccountService Chart
 @inject ISnackbar Snackbar
+@inject NavigationManager Nav
 
-<MudDialog>
-    <DialogContent>
+<DocumentShell @ref="_shell" AsDialog="AsDialog" Title="New connection" Error="@_error" OnClose="DismissedAsync">
+    <Body>
         <MudForm @ref="_form">
-            <div class="d-flex gap-3 mb-3">
-                <MudTextField @bind-Value="_model.Name" Label="Name" Required="true"
-                              RequiredError="Give it a name." Variant="Variant.Outlined" />
-                <MudSelect T="UtilityKind" @bind-Value="_model.Kind" Label="Kind"
-                           Variant="Variant.Outlined">
-                    @foreach (var k in Enum.GetValues<UtilityKind>())
-                    {
-                        <MudSelectItem Value="@k">@k</MudSelectItem>
-                    }
-                </MudSelect>
-            </div>
+            <FormSection Title="The connection" Icon="@Icons.Material.Outlined.ElectricalServices"
+                         Hint="The name is what every bill, list and reminder calls this connection by.">
+                <div class="app-form-grid">
+                    <MudTextField @bind-Value="_model.Name" Label="Name" Required="true"
+                                  RequiredError="Give it a name." Variant="Variant.Outlined" />
+                    <MudSelect T="UtilityKind" @bind-Value="_model.Kind" Label="Kind"
+                               Variant="Variant.Outlined">
+                        @foreach (var k in Enum.GetValues<UtilityKind>())
+                        {
+                            <MudSelectItem Value="@k">@k</MudSelectItem>
+                        }
+                    </MudSelect>
+                </div>
+            </FormSection>
 
-            <div class="d-flex gap-3 mb-3">
-                <MudTextField @bind-Value="_model.ConnectionNumber" Label="Meter / account no."
-                              Variant="Variant.Outlined" />
-                <MudTextField @bind-Value="_model.Provider" Label="Provider" Variant="Variant.Outlined" />
-            </div>
+            <FormSection Title="Who supplies it" Icon="@Icons.Material.Outlined.Business"
+                         Hint="The meter number is what a bill is matched against when one arrives.">
+                <div class="app-form-grid">
+                    <MudTextField @bind-Value="_model.ConnectionNumber" Label="Meter / account no."
+                                  Variant="Variant.Outlined" />
+                    <MudTextField @bind-Value="_model.Provider" Label="Provider" Variant="Variant.Outlined" />
+                    <MudTextField @bind-Value="_model.Location" Label="Location"
+                                  Variant="Variant.Outlined" Class="app-form-wide" />
+                </div>
+            </FormSection>
 
-            <MudTextField @bind-Value="_model.Location" Label="Location"
-                          Variant="Variant.Outlined" Class="mb-3" />
-
-            <MudSelect T="int" @bind-Value="_model.ExpenseAccountId" Label="Charge bills to"
-                       Variant="Variant.Outlined">
-                @foreach (var head in _heads)
-                {
-                    <MudSelectItem T="int" Value="@head.Id">@head.Code — @head.Name</MudSelectItem>
-                }
-            </MudSelect>
+            <FormSection Title="Where its bills post" Icon="@Icons.Material.Outlined.AccountTree"
+                         Hint="Every bill on this connection is charged to this head, so only leaves can be picked.">
+                <div class="app-form-grid">
+                    <MudSelect T="int" @bind-Value="_model.ExpenseAccountId" Label="Charge bills to"
+                               Variant="Variant.Outlined" Class="app-form-wide">
+                        @foreach (var head in _heads)
+                        {
+                            <MudSelectItem T="int" Value="@head.Id">@head.Code — @head.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </div>
+            </FormSection>
         </MudForm>
+    </Body>
 
-        @if (_error is not null)
-        {
-            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-3">@_error</MudAlert>
-        }
-    </DialogContent>
-
-    <DialogActions>
-        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+    <Buttons>
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
                    OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
-    </DialogActions>
-</MudDialog>
+    </Buttons>
+</DocumentShell>
 
 @code {
-    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public bool AsDialog { get; set; }
+    [Parameter] public EventCallback Saved { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
 
     private MudForm? _form;
     private UtilityConnection _model = new() { IsActive = true };
@@ -82,8 +89,18 @@
             if (result.Failed) { _error = result.Error; return; }
 
             Snackbar.Add("Connection saved.", Severity.Success);
-            Dialog.Close(DialogResult.Ok(true));
+            await Saved.InvokeAsync();
+            if (AsDialog && _shell is not null) await _shell.CloseAsync();
         }
         finally { _busy = false; }
+    }
+
+    private DocumentShell? _shell;
+    
+    /// <summary>The shell has already closed itself; just react to it.</summary>
+    private async Task DismissedAsync()
+    {
+        if (Closed.HasDelegate) { await Closed.InvokeAsync(); return; }
+        Nav.NavigateTo("/finance/utilities");
     }
 }

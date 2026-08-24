@@ -1,0 +1,82 @@
+@page "/admin/failed-notifications"
+@attribute [Authorize(Policy = PlatformPermissions.OutboxManage)]
+@rendermode InteractiveServer
+@inject INotificationManagementService Notifications
+@inject ISnackbar Snackbar
+
+<PageTitle>Failed notifications</PageTitle>
+
+<div class="d-flex align-center mb-4">
+    <div>
+        <MudText Typo="Typo.h5">Failed notifications</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            Deliveries that exhausted automatic retries. Review the error before placing one back in the queue.
+        </MudText>
+    </div>
+    <MudSpacer />
+    <MudIconButton Icon="@Icons.Material.Outlined.Refresh" OnClick="LoadAsync" Disabled="_loading" />
+</div>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else if (_dead.Count == 0)
+{
+    <MudAlert Severity="Severity.Success" Variant="Variant.Outlined">No failed notifications.</MudAlert>
+}
+else
+{
+    <MudTable Items="@_dead" Hover="true" Outlined="true" Elevation="0">
+        <HeaderContent>
+            <MudTh>Message</MudTh><MudTh>Channel</MudTh><MudTh>Destination</MudTh>
+            <MudTh>Attempts</MudTh><MudTh>Error</MudTh><MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Message">
+                <MudText Typo="Typo.body2">@context.Notification.Subject</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">@context.Notification.CreatedUtc.ToLocalTime().ToString("g")</MudText>
+            </MudTd>
+            <MudTd DataLabel="Channel">@context.Channel</MudTd>
+            <MudTd DataLabel="Destination">@context.Address</MudTd>
+            <MudTd DataLabel="Attempts">@context.Attempts</MudTd>
+            <MudTd DataLabel="Error">@context.Notification.Deliveries.FirstOrDefault(d => d.Id == context.DeliveryId)?.LastError</MudTd>
+            <MudTd>
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Replay"
+                           Disabled="_retrying.Contains(context.DeliveryId)"
+                           OnClick="@(() => RetryAsync(context.DeliveryId))">Retry</MudButton>
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+
+@code {
+    private bool _loading = true;
+    private List<DueDelivery> _dead = [];
+    private readonly HashSet<int> _retrying = [];
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try { _dead = [.. await Notifications.DeadAsync()]; }
+        finally { _loading = false; }
+    }
+
+    private async Task RetryAsync(int id)
+    {
+        _retrying.Add(id);
+        try
+        {
+            var result = await Notifications.RetryAsync(id);
+            if (result.Ok)
+            {
+                _dead.RemoveAll(d => d.DeliveryId == id);
+                Snackbar.Add("Delivery returned to the queue.", Severity.Success);
+            }
+            else Snackbar.Add(result.Error ?? "Could not retry delivery.", Severity.Error);
+        }
+        finally { _retrying.Remove(id); }
+    }
+}

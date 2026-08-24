@@ -1,0 +1,26 @@
+@*
+    One read-only fact, laid out like the form fields beside it so a panel of
+    them does not read as a different kind of screen. An empty value says so
+    rather than leaving a blank the reader has to interpret.
+*@
+
+<div class="app-readonly-field">
+    <MudText Typo="Typo.caption" Class="mud-text-secondary">@Label</MudText>
+
+    @if (string.IsNullOrWhiteSpace(Value))
+    {
+        <MudText Typo="Typo.body1" Class="mud-text-secondary"><em>@Empty</em></MudText>
+    }
+    else
+    {
+        <MudText Typo="Typo.body1">@Value</MudText>
+    }
+</div>
+
+@code {
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public string? Value { get; set; }
+
+    /// <summary>Shown in place of a blank, so "not set" is never mistaken for a rendering fault.</summary>
+    [Parameter] public string Empty { get; set; } = "Not set";
+}

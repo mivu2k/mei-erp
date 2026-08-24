@@ -85,7 +85,7 @@
             var result = await Petty.SpendAsync(new PettyCashEntry
             {
                 BoxId = BoxId,
-                Date = DateOnly.FromDateTime(_date ?? DateTime.Today),
+                Date = DateOnly.FromDateTime(_date ?? Clock.Today.ToDateTime(TimeOnly.MinValue)),
                 Amount = _amount,
                 Description = _description,
                 ExpenseAccountId = _headId,

@@ -1,3 +1,4 @@
+using MeiErp.Platform.Identity;
 using MeiErp.Platform.Kernel;
 using MeiErp.Platform.Workflow;
 using Microsoft.EntityFrameworkCore;
@@ -16,7 +17,8 @@ namespace MeiErp.Modules.Hr;
 /// It is also what makes migrating flows one at a time possible: every other
 /// approval flow gets its own sink and moves independently.
 /// </summary>
-public sealed class LeaveApprovalSink(HrDbContext db, IClock clock) : IApprovalSink
+public sealed class LeaveApprovalSink(
+    HrDbContext db, IClock clock, IAttendanceSyncService? attendance = null) : IApprovalSink
 {
     public string DocumentType => LeaveService.DocumentType;
 
@@ -78,6 +80,12 @@ public sealed class LeaveApprovalSink(HrDbContext db, IClock clock) : IApprovalS
         // here cannot hand somebody extra leave, and it stays visible.
         if (balance is not null && balance.Pending < 0) balance.Pending = 0;
 
+        // The sink owns a different DbContext from the platform approval engine;
+        // commit the module outcome before rebuilding the derived attendance rows.
+        await db.SaveChangesAsync(ct);
+        if (attendance is not null)
+            await attendance.RebuildAsync(leave.FromDate, leave.ToDate, leave.EmployeeId, ct);
+
         return Result.Success();
     }
 }
@@ -89,9 +97,16 @@ public static class HrModule
 
     public const string EmployeesView = "hr.employees.view";
     public const string EmployeesManage = "hr.employees.manage";
+    public const string EmployeesViewSensitive = "hr.employees.sensitive";
     public const string LeaveRequest = "hr.leave.request";
     public const string LeaveManage = "hr.leave.manage";
     public const string LeaveTypesManage = "hr.leave-types.manage";
+    public const string AttendanceView = "hr.attendance.view";
+    public const string AttendanceManage = "hr.attendance.manage";
+    public const string AttendanceSetup = "hr.attendance.setup";
+    public const string DocumentsView = "hr.documents.view";
+    public const string DocumentsManage = "hr.documents.manage";
+    public const string ReportsView = "hr.reports.view";
 
     public static ModuleDescriptor Descriptor => new()
     {
@@ -108,24 +123,48 @@ public static class HrModule
         [
             new(EmployeesView,     "Employees", "See the staff list and employee records"),
             new(EmployeesManage,   "Employees", "Add and edit employee records"),
+            new(EmployeesViewSensitive, "Employees", "View CNIC, bank and statutory employee details"),
             new(LeaveRequest,      "Leave",     "Request leave for yourself"),
             new(LeaveManage,       "Leave",     "See and manage everyone's leave"),
             new(LeaveTypesManage,  "Leave",     "Configure leave types and entitlements")
+            ,new(AttendanceView,   "Attendance", "View attendance registers and personal attendance")
+            ,new(AttendanceManage, "Attendance", "Correct and recompute attendance")
+            ,new(AttendanceSetup,  "Attendance", "Configure shifts, stations, cards and QR credentials")
+            ,new(DocumentsView, "Documents", "View employee documents and expiry dates")
+            ,new(DocumentsManage, "Documents", "Add, edit, upload and remove employee documents")
+            ,new(ReportsView, "Reports", "View HR reports")
         ],
 
         RoleTemplates =
         [
             new("HR Manager", "Full access to staff records and everyone's leave.",
-                [EmployeesView, EmployeesManage, LeaveRequest, LeaveManage, LeaveTypesManage]),
+                [EmployeesView, EmployeesManage, EmployeesViewSensitive, LeaveRequest, LeaveManage, LeaveTypesManage,
+                 AttendanceView, AttendanceManage, AttendanceSetup, DocumentsView, DocumentsManage, ReportsView]),
 
             new("Employee", "Can see the staff list and request their own leave.",
-                [EmployeesView, LeaveRequest])
+                [EmployeesView, LeaveRequest, AttendanceView])
         ],
 
         Nav =
         [
             new("Employees", "/hr/employees", "Badge", EmployeesView),
+            // Departments stay Identity-owned master data; HR is just where
+            // people expect to find and maintain the org chart.
+            new("Departments", "/hr/departments", "AccountTree", PlatformPermissions.DepartmentsManage),
             new("Leave",     "/hr/leave", "EventBusy", LeaveRequest)
+            ,new("Attendance", "/hr/attendance", "HowToReg", AttendanceView)
+            ,new("My attendance", "/hr/me", "CalendarMonth", AttendanceView)
+            ,new("My attendance code", "/hr/attendance/code", "QrCode2", AttendanceView)
+            ,new("Attendance setup", "/hr/attendance/setup", "Settings", AttendanceSetup)
+            ,new("Expiring documents", "/hr/documents", "Description", DocumentsView)
+        ],
+
+        // People open this at a door twice a day with a queue behind them. It
+        // stays in the nav above as well, but the app bar is the one that
+        // matters: from any page in any module it is a single tap.
+        QuickActions =
+        [
+            new("My attendance QR code", "/hr/attendance/code", "QrCode2", AttendanceView)
         ],
 
         Approvables =
@@ -149,6 +188,13 @@ public static class HrModule
 
         services.AddScoped<ILeaveService, LeaveService>();
         services.AddScoped<IEmployeeService, EmployeeService>();
+        services.AddScoped<IEmployeeDocumentService, EmployeeDocumentService>();
+        services.AddSingleton<IAttendanceTokenService, AttendanceTokenService>();
+        services.AddScoped<IAttendanceSyncService, AttendanceSyncService>();
+        services.AddScoped<IAttendanceService, AttendanceService>();
+        services.AddScoped<IKioskService, KioskService>();
+        services.AddScoped<IAttendanceAdminService, AttendanceAdminService>();
+        services.AddSingleton<IQrFrameDecoder, QrFrameDecoder>();
 
         // Registered as IApprovalSink so the engine finds it without HR and the
         // engine referencing each other.

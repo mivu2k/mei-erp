@@ -6,47 +6,58 @@
 @inject IClock Clock
 @inject ISnackbar Snackbar
 @inject IDialogService Dialogs
+@inject IFileRegistryService Files
+@inject NavigationManager Nav
 
-<PageTitle>Tenders</PageTitle>
+<ListShell Title="Tenders"
+           Subtitle="Bids, and the money lodged against them."
+           Icon="@Icons.Material.Outlined.Gavel"
+           Loading="_loading"
+           IsEmpty="@(_rows.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.Gavel"
+           EmptyTitle="No tenders yet"
+           EmptyHint="Record a bid here to track its deadline, its priced value and any guarantee lodged against it.">
+    <Actions>
+        <AuthorizeView Policy="@TenderModule.TendersManage" Context="perms">
+            <Authorized>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+                    New tender
+                </MudButton>
+                <MudTooltip Text="Open as a full page instead">
+                    <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Href="/tender/tenders/new" />
+                </MudTooltip>
+            </Authorized>
+        </AuthorizeView>
+    </Actions>
 
-<div class="d-flex align-center mb-1">
-    <div>
-        <MudText Typo="Typo.h5">Tenders</MudText>
-        <MudText Typo="Typo.body2" Class="mud-text-secondary">
-            Bids, and the money lodged against them.
-        </MudText>
-    </div>
-    <MudSpacer />
-    <AuthorizeView Policy="@TenderModule.TendersManage" Context="perms">
-        <Authorized>
-            <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                       StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
-                New tender
-            </MudButton>
-        </Authorized>
-    </AuthorizeView>
-</div>
-
-@if (_outstanding.Count > 0)
-{
-    @* Guarantees are real money sitting with someone else. Surfaced rather
-       than left in a report nobody opens. *@
-    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-4">
-        <b>@_outstanding.Sum(g => g.Amount).ToString("N2")</b> is lodged across
-        @_outstanding.Count @(_outstanding.Count == 1 ? "guarantee" : "guarantees") and not yet released.
-        @{
-            var expired = _outstanding.Count(g => g.IsExpiredUnreleased(Clock.Today));
-        }
-        @if (expired > 0)
+    <Stats>
+        @if (_outstanding.Count > 0)
         {
-            <text> <b>@expired</b> of them have expired without being released — chase those first.</text>
+            <StatTile Label="Lodged" Value="@_outstanding.Sum(g => g.Amount).ToString("N2")" />
+            <StatTile Label="Guarantees outstanding" Value="@_outstanding.Count.ToString()" />
+            @if (_outstanding.Count(g => g.IsExpiredUnreleased(Clock.Today)) is var expired && expired > 0)
+            {
+                <StatTile Label="Expired, unreleased" Value="@expired.ToString()" Colour="Color.Warning"
+                          Caption="Chase these first" />
+            }
         }
-    </MudAlert>
-}
+    </Stats>
 
-<MudPaper Outlined="true" Elevation="0" Class="mt-4">
+    <EmptyAction>
+        <AuthorizeView Policy="@TenderModule.TendersManage" Context="perms">
+            <Authorized>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+                    New tender
+                </MudButton>
+            </Authorized>
+        </AuthorizeView>
+    </EmptyAction>
+
+    <ChildContent>
     <MudDataGrid T="TenderRecord" Items="_rows" Dense="true" Hover="true" Elevation="0"
-                 Loading="_loading" Filterable="false" RowsPerPage="25">
+                 Filterable="false" RowsPerPage="25">
         <Columns>
             <PropertyColumn Property="@(t => t.Reference)" Title="Reference" />
             <TemplateColumn Title="Tender">
@@ -105,6 +116,10 @@
             <TemplateColumn Title="" Sortable="false">
                 <CellTemplate>
                     <div class="d-flex justify-end gap-1">
+                        <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small"
+                                       Href="@($"/tender/tenders/{context.Item.Id}")" title="Open as a page" />
+                        <AuthorizeView Policy="@TenderModule.FilesView" Context="filePerms"><Authorized><MudIconButton Icon="@Icons.Material.Filled.Folder" OnClick="@(()=>OpenFile(context.Item))" /></Authorized></AuthorizeView>
+                        <MudIconButton Icon="@Icons.Material.Outlined.Print" Href="@($"/print/tender/{context.Item.Id}")" Target="_blank" />
                         <AuthorizeView Policy="@TenderModule.GuaranteesManage" Context="perms">
                             <Authorized>
                                 <MudButton Size="Size.Small" Variant="Variant.Text"
@@ -113,6 +128,9 @@
                         </AuthorizeView>
                         <AuthorizeView Policy="@TenderModule.TendersManage" Context="perms">
                             <Authorized>
+                                <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small"
+                                               Href="@($"/tender/tenders/{context.Item.Id}/edit")"
+                                               title="Open editor as a page" />
                                 <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small"
                                                OnClick="@(() => Edit(context.Item))" />
                             </Authorized>
@@ -121,11 +139,15 @@
                 </CellTemplate>
             </TemplateColumn>
         </Columns>
-        <NoRecordsContent>
-            <MudText Class="pa-8 text-center mud-text-secondary">No tenders yet.</MudText>
-        </NoRecordsContent>
     </MudDataGrid>
-</MudPaper>
+    </ChildContent>
+</ListShell>
+
+@if (_editing)
+{
+    <TenderEditor AsDialog="true" TenderId="_editingId"
+                  Saved="LoadAsync" Closed="@(() => { _editing = false; return Task.CompletedTask; })" />
+}
 
 @code {
     private IReadOnlyList<TenderRecord> _rows = [];
@@ -152,14 +174,13 @@
         _ => Color.Default
     };
 
-    private async Task Edit(TenderRecord? row)
-    {
-        var parameters = new DialogParameters<TenderEditor> { { x => x.TenderId, row?.Id } };
-        var dialog = await Dialogs.ShowAsync<TenderEditor>(
-            row is null ? "New tender" : "Edit tender", parameters,
-            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+    private bool _editing;
+    private int? _editingId;
 
-        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    private void Edit(TenderRecord? row)
+    {
+        _editingId = row?.Id;
+        _editing = true;
     }
 
     private async Task Guarantees(TenderRecord row)
@@ -174,4 +195,5 @@
 
         if (!(await dialog.Result)!.Canceled) await LoadAsync();
     }
+    private async Task OpenFile(TenderRecord row){var result=await Files.EnsureAsync(FileOwnerType.Tender,row.Id);if(result.Failed){Snackbar.Add(result.Error!,Severity.Error);return;}Nav.NavigateTo($"/tender/files/{result.Value!.Id}");}
 }

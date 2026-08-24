@@ -134,7 +134,7 @@
         {
             var result = await Parties.RecordAsync(
                 PartyId, _direction, _amount, _cashAccountId!.Value,
-                DateOnly.FromDateTime(_date ?? DateTime.Today), _narration);
+                DateOnly.FromDateTime(_date ?? Clock.Today.ToDateTime(TimeOnly.MinValue)), _narration);
 
             if (result.Failed) { _error = result.Error; return; }
 

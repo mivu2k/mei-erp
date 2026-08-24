@@ -1,8 +1,9 @@
 @inject ITenderService Bids
 @inject ISnackbar Snackbar
+@inject NavigationManager Nav
 
-<MudDialog>
-    <DialogContent>
+<DocumentShell @ref="_shell" AsDialog="AsDialog" Title="@Title" Error="@_error" OnClose="DismissedAsync">
+    <Body>
         <MudForm @ref="_form">
             <div class="d-flex gap-3 mb-4">
                 <MudTextField @bind-Value="_model.Reference" Label="Reference" Required="true"
@@ -23,40 +24,74 @@
                           Variant="Variant.Outlined" Class="mb-4" />
 
             <div class="d-flex gap-3 mb-4">
+                <MudTextField @bind-Value="_model.IssuingAuthority" Label="Issuing authority" Variant="Variant.Outlined" />
+                <MudTextField @bind-Value="_model.Department" Label="Department" Variant="Variant.Outlined" />
+            </div>
+
+            <div class="d-flex gap-3 mb-4">
                 <MudDatePicker Label="Published" Variant="Variant.Outlined"
                                Date="_published" DateChanged="@(d => _published = d)" />
                 <MudDatePicker Label="Submission deadline" Variant="Variant.Outlined"
                                Date="_deadline" DateChanged="@(d => _deadline = d)" />
+                <MudDatePicker Label="Technical opening" Variant="Variant.Outlined"
+                               Date="_technicalOpening" DateChanged="@(d => _technicalOpening = d)" />
+                <MudDatePicker Label="Financial opening" Variant="Variant.Outlined"
+                               Date="_financialOpening" DateChanged="@(d => _financialOpening = d)" />
             </div>
 
             <MudNumericField T="decimal?" @bind-Value="_model.EstimatedValue" Label="Estimated value"
                              Variant="Variant.Outlined" HideSpinButtons="true" Class="mb-4"
                              HelperText="Kept apart from the priced lines on purpose — the two disagreeing is a useful signal." />
 
+            <div class="d-flex gap-3 mb-4">
+                <MudNumericField T="decimal?" @bind-Value="_model.TenderFee" Label="Tender fee" Variant="Variant.Outlined" HideSpinButtons="true" />
+                <MudNumericField T="decimal?" @bind-Value="_model.EmdAmount" Label="EMD amount" Variant="Variant.Outlined" HideSpinButtons="true" />
+                <MudSelect T="SubmissionMode" @bind-Value="_model.SubmissionMode" Label="Submission mode" Variant="Variant.Outlined">
+                    @foreach (var mode in Enum.GetValues<SubmissionMode>()) { <MudSelectItem Value="@mode">@mode</MudSelectItem> }
+                </MudSelect>
+            </div>
+            <div class="d-flex gap-3 mb-4">
+                <MudTextField @bind-Value="_model.PortalReference" Label="Portal reference" Variant="Variant.Outlined" />
+                <MudNumericField T="int?" @bind-Value="_model.BidValidityDays" Label="Bid validity (days)" Variant="Variant.Outlined" HideSpinButtons="true" />
+                <MudCheckBox @bind-Value="_model.IsEmdExempted" Label="EMD exempted" />
+            </div>
+            <MudTextField @bind-Value="_model.EmdExemptionReason" Label="EMD exemption reason" Variant="Variant.Outlined" Class="mb-4" />
+
+            <div class="d-flex gap-3 mb-4">
+                <MudNumericField T="decimal?" @bind-Value="_model.AwardedValue" Label="Awarded value" Variant="Variant.Outlined" HideSpinButtons="true" />
+                <MudDatePicker Label="Award date" Variant="Variant.Outlined" Date="_awardDate" DateChanged="@(d => _awardDate = d)" />
+                <MudTextField @bind-Value="_model.WorkOrderNumber" Label="Work order" Variant="Variant.Outlined" />
+            </div>
+            <div class="d-flex gap-3 mb-4">
+                <MudNumericField T="int?" @bind-Value="_model.CompletionPeriodDays" Label="Completion days" Variant="Variant.Outlined" HideSpinButtons="true" />
+                <MudNumericField T="int?" @bind-Value="_model.DefectLiabilityPeriodMonths" Label="Defect liability (months)" Variant="Variant.Outlined" HideSpinButtons="true" />
+                <MudTextField @bind-Value="_model.PaymentTerms" Label="Payment terms" Variant="Variant.Outlined" />
+            </div>
+
             <MudTextField @bind-Value="_model.Notes" Label="Notes" Lines="3"
                           Variant="Variant.Outlined" />
         </MudForm>
+    </Body>
 
-        @if (_error is not null)
-        {
-            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
-        }
-    </DialogContent>
-
-    <DialogActions>
-        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+    <Buttons>
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
                    OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
-    </DialogActions>
-</MudDialog>
+    </Buttons>
+</DocumentShell>
 
 @code {
-    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public bool AsDialog { get; set; }
     [Parameter] public int? TenderId { get; set; }
+
+    /// <summary>Raised after a successful save, so a list can reload behind a dialog.</summary>
+    [Parameter] public EventCallback Saved { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
+
+    private string Title => TenderId is null ? "New tender" : "Edit tender";
 
     private MudForm? _form;
     private TenderRecord _model = new();
-    private DateTime? _published, _deadline;
+    private DateTime? _published, _deadline, _technicalOpening, _financialOpening, _awardDate;
     private string? _error;
     private bool _busy;
 
@@ -68,6 +103,9 @@
 
         _published = _model.PublishedOn?.ToDateTime(TimeOnly.MinValue);
         _deadline = _model.SubmissionDeadline?.ToDateTime(TimeOnly.MinValue);
+        _technicalOpening = _model.TechnicalOpeningDate?.ToDateTime(TimeOnly.MinValue);
+        _financialOpening = _model.FinancialOpeningDate?.ToDateTime(TimeOnly.MinValue);
+        _awardDate = _model.AwardDate?.ToDateTime(TimeOnly.MinValue);
     }
 
     private async Task SaveAsync()
@@ -84,13 +122,27 @@
         {
             _model.PublishedOn = _published is null ? null : DateOnly.FromDateTime(_published.Value);
             _model.SubmissionDeadline = _deadline is null ? null : DateOnly.FromDateTime(_deadline.Value);
+            _model.TechnicalOpeningDate = _technicalOpening is null ? null : DateOnly.FromDateTime(_technicalOpening.Value);
+            _model.FinancialOpeningDate = _financialOpening is null ? null : DateOnly.FromDateTime(_financialOpening.Value);
+            _model.AwardDate = _awardDate is null ? null : DateOnly.FromDateTime(_awardDate.Value);
 
             var result = await Bids.SaveTenderAsync(_model);
             if (result.Failed) { _error = result.Error; return; }
 
             Snackbar.Add("Saved.", Severity.Success);
-            Dialog.Close(DialogResult.Ok(true));
+            TenderId = _model.Id;
+            await Saved.InvokeAsync();
+            if (AsDialog && _shell is not null) await _shell.CloseAsync();
         }
         finally { _busy = false; }
+    }
+
+    private DocumentShell? _shell;
+    
+    /// <summary>The shell has already closed itself; just react to it.</summary>
+    private async Task DismissedAsync()
+    {
+        if (Closed.HasDelegate) { await Closed.InvokeAsync(); return; }
+        Nav.NavigateTo("/tender/tenders");
     }
 }

@@ -2,45 +2,89 @@
 @inject IAccountService Chart
 @inject IClock Clock
 @inject ISnackbar Snackbar
+@inject NavigationManager Nav
 
-<MudDialog>
-    <DialogContent>
+<DocumentShell @ref="_shell" AsDialog="AsDialog" Title="@Title" Error="@_error" OnClose="DismissedAsync">
+    <Body>
         <MudForm @ref="_form">
-            <MudTextField @bind-Value="_title" Label="What is this for?" Required="true"
-                          RequiredError="Say what the money is for."
-                          Variant="Variant.Outlined" Class="mb-4" />
+            <FormSection Title="What is being asked for" Icon="@Icons.Material.Outlined.RequestQuote"
+                         Hint="Approval authorises the spend; the money only moves when someone actually pays.">
+                <div class="app-form-grid">
+                    <MudTextField @bind-Value="_title" Label="What is this for?" Required="true"
+                                  RequiredError="Say what the money is for."
+                                  Variant="Variant.Outlined" Class="app-form-wide" />
+                    <MudNumericField T="decimal" @bind-Value="_amount" Label="Amount" Required="true"
+                                     Variant="Variant.Outlined" HideSpinButtons="true"
+                                     HelperText="Larger amounts may need more signatures." />
+                    <MudDatePicker Label="Needed by" Variant="Variant.Outlined"
+                                   Date="_neededBy" DateChanged="@(d => _neededBy = d)" />
+                    <MudTextField @bind-Value="_payee" Label="Pay to" Variant="Variant.Outlined"
+                                  Class="app-form-wide"
+                                  HelperText="The supplier or person receiving the money." />
+                </div>
+            </FormSection>
 
-            <div class="d-flex gap-3 mb-4">
-                <MudNumericField T="decimal" @bind-Value="_amount" Label="Amount" Required="true"
-                                 Variant="Variant.Outlined" HideSpinButtons="true"
-                                 HelperText="Larger amounts may need more signatures." />
-                <MudDatePicker Label="Needed by" Variant="Variant.Outlined"
-                               Date="_neededBy" DateChanged="@(d => _neededBy = d)" />
-            </div>
+            <FormSection Title="Charge to" Icon="@Icons.Material.Outlined.AccountTree"
+                         Hint="Only leaf heads can be posted to. Itemize when one request covers several heads.">
+                <MudSwitch T="bool" @bind-Value="_itemized" Color="Color.Primary"
+                           Label="Itemize this request" Class="mb-3" />
 
-            <MudTextField @bind-Value="_payee" Label="Pay to" Variant="Variant.Outlined"
-                          Class="mb-4" HelperText="The supplier or person receiving the money." />
-
-            <MudSelect T="int?" @bind-Value="_expenseAccountId" Label="Charge to"
-                       Variant="Variant.Outlined" Clearable="true" Class="mb-4">
-                @foreach (var a in _expenseHeads)
+            @if (_itemized)
+            {
+                @foreach (var line in _lines)
                 {
-                    <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                    <MudPaper Class="pa-3 mb-3" Outlined="true">
+                        <div class="d-flex gap-3 align-start">
+                            <MudTextField @bind-Value="line.Category" Label="Category"
+                                          Variant="Variant.Outlined" />
+                            <MudNumericField T="decimal" @bind-Value="line.Amount" Label="Amount"
+                                             Variant="Variant.Outlined" HideSpinButtons="true" Required="true" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                           Disabled="@(_lines.Count == 1)" OnClick="@(() => RemoveLine(line))" />
+                        </div>
+                        <MudTextField @bind-Value="line.Reason" Label="Reason" Required="true"
+                                      RequiredError="Explain this item." Variant="Variant.Outlined" Class="mt-3" />
+                        <MudTextField @bind-Value="line.Description" Label="Details" Lines="2"
+                                      Variant="Variant.Outlined" Class="mt-3" />
+                        <MudSelect T="int?" @bind-Value="line.ExpenseAccountId" Label="Charge to"
+                                   Variant="Variant.Outlined" Clearable="true" Class="mt-3">
+                            @foreach (var a in _expenseHeads)
+                            {
+                                <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudPaper>
                 }
-            </MudSelect>
+                <div class="d-flex justify-space-between align-center">
+                    <MudButton StartIcon="@Icons.Material.Filled.Add" OnClick="AddLine">Add item</MudButton>
+                    <MudText Typo="Typo.subtitle1">Total: @_lines.Sum(x => x.Amount).ToString("N2")</MudText>
+                </div>
+            }
+            else
+            {
+                <div class="app-form-grid">
+                    <MudSelect T="int?" @bind-Value="_expenseAccountId" Label="Charge to"
+                               Variant="Variant.Outlined" Clearable="true" Class="app-form-wide">
+                        @foreach (var a in _expenseHeads)
+                        {
+                            <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </div>
+            }
+            </FormSection>
 
-            <MudTextField @bind-Value="_description" Label="Details" Lines="3"
-                          Variant="Variant.Outlined" />
+            <FormSection Title="Details" Icon="@Icons.Material.Outlined.NoteAlt"
+                         Hint="What an approver reads before signing.">
+                <div class="app-form-grid">
+                    <MudTextField @bind-Value="_description" Label="Details" Lines="3"
+                                  Variant="Variant.Outlined" Class="app-form-wide" />
+                </div>
+            </FormSection>
         </MudForm>
+    </Body>
 
-        @if (_error is not null)
-        {
-            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
-        }
-    </DialogContent>
-
-    <DialogActions>
-        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+    <Buttons>
         <MudButton Variant="Variant.Text" OnClick="@(() => SaveAsync(false))" Disabled="_busy">
             Save draft
         </MudButton>
@@ -48,17 +92,24 @@
                    OnClick="@(() => SaveAsync(true))" Disabled="_busy">
             Save &amp; submit
         </MudButton>
-    </DialogActions>
-</MudDialog>
+    </Buttons>
+</DocumentShell>
 
 @code {
-    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public bool AsDialog { get; set; }
     [Parameter] public int? RequestId { get; set; }
+    [Parameter] public bool DirectorMode { get; set; }
+    [Parameter] public EventCallback Saved { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
+
+    private string Title => RequestId is null ? "New request" : "Edit request";
 
     private MudForm? _form;
     private string _title = "";
     private string? _description;
     private decimal _amount;
+    private bool _itemized;
+    private List<DraftLine> _lines = [new()];
     private string? _payee;
     private int? _expenseAccountId;
     private DateTime? _neededBy;
@@ -81,7 +132,20 @@
                 _amount = existing.Amount;
                 _payee = existing.PayeeName;
                 _expenseAccountId = existing.ExpenseAccountId;
+                DirectorMode = existing.IsDirectorRequest;
                 _neededBy = existing.NeededBy.ToDateTime(TimeOnly.MinValue);
+                if (existing.Lines.Count > 0)
+                {
+                    _itemized = true;
+                    _lines = existing.Lines.Select(line => new DraftLine
+                    {
+                        Category = line.Category,
+                        Amount = line.Amount,
+                        Reason = line.Reason,
+                        Description = line.Description,
+                        ExpenseAccountId = line.ExpenseAccountId
+                    }).ToList();
+                }
             }
         }
     }
@@ -98,9 +162,15 @@
         _busy = true;
         try
         {
+            var lines = _itemized
+                ? _lines.Select(line => new PaymentRequestLineInput(
+                    line.Category, line.Amount, line.Reason, line.Description, line.ExpenseAccountId)).ToList()
+                : null;
+            var amount = _itemized ? _lines.Sum(line => line.Amount) : _amount;
             var saved = await Requests.SaveDraftAsync(new PaymentRequestInput(
-                RequestId, _title, _description, _amount, _expenseAccountId,
-                _payee, DateOnly.FromDateTime(_neededBy ?? DateTime.Today), null));
+                RequestId, _title, _description, amount, _itemized ? null : _expenseAccountId,
+                _payee, DateOnly.FromDateTime(_neededBy ?? Clock.Today.ToDateTime(TimeOnly.MinValue)), null,
+                DirectorMode, lines));
 
             if (saved.Failed) { _error = saved.Error; return; }
 
@@ -119,8 +189,34 @@
                 Snackbar.Add("Draft saved.", Severity.Success);
             }
 
-            Dialog.Close(DialogResult.Ok(true));
+            RequestId = saved.Value.Id;
+            await Saved.InvokeAsync();
+            if (AsDialog && _shell is not null) await _shell.CloseAsync();
         }
         finally { _busy = false; }
+    }
+
+    private void AddLine() => _lines.Add(new DraftLine());
+    private void RemoveLine(DraftLine line)
+    {
+        if (_lines.Count > 1) _lines.Remove(line);
+    }
+
+    private DocumentShell? _shell;
+    
+    /// <summary>The shell has already closed itself; just react to it.</summary>
+    private async Task DismissedAsync()
+    {
+        if (Closed.HasDelegate) { await Closed.InvokeAsync(); return; }
+        Nav.NavigateTo("/finance/requests");
+    }
+
+    private sealed class DraftLine
+    {
+        public string? Category { get; set; }
+        public decimal Amount { get; set; }
+        public string? Reason { get; set; }
+        public string? Description { get; set; }
+        public int? ExpenseAccountId { get; set; }
     }
 }

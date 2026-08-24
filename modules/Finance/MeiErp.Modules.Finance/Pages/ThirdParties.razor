@@ -5,25 +5,34 @@
 @inject ISnackbar Snackbar
 @inject IDialogService Dialogs
 
-<PageTitle>Third parties</PageTitle>
+<ListShell Title="Third parties"
+           Subtitle="A party is a name and a side. Money is recorded here and posted as a real voucher."
+           Icon="@Icons.Material.Outlined.People"
+           Loading="_loading"
+           IsEmpty="@(_rows.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.People"
+           EmptyTitle="No third parties yet"
+           EmptyHint="Add whoever owes the business, or whoever the business owes.">
+    <Actions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+            New party
+        </MudButton>
+        <MudTooltip Text="Open as a full page instead">
+            <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Href="/finance/third-parties/new" />
+        </MudTooltip>
+    </Actions>
 
-<div class="d-flex align-center mb-1">
-    <div>
-        <MudText Typo="Typo.h5">Third parties</MudText>
-        <MudText Typo="Typo.body2" Class="mud-text-secondary">
-            A party is a name and a side. Money is recorded here and posted as a real voucher.
-        </MudText>
-    </div>
-    <MudSpacer />
-    <MudButton Variant="Variant.Filled" Color="Color.Primary"
-               StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
-        New party
-    </MudButton>
-</div>
+    <EmptyAction>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+            New party
+        </MudButton>
+    </EmptyAction>
 
-<MudPaper Outlined="true" Elevation="0" Class="mt-4">
+    <ChildContent>
     <MudDataGrid T="ThirdParty" Items="_rows" Dense="true" Hover="true" Elevation="0"
-                 Loading="_loading" Filterable="false" RowsPerPage="25">
+                 Filterable="false" RowsPerPage="25">
         <Columns>
             <PropertyColumn Property="@(p => p.Name)" Title="Name" />
             <TemplateColumn Title="Side">
@@ -60,19 +69,24 @@
                                    OnClick="@(() => Pay(context.Item))">Add payment</MudButton>
                         <MudButton Size="Size.Small" Variant="Variant.Text"
                                    Href="@($"/finance/third-parties/{context.Item.Id}")">Statement</MudButton>
+                        <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small"
+                                       Href="@($"/finance/third-parties/{context.Item.Id}/edit")"
+                                       title="Open as a page" />
                         <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small"
                                        OnClick="@(() => Edit(context.Item))" />
                     </div>
                 </CellTemplate>
             </TemplateColumn>
         </Columns>
-        <NoRecordsContent>
-            <MudText Class="pa-8 text-center mud-text-secondary">
-                No third parties yet.
-            </MudText>
-        </NoRecordsContent>
     </MudDataGrid>
-</MudPaper>
+    </ChildContent>
+</ListShell>
+
+@if (_editing)
+{
+    <PartyEditor AsDialog="true" PartyId="_editingId"
+                 Saved="LoadAsync" Closed="@(() => { _editing = false; return Task.CompletedTask; })" />
+}
 
 @code {
     private IReadOnlyList<ThirdParty> _rows = [];
@@ -93,14 +107,13 @@
         _loading = false;
     }
 
-    private async Task Edit(ThirdParty? row)
-    {
-        var parameters = new DialogParameters<PartyEditor> { { x => x.PartyId, row?.Id } };
-        var dialog = await Dialogs.ShowAsync<PartyEditor>(
-            row is null ? "New party" : "Edit party", parameters,
-            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+    private bool _editing;
+    private int? _editingId;
 
-        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    private void Edit(ThirdParty? row)
+    {
+        _editingId = row?.Id;
+        _editing = true;
     }
 
     private async Task Pay(ThirdParty row)

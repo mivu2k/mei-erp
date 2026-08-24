@@ -1,4 +1,5 @@
 using MeiErp.Platform.Notifications;
+using MeiErp.Platform.Persistence;
 using MeiErp.Platform.Workflow;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -22,6 +23,10 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options)
     public DbSet<UserModuleAccess> ModuleAccess => Set<UserModuleAccess>();
     public DbSet<Department> Departments => Set<Department>();
     public DbSet<CompanyProfile> CompanyProfiles => Set<CompanyProfile>();
+    public DbSet<LabelTemplate> LabelTemplates => Set<LabelTemplate>();
+    public DbSet<AuditLogEntry> AuditLogs => Set<AuditLogEntry>();
+    public DbSet<SavedReportView> SavedReportViews => Set<SavedReportView>();
+    public DbSet<ReportSchedule> ReportSchedules => Set<ReportSchedule>();
 
     public DbSet<WorkflowDefinition> Workflows => Set<WorkflowDefinition>();
     public DbSet<WorkflowStep> WorkflowSteps => Set<WorkflowStep>();
@@ -72,6 +77,26 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options)
             b.HasIndex(r => r.ModuleKey);
         });
 
+        builder.Entity<SavedReportView>(b =>
+        {
+            b.Property(x => x.UserId).HasMaxLength(450).IsRequired();
+            b.Property(x => x.ReportKey).HasMaxLength(150).IsRequired();
+            b.Property(x => x.Name).HasMaxLength(120).IsRequired();
+            b.Property(x => x.FiltersJson).HasColumnType("jsonb").IsRequired();
+            b.HasIndex(x => new { x.UserId, x.ReportKey, x.Name }).IsUnique();
+        });
+
+        builder.Entity<ReportSchedule>(b =>
+        {
+            b.Property(x => x.UserId).HasMaxLength(450).IsRequired();
+            b.Property(x => x.ReportKey).HasMaxLength(150).IsRequired();
+            b.Property(x => x.Name).HasMaxLength(120).IsRequired();
+            b.Property(x => x.FiltersJson).HasColumnType("jsonb").IsRequired();
+            b.Property(x => x.LastError).HasMaxLength(2000);
+            b.HasIndex(x => new { x.IsActive, x.NextRunUtc });
+            b.HasIndex(x => new { x.UserId, x.ReportKey, x.Name }).IsUnique();
+        });
+
         builder.Entity<UserModuleAccess>(b =>
         {
             b.Property(a => a.ModuleKey).HasMaxLength(50).IsRequired();
@@ -97,6 +122,31 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options)
              .WithMany()
              .HasForeignKey(d => d.HeadUserId)
              .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<LabelTemplate>(b =>
+        {
+            b.Property(x=>x.Name).HasMaxLength(150).IsRequired();
+            b.Property(x=>x.DocumentType).HasMaxLength(80).IsRequired();
+            b.Property(x=>x.FieldKeys).HasMaxLength(1000);
+            b.Property(x=>x.ModifiedBy).HasMaxLength(200);
+            b.Property(x=>x.WidthMm).HasPrecision(8,2);
+            b.Property(x=>x.HeightMm).HasPrecision(8,2);
+            b.Property(x=>x.MarginMm).HasPrecision(8,2);
+            b.Property(x=>x.FontScale).HasPrecision(5,2);
+            b.HasIndex(x=>new{x.DocumentType,x.Name}).IsUnique();
+        });
+        builder.Entity<AuditLogEntry>(b =>
+        {
+            b.ToTable("AuditLogs", SchemaName);
+            b.Property(x=>x.ModuleKey).HasMaxLength(50).IsRequired();
+            b.Property(x=>x.EntityName).HasMaxLength(150).IsRequired();
+            b.Property(x=>x.EntityId).HasMaxLength(80).IsRequired();
+            b.Property(x=>x.Action).HasMaxLength(30).IsRequired();
+            b.Property(x=>x.UserId).HasMaxLength(450);
+            b.Property(x=>x.UserName).HasMaxLength(200);
+            b.HasIndex(x=>x.TimestampUtc);
+            b.HasIndex(x=>new{x.ModuleKey,x.EntityName,x.EntityId});
         });
 
         ConfigureWorkflow(builder);

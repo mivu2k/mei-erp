@@ -1,41 +1,49 @@
 @inject IAdvanceService Advances
 @inject IClock Clock
 @inject ISnackbar Snackbar
+@inject NavigationManager Nav
 
-<MudDialog>
-    <DialogContent>
+<DocumentShell @ref="_shell" AsDialog="AsDialog" Title="@Title" Error="@_error" OnClose="DismissedAsync">
+    <Body>
         <MudForm @ref="_form">
-            <MudTextField @bind-Value="_purpose" Label="What is it for?" Required="true"
-                          RequiredError="Say what the advance is for." Lines="2"
-                          Variant="Variant.Outlined" Class="mb-3" />
+            <FormSection Title="What the advance is for" Icon="@Icons.Material.Outlined.Description"
+                         Hint="An advance is settled later against receipts, so the purpose is what the settlement is checked against.">
+                <div class="app-form-grid">
+                    <MudTextField @bind-Value="_purpose" Label="What is it for?" Required="true"
+                                  RequiredError="Say what the advance is for." Lines="2"
+                                  Variant="Variant.Outlined" Class="app-form-wide" />
+                </div>
+            </FormSection>
 
-            <div class="d-flex gap-3">
-                <MudNumericField T="decimal" @bind-Value="_amount" Label="Amount"
-                                 Variant="Variant.Outlined" HideSpinButtons="true" />
-                <MudDatePicker Label="Needed by" Variant="Variant.Outlined"
-                               Date="_neededBy" DateChanged="@(d => _neededBy = d)" />
-            </div>
+            <FormSection Title="How much, and when" Icon="@Icons.Material.Outlined.Payments"
+                         Hint="Approval authorises the advance; the money moves when it is actually paid out.">
+                <div class="app-form-grid">
+                    <MudNumericField T="decimal" @bind-Value="_amount" Label="Amount"
+                                     Variant="Variant.Outlined" HideSpinButtons="true" />
+                    <MudDatePicker Label="Needed by" Variant="Variant.Outlined"
+                                   Date="_neededBy" DateChanged="@(d => _neededBy = d)" />
+                </div>
+            </FormSection>
         </MudForm>
+    </Body>
 
-        @if (_error is not null)
-        {
-            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-3">@_error</MudAlert>
-        }
-    </DialogContent>
-
-    <DialogActions>
-        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+    <Buttons>
         <MudButton Variant="Variant.Text" OnClick="@(() => SaveAsync(false))" Disabled="_busy">
             Save draft
         </MudButton>
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
                    OnClick="@(() => SaveAsync(true))" Disabled="_busy">Save &amp; submit</MudButton>
-    </DialogActions>
-</MudDialog>
+    </Buttons>
+</DocumentShell>
 
 @code {
-    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public bool AsDialog { get; set; }
     [Parameter] public int? AdvanceId { get; set; }
+    [Parameter] public bool DirectorMode { get; set; }
+    [Parameter] public EventCallback Saved { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
+
+    private string Title => AdvanceId is null ? "Request an advance" : "Edit request";
 
     private MudForm? _form;
     private string _purpose = "";
@@ -55,6 +63,7 @@
             {
                 _purpose = existing.Purpose;
                 _amount = existing.Amount;
+                DirectorMode = existing.IsDirectorRequest;
                 _neededBy = existing.NeededBy.ToDateTime(TimeOnly.MinValue);
             }
         }
@@ -74,7 +83,8 @@
         {
             var saved = await Advances.SaveDraftAsync(new AdvanceInput(
                 AdvanceId, _purpose, _amount,
-                DateOnly.FromDateTime(_neededBy ?? DateTime.Today), null, null, null));
+                DateOnly.FromDateTime(_neededBy ?? Clock.Today.ToDateTime(TimeOnly.MinValue)), null, null, null,
+                DirectorMode));
 
             if (saved.Failed) { _error = saved.Error; return; }
 
@@ -94,8 +104,19 @@
                 Snackbar.Add("Draft saved.", Severity.Success);
             }
 
-            Dialog.Close(DialogResult.Ok(true));
+            AdvanceId = saved.Value.Id;
+            await Saved.InvokeAsync();
+            if (AsDialog && _shell is not null) await _shell.CloseAsync();
         }
         finally { _busy = false; }
+    }
+
+    private DocumentShell? _shell;
+    
+    /// <summary>The shell has already closed itself; just react to it.</summary>
+    private async Task DismissedAsync()
+    {
+        if (Closed.HasDelegate) { await Closed.InvokeAsync(); return; }
+        Nav.NavigateTo("/finance/advances");
     }
 }

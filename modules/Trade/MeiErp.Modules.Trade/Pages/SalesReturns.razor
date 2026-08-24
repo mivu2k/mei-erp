@@ -1,0 +1,12 @@
+@page "/sales/returns"
+@attribute [Authorize(Policy = SalesModule.OrdersView)]
+@rendermode InteractiveServer
+
+<PageTitle>Customer returns</PageTitle>
+
+@* Goods a customer sent back. Posting one moves stock, so it is gated on the
+   same permission as issuing goods out - not on merely seeing the order. *@
+<AuthorizeView Policy="@SalesModule.DeliveryPost" Context="post">
+    <Authorized><ReturnList SupplierReturns="false" CanPost="true" /></Authorized>
+    <NotAuthorized><ReturnList SupplierReturns="false" CanPost="false" /></NotAuthorized>
+</AuthorizeView>

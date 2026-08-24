@@ -40,7 +40,7 @@ public static class FinanceReportRegistration
         Run = async (request, ct) =>
         {
             var reports = sp.GetRequiredService<IFinanceReports>();
-            var asAt = request.AsAt ?? DateOnly.FromDateTime(DateTime.Today);
+            var asAt = request.AsAt ?? sp.GetRequiredService<MeiErp.Platform.Kernel.IClock>().Today;
             var trial = await reports.TrialBalanceAsync(asAt, ct);
 
             return new ReportResult
@@ -95,7 +95,7 @@ public static class FinanceReportRegistration
         {
             var reports = sp.GetRequiredService<IFinanceReports>();
             var from = request.From ?? DateOnly.MinValue;
-            var to = request.To ?? DateOnly.FromDateTime(DateTime.Today);
+            var to = request.To ?? sp.GetRequiredService<MeiErp.Platform.Kernel.IClock>().Today;
 
             var statement = await reports.IncomeStatementAsync(from, to, ct);
 
@@ -147,7 +147,7 @@ public static class FinanceReportRegistration
         Run = async (request, ct) =>
         {
             var reports = sp.GetRequiredService<IFinanceReports>();
-            var asAt = request.AsAt ?? DateOnly.FromDateTime(DateTime.Today);
+            var asAt = request.AsAt ?? sp.GetRequiredService<MeiErp.Platform.Kernel.IClock>().Today;
             var sheet = await reports.BalanceSheetAsync(asAt, ct);
 
             var rows = sheet.Assets
@@ -262,7 +262,7 @@ public static class FinanceReportRegistration
                     ? parsed
                     : null;
 
-            var list = await requests.ListAsync(status, mineOnly: false, ct);
+            var list = await requests.ListAsync(status, mineOnly: false, ct: ct);
 
             return new ReportResult
             {
@@ -305,7 +305,7 @@ public static class FinanceReportRegistration
         {
             var reports = sp.GetRequiredService<IFinanceReports>();
             var from = request.From ?? DateOnly.MinValue;
-            var to = request.To ?? DateOnly.FromDateTime(DateTime.Today);
+            var to = request.To ?? sp.GetRequiredService<MeiErp.Platform.Kernel.IClock>().Today;
 
             var statement = await reports.IncomeStatementAsync(from, to, ct);
             var total = statement.TotalExpenses;

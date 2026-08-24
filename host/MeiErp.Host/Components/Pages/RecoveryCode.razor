@@ -1,0 +1,19 @@
+@page "/recovery-code"
+@layout EmptyLayout
+@attribute [AllowAnonymous]
+
+<PageTitle>Recovery code</PageTitle>
+<div class="signin-page"><div class="signin-card">
+    <div class="signin-brand"><div class="signin-mark">MEI</div><h1>Use a recovery code</h1></div>
+    @if (Error is not null) { <div class="signin-error" role="alert">That recovery code was not accepted.</div> }
+    <form method="post" action="/auth/recovery-code" class="signin-form">
+        <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+        <label for="code">Recovery code</label><input id="code" name="code" autocomplete="one-time-code" required autofocus />
+        <button type="submit">Continue</button>
+    </form>
+    <p class="mt-4"><a href="/sign-in">Cancel</a></p>
+</div></div>
+@code {
+    [SupplyParameterFromQuery] private string? Error { get; set; }
+    [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
+}

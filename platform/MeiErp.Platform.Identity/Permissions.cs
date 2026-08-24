@@ -15,6 +15,7 @@ public static class PlatformPermissions
     public const string WorkflowsManage = "platform.workflows.manage";
     public const string AuditView = "platform.audit.view";
     public const string OutboxManage = "platform.outbox.manage";
+    public const string LabelsManage = "platform.labels.manage";
 
     /// <summary>Every user has this implicitly; it is what puts the approvals inbox in the nav.</summary>
     public const string ApprovalsAct = "platform.approvals.act";
@@ -28,7 +29,8 @@ public static class PlatformPermissions
         new(WorkflowsManage,   "Approvals", "Design approval workflows and their amount bands"),
         new(ApprovalsAct,      "Approvals", "See and act on the approvals inbox"),
         new(AuditView,         "Audit",     "Read the platform audit trail"),
-        new(OutboxManage,      "System",    "Review and retry failed integration events")
+        new(OutboxManage,      "System",    "Review and retry failed integration events"),
+        new(LabelsManage,      "Printing",  "Configure label sizes and printed fields")
     ];
 
     /// <summary>Holds every permission, including ones modules add later.</summary>

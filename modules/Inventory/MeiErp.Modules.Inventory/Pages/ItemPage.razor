@@ -1,0 +1,11 @@
+@page "/inventory/items/new"
+@page "/inventory/items/{Id:int}"
+@attribute [Authorize(Policy = InventoryModule.ItemsManage)]
+@rendermode InteractiveServer
+
+@* The dialog and this page render the same editor; only the frame differs. *@
+<ItemEditor AsDialog="false" ItemId="Id" />
+
+@code {
+    [Parameter] public int? Id { get; set; }
+}

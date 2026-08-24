@@ -1,0 +1,149 @@
+@page "/repair/customers"
+@page "/repair/quotations"
+@page "/repair/quotations/new"
+@page "/repair/quotations/{Id:int}"
+@page "/repair/orders"
+@page "/repair/orders/{Id:int}"
+@page "/repair/parts"
+@page "/repair/purchases"
+@page "/repair/purchases/new"
+@page "/repair/suppliers"
+@page "/inventory/returns"
+@page "/trade/parties"
+@page "/trade/purchase-orders"
+@page "/trade/goods-receipts"
+@page "/trade/sales-orders"
+@page "/trade/deliveries"
+@page "/inventory/parties"
+@page "/inventory/purchase-orders"
+@page "/inventory/goods-receipts"
+@page "/inventory/sales-orders"
+@page "/inventory/deliveries"
+@page "/inventory/transactions"
+@page "/inventory/receipts"
+@page "/inventory/receipts/{Id:int}"
+@page "/inventory/suppliers"
+@page "/inventory/customers"
+@page "/inventory/reports"
+@page "/finance/reconciliation"
+@page "/hr/attendance/monthly"
+@page "/hr/my-code"
+@page "/hr/stations"
+@page "/hr/setup"
+@page "/auto/reports"
+@page "/repair/reports"
+@page "/repair/purchases/{Id:int}"
+@page "/tender/reports"
+@page "/tender/projects/{Id:int}/edit"
+@page "/finance/admin/audit"
+@page "/finance/admin/settings"
+@page "/finance/advances/my"
+@page "/finance/approvals"
+@page "/finance/director-funds"
+@page "/finance/ledger"
+@page "/finance/notifications"
+@page "/notifications/preferences"
+@page "/account/security"
+@page "/finance/payroll/components"
+@page "/finance/payroll/structures"
+@page "/finance/requests/my"
+@page "/finance/requests/{Id:int}/edit"
+@page "/inventory/counts/{Id:int}"
+@page "/inventory/deliveries/{Id:int}"
+@page "/inventory/products/new"
+@page "/inventory/products/{Id:int}"
+@page "/inventory/products/{Id:int}/edit"
+@page "/inventory/purchase-orders/{Id:int}"
+@page "/inventory/reports/{ReportKey}"
+@page "/inventory/sales-orders/{Id:int}"
+@page "/inventory/transfers/{Id:int}"
+@page "/repair/scan"
+@page "/tender/files/scan"
+@attribute [Authorize]
+@inject NavigationManager Nav
+
+<PageTitle>Redirecting</PageTitle>
+<MudProgressLinear Indeterminate="true" />
+
+@code {
+    [Parameter] public int? Id { get; set; }
+    [Parameter] public string? ReportKey { get; set; }
+
+    protected override void OnInitialized()
+    {
+        var path = new Uri(Nav.Uri).AbsolutePath.TrimEnd('/').ToLowerInvariant();
+        var target = path switch
+        {
+            "/inventory/transactions" => "/reports/inventory.movements",
+            // Buying and selling moved out of Inventory into Sales & Purchase.
+            // Bookmarks and printed paperwork still carry the old addresses.
+            "/inventory/receipts" => "/purchase/goods-receipts",
+            var p when p.StartsWith("/inventory/receipts/") => "/purchase/goods-receipts",
+            "/inventory/goods-receipts" or "/trade/goods-receipts" => "/purchase/goods-receipts",
+            "/inventory/deliveries" or "/trade/deliveries" => "/sales/deliveries",
+            var p when p.StartsWith("/inventory/purchase-orders") => "/purchase/orders",
+            "/trade/purchase-orders" => "/purchase/orders",
+            var p when p.StartsWith("/inventory/sales-orders") => "/sales/orders",
+            "/trade/sales-orders" => "/sales/orders",
+
+            // A party record has two sides and now two lists. Supplier-flavoured
+            // addresses land in Purchase, everything else in Sales.
+            // Returns split by direction. The old combined screen opened on the
+            // customer side, so that is where an old bookmark lands.
+            "/inventory/returns" => "/sales/returns",
+
+            // The workshop's parts buying moved into Purchase, and its supplier
+            // list folded into the one party master.
+            // The workshop's own customers, quotations and orders folded into
+            // the one party master and the unified Sales documents.
+            "/repair/customers" => "/sales/customers",
+            "/repair/quotations" or "/repair/quotations/new" => "/sales/quotations",
+            var p when p.StartsWith("/repair/quotations/") => "/sales/quotations",
+            "/repair/orders" => "/sales/invoices",
+            var p when p.StartsWith("/repair/orders/") => "/sales/invoices",
+
+            "/repair/parts" => "/purchase/parts",
+            "/repair/purchases" => "/purchase/part-purchases",
+            "/repair/purchases/new" => "/purchase/part-purchases/new",
+            "/repair/suppliers" => "/purchase/suppliers",
+
+            "/inventory/suppliers" => "/purchase/suppliers",
+            "/inventory/customers" or "/inventory/parties" or "/trade/parties" => "/sales/customers",
+            "/inventory/reports" => "/reports",
+            "/finance/reconciliation" => "/finance/reconcile",
+            "/hr/attendance/monthly" => "/hr/attendance",
+            "/hr/my-code" => "/hr/attendance/code",
+            "/hr/stations" or "/hr/setup" => "/hr/attendance/setup",
+            "/auto/reports" => "/reports/auto.maintenance-cost",
+            "/repair/reports" or "/tender/reports" => "/reports",
+            var p when p.StartsWith("/repair/purchases/") => "/repair/purchases",
+            "/tender/projects" => "/tender/projects",
+            var p when p.StartsWith("/tender/projects/") => "/tender/projects",
+            "/finance/admin/audit" => "/admin/audit",
+            "/finance/admin/settings" => "/admin/company",
+            "/finance/advances/my" => "/finance/advances",
+            "/finance/approvals" => "/approvals",
+            "/finance/director-funds" => "/finance/advances?director=true",
+            "/finance/ledger" => "/finance/reports",
+            // The per-module scan screens folded into one. Printed stickers and
+            // bookmarks still carry the old addresses.
+            "/repair/scan" or "/tender/files/scan" => "/scan",
+            // Personal settings folded into one profile screen.
+            "/finance/notifications" or "/notifications/preferences" => "/profile?tab=notifications",
+            "/account/security" => "/profile?tab=security",
+            "/finance/payroll/components" or "/finance/payroll/structures" => "/finance/payroll/setup",
+            "/finance/requests/my" => "/finance/requests",
+            var p when p.StartsWith("/finance/requests/") => "/finance/requests",
+            var p when p.StartsWith("/inventory/counts/") => "/inventory/counts",
+            var p when p.StartsWith("/inventory/deliveries/") => "/inventory/deliveries",
+            "/inventory/products/new" => "/inventory/products",
+            var p when p.StartsWith("/inventory/products/") => "/inventory/products",
+            var p when p.StartsWith("/inventory/purchase-orders/") => "/inventory/purchase-orders",
+            var p when p.StartsWith("/inventory/reports/") => "/reports",
+            var p when p.StartsWith("/inventory/sales-orders/") => "/inventory/sales-orders",
+            var p when p.StartsWith("/inventory/transfers/") => "/inventory/transfers",
+            _ => "/"
+        };
+        Nav.NavigateTo(target, replace: true);
+    }
+}

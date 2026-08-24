@@ -1,10 +1,11 @@
 @inject IFleetService Fleet
 @inject IClock Clock
 @inject ISnackbar Snackbar
+@inject NavigationManager Nav
 
-<MudDialog>
-    <DialogContent>
-        <MudText Typo="Typo.body2" Class="mb-4">Logging against <b>@Registration</b>.</MudText>
+<DocumentShell @ref="_shell" AsDialog="AsDialog" Title="@Title" Error="@_error" OnClose="DismissedAsync">
+    <Body>
+        <MudText Typo="Typo.body2" Class="mb-4">Logging against <b>@_registration</b>.</MudText>
 
         <MudForm @ref="_form">
             <div class="d-flex gap-3 mb-4">
@@ -26,7 +27,7 @@
                                  Variant="Variant.Outlined" HideSpinButtons="true" />
                 <MudNumericField T="int?" @bind-Value="_odometer" Label="Odometer"
                                  Variant="Variant.Outlined" HideSpinButtons="true"
-                                 HelperText="@(LastOdometer is null ? null : $"Last recorded {LastOdometer:N0}")" />
+                                 HelperText="@(_lastOdometer is null ? null : $"Last recorded {_lastOdometer:N0}")" />
             </div>
 
             <div class="d-flex gap-3 mb-4">
@@ -39,27 +40,28 @@
                 <MudDatePicker Label="Next due" Variant="Variant.Outlined"
                                Date="_nextDue" DateChanged="@(d => _nextDue = d)"
                                HelperText="Feeds the reminder list on the fleet page." />
+                <MudNumericField T="int?" @bind-Value="_nextDueOdometer" Label="Next due odometer"
+                                 Variant="Variant.Outlined" HideSpinButtons="true" Class="mt-3" />
             }
         </MudForm>
+    </Body>
 
-        @if (_error is not null)
-        {
-            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
-        }
-    </DialogContent>
-
-    <DialogActions>
-        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+    <Buttons>
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
                    OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
-    </DialogActions>
-</MudDialog>
+    </Buttons>
+</DocumentShell>
 
 @code {
-    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public bool AsDialog { get; set; }
     [Parameter] public int VehicleId { get; set; }
-    [Parameter] public string Registration { get; set; } = "";
+    [Parameter] public int? ServiceId { get; set; }
+    [Parameter] public string? Registration { get; set; }
     [Parameter] public int? LastOdometer { get; set; }
+    [Parameter] public EventCallback Saved { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
+
+    private string Title => ServiceId is null ? "Log service" : "Edit service";
 
     private MudForm? _form;
     private ServiceKind _kind = ServiceKind.Routine;
@@ -70,11 +72,39 @@
     private string? _invoice;
     private decimal _cost;
     private int? _odometer;
+    private int? _nextDueOdometer;
     private string? _error;
     private bool _busy;
+    private string? _registration;
+    private int? _lastOdometer;
 
-    protected override void OnInitialized() =>
+    protected override async Task OnInitializedAsync()
+    {
+        _registration = Registration;
+        _lastOdometer = LastOdometer;
+        if (_registration is null)
+        {
+            // Opened as a full page, so the caller didn't hand these in - look
+            // the vehicle up ourselves.
+            var vehicle = await Fleet.GetAsync(VehicleId);
+            _registration = vehicle?.Registration ?? "";
+            _lastOdometer = vehicle?.CurrentOdometer;
+        }
+
         _date = Clock.Today.ToDateTime(TimeOnly.MinValue);
+        if (ServiceId is not { } id) return;
+        var row = (await Fleet.ServicesAsync(VehicleId)).FirstOrDefault(x => x.Id == id);
+        if (row is null) { _error = "That service record no longer exists."; return; }
+        _kind = row.Kind;
+        _date = row.Date.ToDateTime(TimeOnly.MinValue);
+        _nextDue = row.NextDueDate?.ToDateTime(TimeOnly.MinValue);
+        _description = row.Description;
+        _vendor = row.Vendor;
+        _invoice = row.InvoiceNumber;
+        _cost = row.Cost;
+        _odometer = row.Odometer;
+        _nextDueOdometer = row.NextDueOdometer;
+    }
 
     private async Task SaveAsync()
     {
@@ -88,24 +118,40 @@
         _busy = true;
         try
         {
-            var result = await Fleet.AddServiceAsync(new VehicleService
+            var model = new VehicleService
             {
+                Id = ServiceId ?? 0,
                 VehicleId = VehicleId,
-                Date = DateOnly.FromDateTime(_date ?? DateTime.Today),
+                Date = _date is null ? Clock.Today : DateOnly.FromDateTime(_date.Value),
                 Kind = _kind,
                 Description = _description,
                 Vendor = _vendor,
                 InvoiceNumber = _invoice,
                 Cost = _cost,
                 Odometer = _odometer,
-                NextDueDate = _nextDue is null ? null : DateOnly.FromDateTime(_nextDue.Value)
-            });
+                NextDueDate = _nextDue is null ? null : DateOnly.FromDateTime(_nextDue.Value),
+                NextDueOdometer = _nextDueOdometer
+            };
+            var result = ServiceId is null
+                ? await Fleet.AddServiceAsync(model)
+                : await Fleet.UpdateServiceAsync(model);
 
             if (result.Failed) { _error = result.Error; return; }
 
             Snackbar.Add("Service recorded.", Severity.Success);
-            Dialog.Close(DialogResult.Ok(true));
+            ServiceId = model.Id;
+            await Saved.InvokeAsync();
+            if (AsDialog && _shell is not null) await _shell.CloseAsync();
         }
         finally { _busy = false; }
+    }
+
+    private DocumentShell? _shell;
+    
+    /// <summary>The shell has already closed itself; just react to it.</summary>
+    private async Task DismissedAsync()
+    {
+        if (Closed.HasDelegate) { await Closed.InvokeAsync(); return; }
+        Nav.NavigateTo($"/auto/vehicles/{VehicleId}");
     }
 }

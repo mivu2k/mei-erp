@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using System.Text.Json;
 using MeiErp.Platform.Kernel;
 using Microsoft.EntityFrameworkCore;
 
@@ -33,6 +34,7 @@ public abstract class ModuleDbContext(
     /// merely unlikely.
     /// </summary>
     public DbSet<OutboxMessage> Outbox => Set<OutboxMessage>();
+    public DbSet<AuditLogEntry> AuditLogs => Set<AuditLogEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -40,6 +42,15 @@ public abstract class ModuleDbContext(
         base.OnModelCreating(modelBuilder);
 
         ConfigureOutbox(modelBuilder);
+        modelBuilder.Entity<AuditLogEntry>(b =>
+        {
+            b.ToTable("AuditLogs", "platform", t => t.ExcludeFromMigrations());
+            b.HasKey(x => x.Id);
+            b.Property(x => x.ModuleKey).HasMaxLength(50).IsRequired();
+            b.Property(x => x.EntityName).HasMaxLength(150).IsRequired();
+            b.Property(x => x.EntityId).HasMaxLength(80).IsRequired();
+            b.Property(x => x.Action).HasMaxLength(30).IsRequired();
+        });
 
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
@@ -97,14 +108,68 @@ public abstract class ModuleDbContext(
     public override int SaveChanges()
     {
         StampAudit();
-        return base.SaveChanges();
+        var audits = PrepareAuditRows();
+        if (audits.Count == 0) return base.SaveChanges();
+        using var transaction = Database.CurrentTransaction is null ? Database.BeginTransaction() : null;
+        var result = base.SaveChanges();
+        CompleteEntityIds(audits);
+        AuditLogs.AddRange(audits.Select(x => x.Row));
+        base.SaveChanges();
+        transaction?.Commit();
+        return result;
     }
 
-    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         StampAudit();
-        return base.SaveChangesAsync(cancellationToken);
+        var audits = PrepareAuditRows();
+        if (audits.Count == 0) return await base.SaveChangesAsync(cancellationToken);
+        async Task<int> SaveAsync()
+        {
+            await using var transaction = Database.CurrentTransaction is null ? await Database.BeginTransactionAsync(cancellationToken) : null;
+            var result = await base.SaveChangesAsync(cancellationToken);
+            CompleteEntityIds(audits);
+            AuditLogs.AddRange(audits.Select(x => x.Row));
+            await base.SaveChangesAsync(cancellationToken);
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+            return result;
+        }
+        return Database.CurrentTransaction is not null
+            ? await SaveAsync()
+            : await Database.CreateExecutionStrategy().ExecuteAsync(SaveAsync);
     }
+
+    private sealed record PendingAudit(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry Entry, AuditLogEntry Row);
+    private List<PendingAudit> PrepareAuditRows()
+    {
+        var rows = new List<PendingAudit>();
+        foreach (var entry in ChangeTracker.Entries().Where(x => x.Entity is not AuditLogEntry and not OutboxMessage && x.State is EntityState.Added or EntityState.Modified or EntityState.Deleted))
+        {
+            var action = entry.State == EntityState.Added ? "Created" : entry.Entity is AuditableEntity { IsDeleted: true } ? "SoftDeleted" : entry.State == EntityState.Deleted ? "Deleted" : "Modified";
+            var changed = entry.Properties.Where(p => entry.State == EntityState.Added || entry.State == EntityState.Deleted || p.IsModified).Where(p => !Sensitive(p.Metadata.Name)).ToList();
+            string? oldValues = entry.State == EntityState.Added ? null : JsonSerializer.Serialize(changed.ToDictionary(p => p.Metadata.Name, p => Safe(p.OriginalValue)));
+            string? newValues = entry.State == EntityState.Deleted ? null : JsonSerializer.Serialize(changed.ToDictionary(p => p.Metadata.Name, p => Safe(p.CurrentValue)));
+            rows.Add(new(entry,new(){TimestampUtc=clock.UtcNow,ModuleKey=Schema,EntityName=entry.Metadata.ClrType.Name,Action=action,UserId=currentUser.UserId,UserName=currentUser.Name,OldValues=oldValues,NewValues=newValues}));
+        }
+        return rows;
+    }
+    private static void CompleteEntityIds(IEnumerable<PendingAudit> rows){foreach(var pending in rows){var key=pending.Entry.Properties.FirstOrDefault(x=>x.Metadata.IsPrimaryKey());pending.Row.EntityId=key?.CurrentValue?.ToString()??"";}}
+    private static bool Sensitive(string name)=>name.Contains("Password",StringComparison.OrdinalIgnoreCase)||name.Contains("Token",StringComparison.OrdinalIgnoreCase)||name.Contains("Secret",StringComparison.OrdinalIgnoreCase);
+    private static object? Safe(object? value)=>value is byte[] bytes?$"[binary {bytes.Length} bytes]":value;
+
+    /// <summary>Represents the platform-owned audit table in isolated EnsureCreated test databases.</summary>
+    public Task EnsureAuditTableForTestsAsync(CancellationToken ct=default)=>Database.ExecuteSqlRawAsync("""
+        CREATE SCHEMA IF NOT EXISTS platform;
+        CREATE TABLE IF NOT EXISTS platform."AuditLogs" (
+            "Id" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+            "TimestampUtc" timestamp with time zone NOT NULL,
+            "ModuleKey" character varying(50) NOT NULL,
+            "EntityName" character varying(150) NOT NULL,
+            "EntityId" character varying(80) NOT NULL,
+            "Action" character varying(30) NOT NULL,
+            "UserId" character varying(450), "UserName" character varying(200),
+            "OldValues" text, "NewValues" text);
+        """,ct);
 
     /// <summary>
     /// Fill in who and when, and turn deletes into flag updates.

@@ -1,0 +1,163 @@
+@*
+    One document form, shown either as a dialog or as a full page.
+
+    The same editor gets opened both ways: from a list, where a dialog keeps the
+    person's place, and from a link or a fresh tab, where a page is what a URL
+    can point at. Writing it twice would mean every field added in one place and
+    forgotten in the other - which is exactly how two screens for the same
+    document drift apart.
+
+    So the caller supplies the body and the actions; this decides the frame.
+    Shared across every module so every Add/Edit screen in the app uses the
+    same frame rather than each module inventing its own dialog size.
+*@
+
+@if (AsDialog)
+{
+    <MudDialog @ref="_dialog" Visible="_visible" Options="_dialogOptions" VisibleChanged="OnVisibleChanged">
+        <TitleContent>
+            <div class="d-flex align-center gap-2">
+                <MudText Typo="Typo.h6">@Title</MudText>
+                @if (StatusLabel is not null)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="@StatusColour" Variant="Variant.Text">
+                        @StatusLabel
+                    </MudChip>
+                }
+            </div>
+        </TitleContent>
+        <DialogContent>
+            @Frame
+        </DialogContent>
+        <DialogActions>
+            @* Owned here rather than by each editor: dismissing has to go
+               through the dialog's own visibility, and an editor that
+               re-implements it gets that wrong. *@
+            <MudButton OnClick="CloseAsync">@CancelText</MudButton>
+            @Buttons
+        </DialogActions>
+    </MudDialog>
+}
+else
+{
+    <PageTitle>@Title</PageTitle>
+
+    <div class="app-page-header d-flex flex-wrap align-center gap-3 mb-4">
+        <div>
+            <div class="d-flex align-center gap-2">
+                <MudText Typo="Typo.h5">@Title</MudText>
+                @if (StatusLabel is not null)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="@StatusColour" Variant="Variant.Text">
+                        @StatusLabel
+                    </MudChip>
+                }
+            </div>
+            @if (Subtitle is not null)
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">@Subtitle</MudText>
+            }
+        </div>
+        <MudSpacer />
+        <div class="d-flex gap-2">@Buttons</div>
+    </div>
+
+    <MudPaper Outlined="true" Elevation="0" Class="app-detail-surface pa-4">
+        @Frame
+    </MudPaper>
+}
+
+@code {
+    /// <summary>Dialog when opened from a list; page when opened from a URL.</summary>
+    [Parameter] public bool AsDialog { get; set; }
+
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public string? Subtitle { get; set; }
+
+    /// <summary>Where the document is in its lifecycle, shown beside the title.</summary>
+    [Parameter] public string? StatusLabel { get; set; }
+    [Parameter] public Color StatusColour { get; set; } = Color.Default;
+
+    /// <summary>Shown above the body when a save or submit was refused.</summary>
+    [Parameter] public string? Error { get; set; }
+
+    /// <summary>Read-only documents say why, rather than just disabling everything silently.</summary>
+    [Parameter] public string? ReadOnlyReason { get; set; }
+
+    [Parameter] public RenderFragment? Body { get; set; }
+    [Parameter] public RenderFragment? Buttons { get; set; }
+
+    /// <summary>Raised when a dialog is dismissed.</summary>
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>What the dismiss button says, for the rare screen that wants "Close".</summary>
+    [Parameter] public string CancelText { get; set; } = "Cancel";
+
+    /// <summary>
+    /// The dialog's own visibility, and the only thing that closes it.
+    ///
+    /// Taking the component out of the parent's render tree does not: an inline
+    /// MudDialog tears itself down when its Visible turns false, and a dialog
+    /// that is simply dropped instead stays on screen with the page dead behind
+    /// it. Every dismissal therefore comes back through here first, and tells
+    /// the parent afterwards.
+    /// </summary>
+    private bool _visible = true;
+    private MudDialog? _dialog;
+
+    private static readonly DialogOptions _dialogOptions = new()
+    {
+        MaxWidth = MaxWidth.Large,
+        FullWidth = true,
+        CloseButton = true,
+        CloseOnEscapeKey = true
+    };
+
+    /// <summary>
+    /// Close the dialog and then tell the caller. Public because an editor also
+    /// closes itself after a successful save, and that has to go through the
+    /// same door as the Cancel button rather than dropping the component.
+    /// </summary>
+    public async Task CloseAsync()
+    {
+        if (!_visible) return;
+
+        // Ask the dialog to close itself rather than just setting the flag.
+        // The caller reacts by dropping this component, and a dialog that has
+        // only been told through its parameter has not torn itself down yet
+        // when that happens - it stays on screen over a page that no longer
+        // answers. Going through the dialog is the same path the close cross
+        // takes, and it comes back through OnVisibleChanged.
+        if (_dialog is not null)
+        {
+            await _dialog.CloseAsync();
+            return;
+        }
+
+        _visible = false;
+        await OnClose.InvokeAsync();
+    }
+
+    private RenderFragment Frame => @<div>
+        @if (Error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Dense="true" Class="mb-3">
+                @Error
+            </MudAlert>
+        }
+        @if (ReadOnlyReason is not null)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mb-3">
+                @ReadOnlyReason
+            </MudAlert>
+        }
+        @Body
+    </div>;
+
+    /// <summary>The close cross, the backdrop and Escape all arrive here.</summary>
+    private async Task OnVisibleChanged(bool visible)
+    {
+        _visible = visible;
+        if (!visible) await OnClose.InvokeAsync();
+    }
+}

@@ -1,0 +1,43 @@
+@page "/purchase/goods-receipts"
+@attribute [Authorize(Policy = PurchaseModule.OrdersView)]
+@rendermode InteractiveServer
+@inject IPurchasingService Purchasing
+@using Microsoft.EntityFrameworkCore
+
+@* Goods received notes are raised automatically off a purchase order - there
+   is nothing to create from here, only to read and print. *@
+<ListShell Title="Goods receipts"
+           Subtitle="Goods received notes raised as purchase orders come in."
+           Icon="@Icons.Material.Outlined.Inventory"
+           Loading="_loading"
+           IsEmpty="@(_rows.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.Inventory"
+           EmptyTitle="No goods receipts yet"
+           EmptyHint="A goods received note appears here once a purchase order is received.">
+    <ChildContent>
+    <MudTable Items="_rows" Dense="true" Hover="true">
+        <HeaderContent>
+            <MudTh>Number</MudTh><MudTh>Date</MudTh><MudTh>Supplier</MudTh><MudTh>Lines</MudTh><MudTh Style="text-align:right">Value</MudTh><MudTh/>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.Number</MudTd>
+            <MudTd>@context.Date.ToString("d MMM yyyy")</MudTd>
+            <MudTd>@context.PartyName</MudTd>
+            <MudTd>@context.Lines.Count</MudTd>
+            <MudTd Style="text-align:right">@context.Total.ToString("N2")</MudTd>
+            <MudTd><MudIconButton Icon="@Icons.Material.Outlined.Print" Href="@($"/print/purchase/goods-receipt/{context.Id}")" Target="_blank" /></MudTd>
+        </RowTemplate>
+    </MudTable>
+    </ChildContent>
+</ListShell>
+
+@code {
+    private List<GoodsReceipt> _rows = [];
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _rows = (await Purchasing.ListReceiptsAsync()).ToList();
+        _loading = false;
+    }
+}

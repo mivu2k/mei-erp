@@ -59,7 +59,7 @@
         try
         {
             var result = await Payroll.PayAsync(
-                RunId, _cashId!.Value, DateOnly.FromDateTime(_date ?? DateTime.Today));
+                RunId, _cashId!.Value, DateOnly.FromDateTime(_date ?? Clock.Today.ToDateTime(TimeOnly.MinValue)));
 
             if (result.Failed) { _error = result.Error; return; }
 

@@ -39,6 +39,7 @@ public sealed class PartyAndCashTests : IAsyncLifetime
 
             await using var db = NewDb();
             await db.Database.EnsureCreatedAsync();
+            await db.EnsureAuditTableForTestsAsync();
 
             // The headings a party's or box's own account is hung beneath.
             var receivables = new Account { Code = "1600", Name = "Receivables", Type = AccountType.Asset, IsPostable = false };

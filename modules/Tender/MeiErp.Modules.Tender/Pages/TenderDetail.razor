@@ -1,0 +1,107 @@
+@page "/tender/tenders/{Id:int}"
+@attribute [Authorize(Policy = TenderModule.TendersView)]
+@rendermode InteractiveServer
+@inject ITenderService Bids
+@inject ISnackbar Snackbar
+
+<PageTitle>Tender detail</PageTitle>
+
+@if (_tender is null)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <div class="d-flex align-center mb-4">
+        <div><MudText Typo="Typo.h5">@_tender.Reference</MudText><MudText Typo="Typo.body2" Class="mud-text-secondary">@_tender.Title · @_tender.ClientName</MudText></div>
+        <MudSpacer /><MudButton Href="/tender/tenders">Back to tenders</MudButton>
+    </div>
+
+    <MudGrid>
+        <MudItem xs="12" md="6">
+            <MudPaper Outlined="true" Class="pa-4">
+                <MudText Typo="Typo.h6">Bidder comparison</MudText>
+                <MudTable Items="_tender.Competitors.OrderBy(x => x.Rank ?? int.MaxValue)" Dense="true" Class="mt-2">
+                    <HeaderContent><MudTh>Bidder</MudTh><MudTh>Amount</MudTh><MudTh>Rank</MudTh><MudTh></MudTh></HeaderContent>
+                    <RowTemplate Context="row"><MudTd>@row.BidderName @(row.IsOwnBid ? "(ours)" : "")</MudTd><MudTd>@row.QuotedAmount.ToString("N2")</MudTd><MudTd>@(row.Rank?.ToString() ?? "—")</MudTd><MudTd><AuthorizeView Policy="@TenderModule.TendersManage"><Authorized Context="auth"><MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" OnClick="@(() => DeleteCompetitorAsync(row.Id))" /></Authorized></AuthorizeView></MudTd></RowTemplate>
+                    <NoRecordsContent><MudText Class="pa-3">No bids recorded.</MudText></NoRecordsContent>
+                </MudTable>
+                <AuthorizeView Policy="@TenderModule.TendersManage"><Authorized>
+                    <div class="d-flex gap-2 mt-3"><MudTextField @bind-Value="_bidderName" Label="Bidder" Variant="Variant.Outlined" /><MudNumericField T="decimal" @bind-Value="_bidAmount" Label="Quoted amount" Variant="Variant.Outlined" HideSpinButtons="true" /><MudNumericField T="int?" @bind-Value="_bidRank" Label="Rank" Variant="Variant.Outlined" HideSpinButtons="true" /><MudButton OnClick="AddCompetitorAsync" Variant="Variant.Filled" Color="Color.Primary">Add</MudButton></div>
+                </Authorized></AuthorizeView>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudPaper Outlined="true" Class="pa-4">
+                <MudText Typo="Typo.h6">Tender documents</MudText>
+                <MudTable Items="_tender.Documents.OrderByDescending(x => x.DocumentDate)" Dense="true" Class="mt-2">
+                    <HeaderContent><MudTh>Name</MudTh><MudTh>Category</MudTh><MudTh>Date</MudTh><MudTh></MudTh></HeaderContent>
+                    <RowTemplate Context="row"><MudTd>@row.Name</MudTd><MudTd>@row.Category</MudTd><MudTd>@(row.DocumentDate?.ToString("d MMM yyyy") ?? "—")</MudTd><MudTd><AuthorizeView Policy="@TenderModule.TendersManage"><Authorized Context="auth"><MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" OnClick="@(() => DeleteDocumentAsync(row.Id))" /></Authorized></AuthorizeView></MudTd></RowTemplate>
+                    <NoRecordsContent><MudText Class="pa-3">No documents recorded.</MudText></NoRecordsContent>
+                </MudTable>
+                <AuthorizeView Policy="@TenderModule.TendersManage"><Authorized>
+                    <div class="d-flex gap-2 mt-3"><MudTextField @bind-Value="_documentName" Label="Document name" Variant="Variant.Outlined" /><MudSelect T="DocumentCategory" @bind-Value="_documentCategory" Label="Category" Variant="Variant.Outlined">@foreach (var c in Enum.GetValues<DocumentCategory>()) { <MudSelectItem Value="@c">@c</MudSelectItem> }</MudSelect><MudButton OnClick="AddDocumentAsync" Variant="Variant.Filled" Color="Color.Primary">Add</MudButton></div>
+                </Authorized></AuthorizeView>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+    <MudPaper Outlined="true" Class="pa-4 mt-4">
+        <MudText Typo="Typo.h6">Tender work items</MudText>
+        <MudTable Items="_tender.Tasks.OrderBy(x => x.DueDate ?? DateOnly.MaxValue)" Dense="true" Class="mt-2">
+            <HeaderContent><MudTh>Task</MudTh><MudTh>Status</MudTh><MudTh>Due</MudTh><MudTh>Progress</MudTh><MudTh></MudTh></HeaderContent>
+            <RowTemplate Context="row"><MudTd>@row.Title</MudTd><MudTd>@row.Status</MudTd><MudTd>@(row.DueDate?.ToString("d MMM yyyy") ?? "—")</MudTd><MudTd>@row.PercentComplete%</MudTd><MudTd><AuthorizeView Policy="@TenderModule.TasksManage"><Authorized Context="auth"><MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" OnClick="@(() => DeleteTaskAsync(row.Id))" /></Authorized></AuthorizeView></MudTd></RowTemplate>
+            <NoRecordsContent><MudText Class="pa-3">No tender work items recorded.</MudText></NoRecordsContent>
+        </MudTable>
+        <AuthorizeView Policy="@TenderModule.TasksManage"><Authorized>
+            <div class="d-flex gap-2 mt-3"><MudTextField @bind-Value="_taskTitle" Label="Task" Variant="Variant.Outlined" /><MudNumericField T="int" @bind-Value="_taskProgress" Label="Progress %" Variant="Variant.Outlined" HideSpinButtons="true" /><MudButton OnClick="AddTaskAsync" Variant="Variant.Filled" Color="Color.Primary">Add</MudButton></div>
+        </Authorized></AuthorizeView>
+    </MudPaper>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+    private TenderRecord? _tender;
+    private string? _bidderName, _documentName;
+    private decimal _bidAmount;
+    private int? _bidRank;
+    private DocumentCategory _documentCategory = DocumentCategory.Other;
+    private string? _taskTitle;
+    private int _taskProgress;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+    private async Task LoadAsync() => _tender = await Bids.GetTenderAsync(Id);
+
+    private async Task AddCompetitorAsync()
+    {
+        var result = await Bids.SaveCompetitorAsync(new TenderCompetitor { TenderRecordId = Id, BidderName = _bidderName ?? "", QuotedAmount = _bidAmount, Rank = _bidRank });
+        if (result.Failed) { Snackbar.Add(result.Error!, Severity.Error); return; }
+        _bidderName = null; _bidAmount = 0; _bidRank = null; await LoadAsync();
+    }
+    private async Task DeleteCompetitorAsync(int id)
+    {
+        var result = await Bids.DeleteCompetitorAsync(id);
+        if (result.Failed) Snackbar.Add(result.Error!, Severity.Error); else await LoadAsync();
+    }
+    private async Task AddDocumentAsync()
+    {
+        var result = await Bids.SaveDocumentAsync(new TenderDocument { TenderRecordId = Id, Name = _documentName ?? "", Category = _documentCategory });
+        if (result.Failed) { Snackbar.Add(result.Error!, Severity.Error); return; }
+        _documentName = null; await LoadAsync();
+    }
+    private async Task DeleteDocumentAsync(int id)
+    {
+        var result = await Bids.DeleteDocumentAsync(id);
+        if (result.Failed) Snackbar.Add(result.Error!, Severity.Error); else await LoadAsync();
+    }
+    private async Task AddTaskAsync()
+    {
+        var result = await Bids.SaveTenderTaskAsync(new TenderTask { TenderRecordId = Id, Title = _taskTitle ?? "", PercentComplete = _taskProgress, Status = _taskProgress >= 100 ? ProjectTaskStatus.Completed : (_taskProgress > 0 ? ProjectTaskStatus.InProgress : ProjectTaskStatus.NotStarted) });
+        if (result.Failed) { Snackbar.Add(result.Error!, Severity.Error); return; }
+        _taskTitle = null; _taskProgress = 0; await LoadAsync();
+    }
+    private async Task DeleteTaskAsync(int id)
+    {
+        var result = await Bids.DeleteTenderTaskAsync(id);
+        if (result.Failed) Snackbar.Add(result.Error!, Severity.Error); else await LoadAsync();
+    }
+}

@@ -1,0 +1,13 @@
+@page "/hr/documents"
+@attribute [Authorize(Policy = HrModule.DocumentsView)]
+@rendermode InteractiveServer
+@inject IEmployeeDocumentService Documents
+@inject IClock Clock
+
+<PageTitle>Expiring documents</PageTitle>
+<div class="d-flex align-center"><div><MudText Typo="Typo.h5">Expiring documents</MudText><MudText Typo="Typo.body2" Class="mud-text-secondary">Includes already expired records so nothing silently drops off the list.</MudText></div><MudSpacer />
+<MudSelect T="int" @bind-Value="_days" @bind-Value:after="LoadAsync" Label="Window" Style="width:180px"><MudSelectItem Value="30">Next 30 days</MudSelectItem><MudSelectItem Value="60">Next 60 days</MudSelectItem><MudSelectItem Value="90">Next 90 days</MudSelectItem><MudSelectItem Value="365">Next year</MudSelectItem></MudSelect></div>
+<MudPaper Outlined="true" Class="mt-4"><MudSimpleTable Dense="true" Hover="true"><thead><tr><th>Employee</th><th>Staff no.</th><th>Document</th><th>Kind</th><th>Expires</th><th>Days</th></tr></thead><tbody>
+@foreach(var row in _rows){var days=row.ExpiresOn!.Value.DayNumber-Clock.Today.DayNumber;<tr><td><MudLink Href="@($"/hr/employees/{row.EmployeeId}/documents")">@row.Employee?.FullName</MudLink></td><td>@row.Employee?.Code</td><td>@row.Title</td><td>@row.Kind</td><td>@row.ExpiresOn?.ToString("d MMM yyyy")</td><td><MudChip T="string" Size="Size.Small" Color="@(days<0?Color.Error:days<=30?Color.Warning:Color.Default)">@(days<0?$"{-days} overdue":$"{days}")</MudChip></td></tr>}
+@if(_rows.Count==0){<tr><td colspan="6" class="pa-5 mud-text-secondary">Nothing expiring in this window.</td></tr>}</tbody></MudSimpleTable></MudPaper>
+@code{private int _days=60;private IReadOnlyList<EmployeeDocument> _rows=[];protected override Task OnInitializedAsync()=>LoadAsync();private async Task LoadAsync()=>_rows=await Documents.ExpiringAsync(_days);}

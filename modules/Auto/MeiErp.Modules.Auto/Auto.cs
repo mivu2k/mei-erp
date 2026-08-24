@@ -13,11 +13,13 @@ public class Vehicle : AuditableEntity, IConcurrencyChecked
 
     public string Registration { get; set; } = "";
     public string Make { get; set; } = "";
-    public string? Model { get; set; }
+    public string Model { get; set; } = "";
     public int? Year { get; set; }
 
     public string? ChassisNumber { get; set; }
     public string? EngineNumber { get; set; }
+    public string? Color { get; set; }
+    public string? Notes { get; set; }
 
     /// <summary>Who normally drives it. A name, not a link - drivers are often not system users.</summary>
     public string? AssignedTo { get; set; }
@@ -89,7 +91,8 @@ public enum ServiceKind
     Fuel = 3,
     Insurance = 4,
     Registration = 5,
-    Other = 6
+    Other = 6,
+    Inspection = 7
 }
 
 public class AutoDbContext(
@@ -109,8 +112,10 @@ public class AutoDbContext(
         {
             b.Property(v => v.Registration).HasMaxLength(30).IsRequired();
             b.Property(v => v.Make).HasMaxLength(60).IsRequired();
-            b.Property(v => v.Model).HasMaxLength(60);
+            b.Property(v => v.Model).HasMaxLength(60).IsRequired();
             b.Property(v => v.AssignedTo).HasMaxLength(200);
+            b.Property(v => v.Color).HasMaxLength(40);
+            b.Property(v => v.Notes).HasMaxLength(2000);
 
             // Two vehicles on one plate would merge their service history.
             b.HasIndex(v => v.Registration).IsUnique().HasFilter("\"IsDeleted\" = false");
@@ -147,9 +152,14 @@ public interface IFleetService
 
     Task<IReadOnlyList<VehicleService>> ServicesAsync(int vehicleId, CancellationToken ct = default);
     Task<Result<VehicleService>> AddServiceAsync(VehicleService service, CancellationToken ct = default);
+    Task<Result<VehicleService>> UpdateServiceAsync(VehicleService service, CancellationToken ct = default);
+    Task<Result> DeleteServiceAsync(int id, CancellationToken ct = default);
 
     /// <summary>Vehicles whose registration or insurance falls due soon.</summary>
     Task<IReadOnlyList<Vehicle>> ExpiringAsync(int withinDays = 30, CancellationToken ct = default);
+
+    /// <summary>Maintenance records with a date-based next service due soon.</summary>
+    Task<IReadOnlyList<VehicleService>> UpcomingServicesAsync(int withinDays = 30, CancellationToken ct = default);
 
     /// <summary>Total spend per vehicle over a period, for the running-cost report.</summary>
     Task<IReadOnlyList<VehicleCost>> CostsAsync(DateOnly from, DateOnly to, CancellationToken ct = default);
@@ -185,6 +195,9 @@ public sealed class FleetService(AutoDbContext db, IClock clock) : IFleetService
 
         if (string.IsNullOrWhiteSpace(vehicle.Make))
             return Result.Fail<Vehicle>("A vehicle needs a make.", "vehicle.no-make");
+
+        if (string.IsNullOrWhiteSpace(vehicle.Model))
+            return Result.Fail<Vehicle>("A vehicle needs a model.", "vehicle.no-model");
 
         vehicle.Registration = vehicle.Registration.Trim().ToUpperInvariant();
 
@@ -288,6 +301,70 @@ public sealed class FleetService(AutoDbContext db, IClock clock) : IFleetService
         return Result.Success(service);
     }
 
+    public async Task<Result<VehicleService>> UpdateServiceAsync(
+        VehicleService service, CancellationToken ct = default)
+    {
+        var existing = await db.Services.FirstOrDefaultAsync(s => s.Id == service.Id, ct);
+        if (existing is null)
+            return Result.Fail<VehicleService>("That service record no longer exists.", "service.not-found");
+
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.Id == existing.VehicleId, ct);
+        if (vehicle is null)
+            return Result.Fail<VehicleService>("That vehicle no longer exists.", "vehicle.not-found");
+        if (service.Cost < 0)
+            return Result.Fail<VehicleService>("A cost cannot be negative.", "service.negative-cost");
+        if (string.IsNullOrWhiteSpace(service.Description))
+            return Result.Fail<VehicleService>("Say what was done.", "service.no-description");
+        if (service.Odometer < 0)
+            return Result.Fail<VehicleService>("An odometer reading cannot be negative.", "service.bad-odometer");
+
+        existing.Date = service.Date;
+        existing.Kind = service.Kind;
+        existing.Description = service.Description.Trim();
+        existing.Vendor = service.Vendor;
+        existing.Cost = service.Cost;
+        existing.Odometer = service.Odometer;
+        existing.NextDueDate = service.NextDueDate;
+        existing.NextDueOdometer = service.NextDueOdometer;
+        existing.InvoiceNumber = service.InvoiceNumber;
+
+        await RefreshVehicleDerivedFieldsAsync(vehicle, ct);
+        await db.SaveChangesAsync(ct);
+        return Result.Success(existing);
+    }
+
+    public async Task<Result> DeleteServiceAsync(int id, CancellationToken ct = default)
+    {
+        var existing = await db.Services.FirstOrDefaultAsync(s => s.Id == id, ct);
+        if (existing is null) return Result.Fail("That service record no longer exists.", "service.not-found");
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.Id == existing.VehicleId, ct);
+        db.Services.Remove(existing);
+        if (vehicle is not null) await RefreshVehicleDerivedFieldsAsync(vehicle, ct, id);
+        await db.SaveChangesAsync(ct);
+        return Result.Success();
+    }
+
+    private async Task RefreshVehicleDerivedFieldsAsync(
+        Vehicle vehicle, CancellationToken ct, int? excludingId = null)
+    {
+        var rows = await db.Services.AsNoTracking()
+            .Where(s => s.VehicleId == vehicle.Id && (excludingId == null || s.Id != excludingId))
+            .ToListAsync(ct);
+        var pending = db.ChangeTracker.Entries<VehicleService>()
+            .Where(e => e.Entity.VehicleId == vehicle.Id && e.State == EntityState.Modified)
+            .Select(e => e.Entity).ToList();
+        foreach (var changed in pending)
+        {
+            rows.RemoveAll(x => x.Id == changed.Id);
+            rows.Add(changed);
+        }
+        vehicle.CurrentOdometer = rows.Where(x => x.Odometer is not null).Max(x => x.Odometer);
+        vehicle.InsuranceExpiry = rows.Where(x => x.Kind == ServiceKind.Insurance && x.NextDueDate != null)
+            .Max(x => x.NextDueDate) ?? vehicle.InsuranceExpiry;
+        vehicle.RegistrationExpiry = rows.Where(x => x.Kind == ServiceKind.Registration && x.NextDueDate != null)
+            .Max(x => x.NextDueDate) ?? vehicle.RegistrationExpiry;
+    }
+
     public async Task<IReadOnlyList<Vehicle>> ExpiringAsync(
         int withinDays = 30, CancellationToken ct = default)
     {
@@ -298,6 +375,20 @@ public sealed class FleetService(AutoDbContext db, IClock clock) : IFleetService
                      && ((v.RegistrationExpiry != null && v.RegistrationExpiry <= cutoff)
                       || (v.InsuranceExpiry != null && v.InsuranceExpiry <= cutoff)))
             .OrderBy(v => v.RegistrationExpiry ?? v.InsuranceExpiry)
+            .ToListAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<VehicleService>> UpcomingServicesAsync(
+        int withinDays = 30, CancellationToken ct = default)
+    {
+        var cutoff = clock.Today.AddDays(withinDays);
+        return await db.Services.AsNoTracking()
+            .Include(s => s.Vehicle)
+            .Where(s => s.NextDueDate != null
+                     && s.NextDueDate <= cutoff
+                     && (s.Vehicle!.Status == VehicleStatus.Active
+                      || s.Vehicle.Status == VehicleStatus.UnderRepair))
+            .OrderBy(s => s.NextDueDate)
             .ToListAsync(ct);
     }
 
@@ -334,6 +425,7 @@ public static class AutoModule
     public const string VehiclesView = "auto.vehicles.view";
     public const string VehiclesManage = "auto.vehicles.manage";
     public const string ServicesManage = "auto.services.manage";
+    public const string ReportsView = "auto.reports.view";
 
     public static ModuleDescriptor Descriptor => new()
     {
@@ -343,14 +435,15 @@ public static class AutoModule
         BasePath = "/auto",
         Icon = "DirectionsCar",
         Color = "#5d4037",
-        SortOrder = 5,
+        SortOrder = 7,
         Schema = "auto",
 
         Permissions =
         [
             new(VehiclesView,   "Vehicles", "See the fleet and its running costs"),
             new(VehiclesManage, "Vehicles", "Add and edit vehicles"),
-            new(ServicesManage, "Servicing", "Record servicing, fuel and repairs")
+            new(ServicesManage, "Servicing", "Record servicing, fuel and repairs"),
+            new(ReportsView, "Reports", "View fleet cost and maintenance reports")
         ],
 
         Nav =
@@ -361,7 +454,7 @@ public static class AutoModule
         RoleTemplates =
         [
             new("Fleet Manager", "Manages vehicles and their service records.",
-                [VehiclesView, VehiclesManage, ServicesManage])
+                [VehiclesView, VehiclesManage, ServicesManage, ReportsView])
         ]
     };
 

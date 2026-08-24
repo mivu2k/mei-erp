@@ -77,6 +77,12 @@ public sealed record PrintTable
 /// <param name="AlignRight">Right-aligns the column. Use for money and quantities.</param>
 public sealed record PrintColumn(string Header, float Width = 1f, bool AlignRight = false);
 
+public sealed record LabelData(string Title,string? Code,IReadOnlyDictionary<string,string?> Fields);
+public sealed record LabelLayout(decimal WidthMm,decimal? HeightMm,decimal MarginMm,IReadOnlyList<string> FieldKeys,bool ShowTitle,bool ShowCompanyName,bool ShowBarcode,bool ShowQrCode,decimal FontScale)
+{
+    public static LabelLayout Fallback(IReadOnlyList<string> fields)=>new(62,null,3,fields,true,true,true,false,1);
+}
+
 public enum PageSize
 {
     A4 = 0,

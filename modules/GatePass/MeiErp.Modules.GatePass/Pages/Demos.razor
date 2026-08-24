@@ -1,0 +1,94 @@
+@page "/gatepass/demos"
+@page "/gatepass/demos/outstanding"
+@page "/gatepass/demos/new"
+@page "/gatepass/demos/{Id:int}"
+@attribute [Authorize(Policy = GatePassModule.DemosView)]
+@rendermode InteractiveServer
+@inject IDemoIssuanceService DemoService
+@inject IClock Clock
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>Demo goods</PageTitle>
+@if (Editing)
+{
+    <div class="d-flex align-center mb-4"><MudIconButton Icon="@Icons.Material.Outlined.ArrowBack" Href="/gatepass/demos" />
+        <MudText Typo="Typo.h5">@(_row.Id == 0 ? "New demo issuance" : _row.Number)</MudText><MudSpacer />
+        @if (_row.Id > 0) { <MudButton Href="@($"/print/gatepass/demo/{_row.Id}")" Target="_blank" StartIcon="@Icons.Material.Outlined.Print">Print</MudButton> }
+        @if (Editable) { <AuthorizeView Policy="@GatePassModule.DemosManage"><MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync">Save</MudButton></AuthorizeView> }
+    </div>
+    <MudGrid>
+        <MudItem xs="12" md="7"><MudPaper Outlined="true" Class="pa-4"><MudGrid>
+            <MudItem xs="12" md="6"><MudTextField @bind-Value="_row.CustomerName" Label="Customer name" Disabled="@(!Editable)" /></MudItem>
+            <MudItem xs="12" md="3"><MudTextField @bind-Value="_row.CustomerPhone" Label="Phone" Disabled="@(!Editable)" /></MudItem>
+            <MudItem xs="12" md="3"><MudTextField @bind-Value="_row.CustomerReference" Label="Customer reference" Disabled="@(!Editable)" /></MudItem>
+            <MudItem xs="12" md="4"><MudTextField @bind-Value="_row.Department" Label="Department" Disabled="@(!Editable)" /></MudItem>
+            <MudItem xs="12" md="4"><MudTextField @bind-Value="_row.ReferenceLetter" Label="Reference letter" Disabled="@(!Editable)" /></MudItem>
+            <MudItem xs="12" md="4"><MudDatePicker Label="Expected return" Date="@_due" DateChanged="@(x=>_due=x)" Disabled="@(!Editable)" /></MudItem>
+            <MudItem xs="12"><MudTextField @bind-Value="_row.Notes" Label="Notes" Lines="2" Disabled="@(!Editable)" /></MudItem>
+        </MudGrid></MudPaper></MudItem>
+        <MudItem xs="12" md="5"><MudPaper Outlined="true" Class="pa-4"><MudText Typo="Typo.h6">Status: @_row.Status</MudText>
+            @if (_row.Id>0) { <MudText>Issued @_row.IssuedUtc.ToLocalTime().ToString("g") by @_row.IssuedByName</MudText> }
+            @if (_row.ReturnedUtc is not null) { <MudText>Returned @_row.ReturnedUtc.Value.ToLocalTime().ToString("g") to @_row.ReceivedByName</MudText> }
+            @if (_row.Status is DemoStatus.Issued or DemoStatus.PartiallyReturned)
+            { <AuthorizeView Policy="@GatePassModule.DemosReturn"><MudButton Class="mt-3" Variant="Variant.Filled" OnClick="OpenReturn">Record return</MudButton></AuthorizeView> }
+            @if (_row.Status==DemoStatus.Issued) { <AuthorizeView Policy="@GatePassModule.DemosManage"><MudButton Class="mt-3 ml-2" Color="Color.Error" OnClick="CancelAsync">Cancel issuance</MudButton></AuthorizeView> }
+        </MudPaper></MudItem>
+        <MudItem xs="12"><MudPaper Outlined="true" Class="pa-4"><div class="d-flex"><MudText Typo="Typo.h6">Items</MudText><MudSpacer />
+            @if(Editable){<MudButton OnClick="AddItem" StartIcon="@Icons.Material.Outlined.Add">Add</MudButton>}</div>
+            <MudSimpleTable Dense="true"><thead><tr><th>Description</th><th>Serial</th><th>Qty</th><th>Accessories</th><th>Remarks</th><th>Returned</th><th></th></tr></thead><tbody>
+            @foreach(var item in _row.Items){<tr><td><MudTextField @bind-Value="item.Description" Disabled="@(!Editable)" Margin="Margin.Dense" /></td>
+                <td><MudTextField @bind-Value="item.SerialNumber" Disabled="@(!Editable)" Margin="Margin.Dense" /></td>
+                <td><MudNumericField T="decimal" @bind-Value="item.Quantity" Disabled="@(!Editable)" Min="0.01M" Margin="Margin.Dense" /></td>
+                <td><MudTextField @bind-Value="item.Accessories" Disabled="@(!Editable)" Margin="Margin.Dense" /></td>
+                <td><MudTextField @bind-Value="item.Remarks" Disabled="@(!Editable)" Margin="Margin.Dense" /></td>
+                <td>@(item.ReturnedUtc is null?"Out":item.ReturnedUtc.Value.ToLocalTime().ToString("d"))</td>
+                <td>@if(Editable){<MudIconButton Icon="@Icons.Material.Outlined.Delete" OnClick="@(()=>_row.Items.Remove(item))" />}</td></tr>}
+            </tbody></MudSimpleTable></MudPaper></MudItem>
+    </MudGrid>
+    @if(_returning){<MudOverlay Visible="true" DarkBackground="true" ZIndex="1300"><MudPaper Class="pa-5" Style="width:520px;max-width:95vw">
+        <MudText Typo="Typo.h6">Items returned</MudText>
+        @foreach(var item in _row.Items.Where(x=>x.ReturnedUtc==null)){<MudCheckBox T="bool" Label="@item.Description" Value="@_selected.Contains(item.Id)" ValueChanged="@(x=>Select(item.Id,x))" />}
+        <MudTextField @bind-Value="_condition" Label="Condition on return" Lines="2" />
+        <div class="d-flex justify-end mt-3"><MudButton OnClick="@(()=>_returning=false)">Close</MudButton><MudButton Variant="Variant.Filled" OnClick="ReturnAsync">Confirm return</MudButton></div>
+    </MudPaper></MudOverlay>}
+}
+else
+{
+    <ListShell Title="Demo goods" Subtitle="Equipment lent to customers until each item comes back."
+               Icon="@Icons.Material.Outlined.CardTravel" Loading="_loadingList" IsEmpty="@(!_loadingList && _rows.Count==0)"
+               EmptyIcon="@Icons.Material.Outlined.CardTravel" EmptyTitle="No demo issuances yet"
+               EmptyHint="Issue equipment to a customer here; it stays open until every item comes back.">
+        <Actions>
+            <AuthorizeView Policy="@GatePassModule.DemosManage"><MudButton Href="/gatepass/demos/new" Variant="Variant.Filled" StartIcon="@Icons.Material.Outlined.Add">New issuance</MudButton></AuthorizeView>
+        </Actions>
+        <EmptyAction>
+            <AuthorizeView Policy="@GatePassModule.DemosManage"><MudButton Href="/gatepass/demos/new" Variant="Variant.Filled" StartIcon="@Icons.Material.Outlined.Add">New issuance</MudButton></AuthorizeView>
+        </EmptyAction>
+        <Toolbar>
+            <MudTextField @bind-Value="_search" @bind-Value:after="LoadListAsync" Label="Search" Immediate="true" DebounceInterval="300" />
+            <MudSwitch T="bool" @bind-Value="_overdue" @bind-Value:after="LoadListAsync" Label="Overdue only" />
+        </Toolbar>
+        <ChildContent>
+        <MudDataGrid T="DemoIssuance" Items="_rows" Dense="true" Hover="true" Elevation="0" Filterable="false" RowClick="@(x=>Nav.NavigateTo($"/gatepass/demos/{x.Item.Id}"))">
+            <Columns><PropertyColumn Property="x=>x.Number" Title="Number"/><PropertyColumn Property="x=>x.CustomerName" Title="Customer"/>
+            <TemplateColumn Title="Items"><CellTemplate>@context.Item.Items.Count(x=>x.ReturnedUtc!=null) / @context.Item.Items.Count returned</CellTemplate></TemplateColumn>
+            <TemplateColumn Title="Due"><CellTemplate><span style="@(context.Item.IsOverdue(Clock.Today)?"color:var(--mud-palette-error);font-weight:600":"")">@context.Item.ExpectedReturnOn?.ToString("d MMM yyyy")</span></CellTemplate></TemplateColumn>
+            <PropertyColumn Property="x=>x.Status" Title="Status"/></Columns>
+        </MudDataGrid>
+        </ChildContent>
+    </ListShell>
+}
+
+@code{
+ [Parameter]public int? Id{get;set;} private DemoIssuance _row=new();private IReadOnlyList<DemoIssuance> _rows=[];private string? _search,_condition;private DateTime? _due;private bool _overdue,_returning,_loadingList=true;private HashSet<int> _selected=[];
+ private bool Editing=>Id is not null||Nav.ToBaseRelativePath(Nav.Uri).EndsWith("demos/new");private bool Editable=>_row.Id==0||_row.Status==DemoStatus.Issued;
+ protected override async Task OnParametersSetAsync(){if(Editing){_row=Id is null?new():await DemoService.GetAsync(Id.Value)??new();if(_row.Id==0)AddItem();_due=_row.ExpectedReturnOn?.ToDateTime(TimeOnly.MinValue);}else await LoadListAsync();}
+ private Task LoadListAsync(){_loadingList=true;return DemoService.ListAsync(new(_search,null,Nav.Uri.EndsWith("/outstanding"),_overdue)).ContinueWith(x=>{_rows=x.Result;_loadingList=false;InvokeAsync(StateHasChanged);},TaskScheduler.Current);}
+ private void AddItem()=>_row.Items.Add(new(){Quantity=1});
+ private void OpenReturn(){_selected=_row.Items.Where(x=>x.ReturnedUtc==null).Select(x=>x.Id).ToHashSet();_condition=null;_returning=true;}
+ private async Task SaveAsync(){var input=new DemoInput(_row.Id==0?null:_row.Id,_row.CustomerName,_row.CustomerPhone,_row.CustomerReference,_row.Department,_row.ReferenceLetter,_due is null?null:DateOnly.FromDateTime(_due.Value),_row.Notes,_row.Items.Select(x=>new DemoItemInput(x.Description,x.SerialNumber,x.Quantity,x.Accessories,x.Remarks)).ToList());var r=await DemoService.SaveAsync(input);if(r.Failed)Snackbar.Add(r.Error!,Severity.Error);else Nav.NavigateTo($"/gatepass/demos/{r.Value.Id}",true);}
+ private void Select(int id,bool on){if(on)_selected.Add(id);else _selected.Remove(id);}
+ private async Task ReturnAsync(){var r=await DemoService.ReturnAsync(_row.Id,_selected,_condition);if(r.Failed)Snackbar.Add(r.Error!,Severity.Error);else{_row=r.Value;_returning=false;_selected=[];Snackbar.Add("Return recorded.",Severity.Success);}}
+ private async Task CancelAsync(){var r=await DemoService.CancelAsync(_row.Id);if(r.Failed)Snackbar.Add(r.Error!,Severity.Error);else Nav.NavigateTo("/gatepass/demos",true);}
+}

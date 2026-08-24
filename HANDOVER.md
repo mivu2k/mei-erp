@@ -4,27 +4,61 @@ Written 22 August 2026, at the end of the first build session. Read this before
 `CLAUDE.md`; that file explains *how* the code works, this one explains **where
 the project actually stands and what to do next**.
 
+## Resume checklist
+
+This is the authoritative development queue. Start every future session at the
+first unchecked item, mark an item complete only after its tests and build pass,
+and keep the old app available as the behaviour reference until parity is signed
+off module by module.
+
+- [x] Company profile administration
+- [x] Durable in-app and email notifications
+- [x] Approval SLA reminders and role escalation
+- [x] Notification preferences, dead-letter review, and branded email templates
+- [x] HR attendance: stations, kiosk, NFC, rotating QR, punches, corrections,
+      leave precedence, monthly register, and recomputation
+- [x] Plain Ledger module
+- [x] Outbox dispatcher and cross-module Finance posting
+- [x] Per-record printing and labels across every module
+- [x] Repair commercial workflow, purchasing, tracking, printing, and reports
+- [x] Inventory warehouses, transfers, counts, serials, returns, and reports
+- [x] Tender physical file registry and milestones
+- [x] Global search, audit viewer, live dashboard, and report-platform depth
+- [x] Account security: reset email, confirmation, and 2FA
+- [x] Backups, staging, monitoring, deployment rehearsal, and rollback plan
+- [ ] Old/new page and workflow parity audit completed with business sign-off
+      (engineering audit is complete in `PARITY_REVIEW.md`; user sign-off is pending)
+- [ ] Capture the nine legacy MariaDB schemas/counts with a read-only account,
+      build and rehearse the mapped importer, and sign off reconciliation totals
+      (`ops/CUTOVER.md`; guarded Identity/company, Fleet, Plain Ledger, Gate
+      Pass, and Tender importers are ready, but the configured development
+      source credential is currently rejected)
+- [ ] Production cutover completed module by module
+
+Last verification: 23 August 2026 — all 373 tests passed; full solution build
+succeeded with 0 warnings and 0 errors; development app healthy on port 5090;
+backup/restore, release, rollback, staging-start and health rehearsal passed.
+Legacy account and merged module bookmarks now resolve through compatibility
+redirects, with protected routes preserving the sign-in gate.
+
 ---
 
 ## The honest summary
 
-**This rebuild is at roughly 55% of the old app, and Finance is the only module
-anywhere near complete.** Everything else is a working skeleton with the main
-screens and none of the depth.
+**This rebuild contains all eight module boundaries and the major legacy-depth
+work for all modules. The engineering legacy-parity audit is complete; remaining
+work is guided business sign-off and production cutover.**
 
 | | Old app (`/home/pc/vb/acc`) | This rebuild | |
 |---|---|---|---|
-| Code (excl. migrations) | 57,065 | 31,169 | **55%** |
-| Pages | 175 | 96 | 55% |
-| Tests | 226 | 227 | **101%** |
-| Modules | 8 | 7 | Plain Ledger missing entirely |
+| Code (excl. migrations) | 57,065 | 31,778 | **56%** |
+| Pages | 175 | 121 | 69% |
+| Tests | 226 | 373 passing cases | **165%** |
+| Modules | 8 | 8 | All module boundaries present |
 
-The old app also has whole subsystems this one has never touched — attendance,
-the physical file registry, warehouses, quotations. Those are listed below.
-
-**The old app at `/home/pc/vb/acc` must stay live in the office.** Nothing here
-is ready to replace it, and there is no cutover plan. This rebuild is not usable
-as a business system yet.
+**The old app at `/home/pc/vb/acc` must stay available for comparison.** Nothing
+here is authorized to replace it until business sign-off; deployment, restore,
+staging and rollback have been rehearsed.
 
 ---
 
@@ -43,121 +77,197 @@ Verified running, with tests, not just compiling.
 - **Users, roles, departments** — permission matrix, reporting lines, last-admin
   protection, cycle detection in the reporting line.
 - **Report platform** — one shape per report; screen, Excel and PDF all render
-  from it so they cannot disagree. Six Finance reports registered.
+  from it so they cannot disagree. Catalogs are registered across all eight
+  modules, including the audited legacy Tender, Ledger, Fleet, and Gate Pass
+  subjects. Users can save named/default filter views and schedule real report
+  runs daily, weekly, or monthly in the configured business timezone. Every
+  scheduled run rechecks permission, records its result/error and queues an
+  in-app/email delivery through the durable notification pipeline.
 - **Printing** — QuestPDF documents in A4 / 80mm / 62mm, Code 128 and QR that
   round-trip through a real decoder, real Excel workbooks with numbers as
   numbers.
 - **Persistence** — PostgreSQL, one database, schema per module, audit stamping,
   soft delete, `xmin` concurrency, outbox table (unused so far).
+- **Host HTTP smoke gate** — an isolated PostgreSQL `WebApplicationFactory`
+  verifies anonymous liveness/readiness and that protected legacy aliases retain
+  the sign-in redirect (`MeiErp.Host.Tests`, 2 tests).
 
 ### Finance — complete against the old app
 
 Chart of accounts · vouchers with reversal · day book · payment requests ·
+including legacy-style itemized reimbursement lines with per-line expense heads
+and voucher posting ·
 advances with the full disburse → justify → settle flow · petty cash · utilities ·
 third parties with statements · payroll with pro-rating and advance recovery ·
-bank reconciliation · year close · 6 reports · PDF and Excel export.
+bank reconciliation · year close · 6 reports · PDF and Excel export. Director
+Funds are a distinct advance mode with DFR numbering, director permissions, and
+disbursement against the dedicated Director capital head.
 
-**78 tests.** This is the one module I would defend as production-shaped.
+**90 tests.** This is the one module I would defend as production-shaped.
 
-### The other six modules — skeletons
+### Module-depth status
 
 | Module | What exists | What is missing |
 |---|---|---|
-| HR | Employees, leave with balances and approval | **All of attendance** (see below) |
-| Inventory | Items, stock ledger, PO→receipt, SO→delivery, parties | Warehouses, transfers, stock counts, product→model→accessory, serials, reports |
-| Repair | Jobs as a state machine, work items, delivery | Intakes, quotations, sales orders, payments, parts, purchasing, tracking board, scan, **11 printed documents**, **15 reports** |
-| Fleet | Vehicles, servicing, running costs, expiry alerts | Roughly at parity — the smallest module |
-| Gate Pass | Passes, partial returns, segregation of duties | Demo goods issuance |
-| Tender | Tenders, guarantees, projects, task board | **The physical file registry** — files, movements, stickers, scan — plus milestones |
+| HR | Employees with legacy personal/contact/employment/bank details, leave, employee documents/files and expiry, stations, kiosk/NFC/rotating QR attendance, corrections, monthly register, payroll attendance integration | Business sign-off and cutover rehearsal |
+| Inventory | Product family→model→accessory catalog, items, warehouse-aware ledger and balances, two-stage transfers with shortage visibility, posted counts, serialized units, batch/expiry tracking, PO→receipt, SO→delivery, purchase/sales returns, parties with payment terms/notes, and all 8 legacy report subjects | No known functional gap against the audited legacy Inventory scope; business sign-off remains required |
+| Repair | Jobs/state machine/history, structured diagnoses and private photo evidence, work items, richer customer/delivery capture, mandatory customer phone parity, multi-device intakes with catalog selections and payment basis, individual and collective quotations, customer orders/payments, parts/suppliers/purchases, tracking, scan, all 15 legacy report subjects plus 2 operational registers, the legacy document set, and configurable device-label templates | No known functional gap against the audited legacy Repair scope; business sign-off remains required |
+| Fleet | Vehicles including legacy color/notes, required make/model, purchase metadata, detail workflow, service history add/edit/remove, upcoming-maintenance alerts, running costs, odometer derivation, expiry alerts | No known functional gap; business sign-off remains |
+| Gate Pass | Passes with legacy carrier/company/contact/reference metadata, edit/cancel/detail, partial returns, segregation of duties, demo issuance/partial returns/cancellation/printing | No known functional gap; business sign-off remains |
+| Tender | Tenders, commercial/detail fields, item and guarantee detail, document metadata, competitor bids, projects, task board, milestones, all 6 legacy report subjects, and one automatically created physical file per tender/project with guarded movements, overdue visibility, scan lookup, stickers, and movement registers | Engineering parity and guarded importer are complete; live source rehearsal remains credential-gated |
 
 ---
 
 ## What is missing — ordered by how much it matters
 
-### 1. Notifications — built; three pieces still open
+### 1. Notifications — complete
 
 `Platform.Notifications` exists and the approval engine is wired to it, so
 raising a request now tells the people who can approve it, and settling one
 tells the raiser. In-app and email channels, a durable queue with exponential
-backoff, and per-user per-category preferences. 33 tests, 8 of them against a
-real database because the claim statement is hand-written SQL.
+backoff, per-user per-category preferences, a user preferences screen, an
+authorized dead-letter review/retry screen, and company-branded HTML email with
+a plain-text alternative. Approval SLA reminders and role escalation run from a
+five-minute background sweep and are recorded in the approval history.
 
-What is still missing:
+### 2. Attendance — complete
 
-- **A preferences screen.** The `NotificationPreferences` table is read on every
-  send and nothing writes to it, so a person cannot yet turn a channel off.
-- **A dead-letter screen.** `INotificationOutbox.DeadAsync` and `RetryAsync`
-  exist and nothing calls them, so a message that gave up is invisible.
-- **Templates.** Email is plain text; it should render Razor on the company
-  letterhead like the PDFs do.
+The HR module now has shift calendars and weekly offs, holiday administration,
+stations, employee NFC/QR enrollment, immutable punches, derived attendance
+days, and the PostgreSQL migration. It includes pure attendance calculation,
+rotating HMAC credentials, keyboard/NFC and webcam QR kiosk capture with
+debounce, deterministic rebuilding, leave precedence, protected manual
+corrections that survive rebuilding, employee-scoped privacy, daily and monthly
+registers, PDF/Excel exports, and the personal rotating QR page. Approved leave
+refreshes affected attendance and payroll consumes payable attendance days for
+pro-rating. The HR suite has 41 green tests, including PostgreSQL integration
+and QR-frame decoding coverage.
 
-The SLA fields on `WorkflowStep` (`ReminderAfterHours`, `EscalateAfterHours`) are
-still **stored but never acted on** — there is no background job reading them.
-The `approval.reminder` and `approval.escalated` categories are declared and
-nothing raises them. That needs a scheduler, and is item 3 below.
+### 3. Plain Ledger module — complete
 
-### 2. Attendance — the whole subsystem, ~2,000 lines in the old app
-
-Old app has: attendance stations, a kiosk page, NFC card reading, a rotating
-HMAC QR code per employee, punch derivation (first punch in, last punch out),
-manual corrections that survive re-sync, approved leave outranking punches,
-monthly register, recompute. **None of it exists here.** HR leave works; HR
-attendance does not exist at all.
-
-This is used every day by every member of staff in the old system. It is the
-single biggest functional hole.
-
-### 3. Plain Ledger module — does not exist
-
-The old app's eighth module: main ledgers, sub-ledgers, unlimited nesting,
-paired transfers, its own head tree. Entirely absent here. Read the old
-`CLAUDE.md` section on it — the design decisions there are good and worth
-copying rather than re-deriving.
+The old module has been ported into the shared rebuild shell and PostgreSQL
+architecture: main and sub-ledgers with unlimited nesting, payable/receivable
+nature, opening and running balances, own versus descendant roll-up totals,
+external movements, transactional linked-pair transfers, protected amendment
+and deletion of both transfer halves, nested module-specific heads, filters,
+statements, dashboards, and reports. Six permissions and three role templates
+are registered. All seven workflow pages are live and 18 PostgreSQL parity tests
+cover the old module's essential invariants.
 
 ### 4. The outbox / cross-module posting
 
-`OutboxMessage` exists as a table and nothing writes to it. Inventory and Repair
-do not post to Finance's ledger — a goods receipt moves stock but raises no
-payable, a repair invoice raises no receivable. **This was the whole argument for
-the rebuild** and it has not been built.
-
-Needs: `Platform.Messaging` with a dispatcher, `IPostingGateway` implemented by
-Finance, a posting-rules table, and a dead-letter review screen. Build the
-dead-letter screen *with* the bus, not after.
+**Complete:** `Platform.Messaging` dispatches durable per-module outbox
+rows, retries five times, dead-letters failures, and supports authorized manual
+retry. Finance has configurable debit/credit posting rules and explicitly keyed
+idempotent system vouchers. Inventory goods receipts stage stock, receipt,
+order, and outbox changes in one atomic save, then post the payable asynchronously.
+Posting-rule and failure-review screens are live. Repair approved quotations
+become immutable customer orders and emit receivable events through the same
+path. Both Finance consumers use explicit idempotency keys, so dispatcher replay
+cannot double-post. Three dispatcher tests, three Finance integration tests, and
+Inventory/Repair PostgreSQL coverage are green. Additional producers can use
+the same bus without changing the dispatcher.
 
 ### 5. Module depth
 
-Per the table above. Repair and Inventory are the furthest behind. Repair in
-particular is missing its entire commercial half (quotations → orders →
-payments) and all of its printing.
+Per the table above. Repair has quotations with dual approval, customer orders, payments, receivable
+posting, a parts catalog, supplier registry, purchase receiving, and
+last/weighted-average part-cost tracking, atomic multi-device intake grouping,
+a stage-aging tracking board, barcode/serial scan navigation, editable intake
+catalogs wired into intake, structured diagnosis history, append-only state
+history, private photo/PDF evidence, and all 15 legacy report subjects through
+the shared screen/PDF/Excel pipeline (plus job and diagnosis registers). The
+legacy intake/job/delivery/quotation/invoice/purchase document set is live.
+Collective intake quotations now combine every device's billable work into one
+customer quotation and order. Intake payment basis, organization/contact notes,
+communication preference, and collector phone/CNIC/release notes are persisted.
+Administrators can define device-label stock dimensions, field order, font scale,
+barcode/QR visibility and a default template; batch intake printing emits one
+physical label page per device. Repair has no known gap against the audited
+legacy scope, but still requires business-user sign-off.
+
+Inventory now has named/default warehouses, per-location balances, safe deletion
+rules, warehouse-attributed receipts/deliveries/adjustments, draft → in-transit →
+received transfers, recorded short receipts, and auditable stock-take documents
+whose variances post once through the stock ledger. The warehouse migration
+backfills existing single-location quantities into `MAIN`. Inventory now also
+organizes stock as product family → model → accessory without duplicating the
+SKU ledger. Receipts enforce exact unique serials or required batches according
+to item configuration; deliveries reject unavailable serials, and batch issues
+consume earliest expiry first. `/inventory/products` and
+`/inventory/tracking` provide management and audit views. Purchase and sales
+returns now require reasons, preserve serial/batch invariants, post atomically
+through the stock ledger, and produce printable return notes. All 8 legacy
+Inventory report subjects are registered in the shared screen/PDF/Excel
+pipeline and execute against PostgreSQL. Inventory has no known gap against the
+audited legacy scope, but still requires business-user sign-off.
+
+Tender now creates and backfills one numbered physical folder for every tender
+and project. Its append-only register covers issue, return, direct transfer,
+archive/reopen, lost/found, holder, purpose, due-back, shelf/volume, and actor
+snapshots. `/tender/files` provides filtering and overdue visibility;
+`/tender/files/scan` resolves printed numbers. Authenticated sticker and movement
+register PDFs are linked from each file. Projects now carry ordered milestones
+with pending/achieved/missed/cancelled state, achieved-date reconciliation,
+payment stages, and overdue visibility.
 
 ### 6. Per-record printed documents
 
-The print platform exists and works, but **no module uses it yet**. Only reports
-export. The old app prints 11 repair documents, invoices, delivery notes, gate
-passes, labels and stickers. Every one of those is unbuilt.
+**Complete for the currently audited record set:** authenticated, branded PDF endpoints cover Gate Pass
+(A4/roll), Repair job card/device label/delivery note/quotation/invoice/receipt,
+Inventory purchase order/goods receipt/sales order/delivery/return, Finance vouchers
+and payslips, Tender summaries/file stickers/file movement registers, Auto vehicle histories, HR employee profiles,
+and Ledger statements. Each is linked from its record screen. The shared renderer
+is covered for A4, roll and label output. Repair intake A4/roll receipts,
+device labels, job cards/labels, delivery notes, quotations,
+invoices/receipts, and purchase notes are now live.
 
 ### 7. Platform gaps
 
-- **Global search** — nothing.
-- **Audit trail viewer** — audit columns are stamped, nothing reads them.
-- **Password reset by email, 2FA, email confirmation** — none.
-- **Dashboard** is static placeholder tiles showing zeros.
-- **Backups, staging environment, monitoring** — none of the infrastructure
-  work from the original plan.
+- **Global search** — live in the app bar across all eight modules, permission-filtered.
+- **Audit trail** — every module writes created/modified/soft-deleted evidence
+  with actor, timestamp, record id, and redacted before/after JSON into one
+  append-only platform table in the same transaction as the business change.
+  `/admin/audit` provides permission-gated module/entity/user/date filtering.
+- **Account security** — enumeration-safe self-service password reset with
+  two-hour single-use links, required confirmation for new/changed addresses,
+  confirmation resend, authenticator-app 2FA, trusted devices, and one-time
+  recovery codes. Administrator-created users receive confirmation invitations;
+  SMTP must be configured outside source control for real delivery.
+- **Self-service parity** — `/hr/me` shows the signed-in employee's monthly
+  attendance and leave balances with server-side privacy filtering;
+  `/finance/my-ledger` shows only posted voucher lines tagged to that login.
+  Legacy bookmarks redirect to their rebuild equivalents, and all 129 declared
+  UI routes pass an authenticated live HTTP sweep.
+- **Dashboard** now reads live approval, payment, repair, reorder, gate-return,
+  physical-file, and tender metrics; richer trend charts remain future depth.
+- **Operations** — `ops/backup.sh` produces checksummed custom-format dumps;
+  `verify-restore.sh` restores only to a guarded throwaway database and verifies
+  all nine schemas plus migration history. Immutable timestamped Release
+  publishing, atomic symlink deployment, automatic/manual rollback, systemd
+  service/timer templates, live/readiness monitoring, staging email redirection,
+  secret templates, and an incident runbook are present. `ops/rehearse.sh` has
+  been executed successfully against a real backup/restored database, including
+  a published Staging process on port 5190. Installing the supplied units,
+  off-server retention, TLS/DNS, and alert routing belong to production cutover.
+  Read-only legacy/rebuild inventory tools and the cross-engine reconciliation
+  gate are documented in `ops/CUTOVER.md`; guarded Identity/company, Fleet, Plain
+  Ledger, Gate Pass, and Tender importers are ready. Live MariaDB
+  capture/rehearsal and reconciliation require a valid read-only source
+  credential.
 
 ---
 
 ## Known bugs and rough edges
 
-- The dashboard's four tiles are hardcoded zeros.
-- Reports have no scheduling, saved views, or drill-through targets wired up
-  (`DrillUrl` is populated on two reports; nothing else uses it).
-- No module registers reports except Finance.
+- Global search intentionally caps results per record type and 30 overall; a
+  dedicated full-results page and ranking telemetry are not yet implemented.
+- Report row drill-through is live wherever a source-record target exists;
+  aggregate rows intentionally remain non-clickable when no single source record exists.
 - `PayrollEmployee` duplicates HR's `Employee`. Deliberate for now (payroll must
   work without HR installed) but they will need reconciling.
-- Attendance-driven pro-rating in payroll takes a `daysWorked` dictionary that
-  **nothing currently supplies** — it defaults to a full month for everyone.
+- Payroll attendance pro-rating is supplied from HR when that module is
+  installed; Finance still remains independently usable without HR.
 
 ---
 
@@ -169,25 +279,38 @@ In order. Each is a session's work or less unless noted.
    `/admin/company`; two bugs under it were fixed on the way (`SaveAsync`
    clobbered the primary key, and `GetAsync` handed the process-wide cache to
    the caller). Six tests.
-2. ~~**Notifications and email**~~ — **mostly done.** `Platform.Notifications`
+2. ~~**Notifications and email**~~ — **done.** `Platform.Notifications`
    exists: channel abstraction (in-app + email over MailKit), a durable queue
    with backoff and a dead-letter state, per-user per-category preferences, the
    bell in the app bar, and the approval engine wired to raise on assignment and
-   on settlement. 33 tests. **Still missing:** a preferences screen, a
-   dead-letter review screen, and Razor/letterhead templates — email is plain
-   text today.
-3. **Scheduler + SLA reminders and escalation** — makes the stored SLA fields
-   real. The `approval.reminder` and `approval.escalated` categories already
-   exist and nothing raises them; that is the gap.
-4. **Attendance** (2–3 sessions) — the biggest daily-use hole.
-5. **Plain Ledger module** (1–2 sessions) — self-contained, copy the old design.
-6. **Outbox and cross-module posting** (2 sessions) — the rebuild's actual thesis.
-7. **Per-record printing** across modules (2 sessions).
-8. **Repair depth** — quotations, orders, payments, parts (3 sessions).
-9. **Inventory depth** — warehouses, transfers, counts, serials (2 sessions).
+   on settlement. Preferences and dead-letter review screens, approval SLA
+   handling, and branded HTML/plain-text templates are included. 27 tests.
+3. ~~**Scheduler + SLA reminders and escalation**~~ — **done.** A five-minute
+   background sweep sends one reminder per overdue step, escalates to the
+   configured role, makes that role eligible to act, and records escalation in
+   the append-only approval history.
+4. ~~**Attendance**~~ — **done.** Full kiosk-to-payroll workflow, administration,
+   corrections, employee documents/expiry, exports, and automated rebuilding are implemented. 41 HR tests.
+5. ~~**Plain Ledger module**~~ — **done.** The complete old design is ported into
+   the shared host, with its PostgreSQL migration and 17 parity tests.
+6. ~~**Outbox and cross-module posting**~~ — **done.** Durable dispatch, retries,
+   dead-letter administration, configurable rules, and idempotent Inventory
+   payable/Repair receivable postings are live.
+7. ~~**Per-record printing**~~ — **done for the audited record set.** Tender file
+   stickers and movement registers complete the previously absent record type.
+8. ~~**Repair depth**~~ — **done against the audited legacy scope.** Workshop,
+   commercial, procurement, evidence, collective intake quotation, payment basis,
+   richer customer/delivery capture, configurable labels, and report parity are live.
+9. ~~**Inventory depth**~~ — **done against the audited legacy scope.** Warehouses,
+   transfers, posted counts, product hierarchy, serialized units, batch/expiry
+   tracking, purchase/sales returns, printable return notes, and all 8 legacy
+   report subjects are live with PostgreSQL coverage.
+10. ~~**Tender file registry and milestones**~~ — **done.** Automatic/backfilled
+    files, guarded append-only movements, overdue filters, scan lookup, sticker
+    and register printing, and project milestone management are live.
 
-Realistically **12–18 more sessions to parity**, and parity is the floor, not the
-goal.
+The remaining work is tracked by the unchecked checklist above; do not estimate
+cutover readiness until those verification and operational items are proven.
 
 ---
 
@@ -210,7 +333,7 @@ export PATH="$HOME/.dotnet:$HOME/.dotnet/tools:$PATH"
 export LD_LIBRARY_PATH="$HOME/.local/finance-erp-dev/pkg/usr/lib/x86_64-linux-gnu"
 ```
 
-PostgreSQL 18, database `mei_erp`, role `meierp`. Eight schemas: `platform`,
+PostgreSQL 18, database `mei_erp`, role `meierp`. Nine schemas: `platform`,
 `finance`, `hr`, `inventory`, `repair`, `auto`, `gatepass`, `tender`.
 
 ---
@@ -246,15 +369,7 @@ Where this rebuild is genuinely better than the old app: the approval engine,
 the report platform, one database instead of nine, `xmin` concurrency instead of
 a hand-rolled token, and tests written alongside the code rather than after.
 
-Where it is worse: **it does not do most of what the business actually does
-every day.** Six of seven modules are shallow, and one module is missing
-altogether. The old app has years of accumulated decisions encoded in it that
-this rebuild has not re-derived — and some of those, particularly in attendance
-and payroll edge cases, will only surface when somebody tries to use it.
-
-The strategic option that remains open, and which I recommended before the
-rebuild started: **harvest the platform pieces** — approval engine, report
-platform, permission model — and port them into the existing app, rather than
-finishing a rewrite that is 12–18 sessions from parity. The approval engine in
-particular is self-contained and would drop into the old platform without
-rewriting a single module.
+Where it is still weaker is operational proof: the engineering gates now cover
+host HTTP routing, business-clock boundaries, security headers and deployment/
+backup rehearsal, but no module has received formal business sign-off or
+production cutover.

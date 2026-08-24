@@ -1,0 +1,35 @@
+@inject IGatePassService Gate
+
+<MudDialog>
+    <DialogContent>
+        @if (_pass is null) { <MudProgressCircular Indeterminate="true" /> }
+        else
+        {
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="6"><MudText Typo="Typo.caption">Status</MudText><MudText>@_pass.Status</MudText></MudItem>
+                <MudItem xs="12" sm="6"><MudText Typo="Typo.caption">Date / direction</MudText><MudText>@_pass.Date.ToString("d MMM yyyy") · @_pass.Direction</MudText></MudItem>
+                <MudItem xs="12" sm="6"><MudText Typo="Typo.caption">Person / party</MudText><MudText>@_pass.PartyName</MudText></MudItem>
+                <MudItem xs="12" sm="6"><MudText Typo="Typo.caption">Company / department</MudText><MudText>@Join(_pass.CompanyName,_pass.Department)</MudText></MudItem>
+                <MudItem xs="12" sm="6"><MudText Typo="Typo.caption">Phone / CNIC</MudText><MudText>@Join(_pass.PersonPhone,_pass.PersonCnic)</MudText></MudItem>
+                <MudItem xs="12" sm="6"><MudText Typo="Typo.caption">Vehicle / driver</MudText><MudText>@Join(_pass.VehicleNumber,_pass.DriverName)</MudText></MudItem>
+                <MudItem xs="12"><MudText Typo="Typo.caption">Purpose</MudText><MudText>@(_pass.Purpose??"—")</MudText></MudItem>
+                <MudItem xs="12"><MudText Typo="Typo.caption">Reference</MudText><MudText>@Join(_pass.ReferenceType,_pass.ReferenceNumber)</MudText></MudItem>
+                <MudItem xs="12"><MudText Typo="Typo.caption">Notes</MudText><MudText>@(_pass.Notes??"—")</MudText></MudItem>
+                @if (_pass.CancellationReason is not null) { <MudItem xs="12"><MudAlert Severity="Severity.Error">Cancelled: @_pass.CancellationReason</MudAlert></MudItem> }
+            </MudGrid>
+            <MudTable T="PassItem" Items="_pass.Items" Dense="true" Class="mt-4">
+                <HeaderContent><MudTh>Item</MudTh><MudTh>Serial</MudTh><MudTh>Quantity</MudTh><MudTh>Returned</MudTh></HeaderContent>
+                <RowTemplate><MudTd>@context.Description</MudTd><MudTd>@context.SerialNumber</MudTd><MudTd>@context.Quantity @context.Unit</MudTd><MudTd>@context.ReturnedQuantity</MudTd></RowTemplate>
+            </MudTable>
+        }
+    </DialogContent>
+    <DialogActions><MudButton Href="@($"/print/gatepass/{PassId}")" Target="_blank">Print</MudButton><MudButton OnClick="@(() => Dialog.Close())">Close</MudButton></DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int PassId { get; set; }
+    private Pass? _pass;
+    protected override async Task OnInitializedAsync()=>_pass=await Gate.GetAsync(PassId);
+    private static string Join(params string?[] values)=>string.Join(" · ",values.Where(x=>!string.IsNullOrWhiteSpace(x)).DefaultIfEmpty("—"));
+}

@@ -44,6 +44,7 @@ public sealed class PayrollTests : IAsyncLifetime
 
             await using var db = NewDb();
             await db.Database.EnsureCreatedAsync();
+            await db.EnsureAuditTableForTestsAsync();
 
             var cash = new Account { Code = "1100", Name = "Cash", Type = AccountType.Asset, IsPostable = true };
             var salary = new Account { Code = "5210", Name = "Salaries and wages", Type = AccountType.Expense, IsPostable = true };
@@ -76,8 +77,8 @@ public sealed class PayrollTests : IAsyncLifetime
     private FinanceDbContext NewDb() =>
         new(new DbContextOptionsBuilder<FinanceDbContext>().UseNpgsql(Connection).Options, _user, _clock);
 
-    private PayrollService NewService(FinanceDbContext db) =>
-        new(db, new VoucherService(db, _clock, _user), _clock);
+    private PayrollService NewService(FinanceDbContext db, IPayrollAttendanceProvider? attendance = null) =>
+        new(db, new VoucherService(db, _clock, _user), _clock, attendance);
 
     private static readonly DateOnly August = new(2026, 8, 1);
 
@@ -100,6 +101,20 @@ public sealed class PayrollTests : IAsyncLifetime
     }
 
     // ---------- pro-rating ----------
+
+    [SkippableFact]
+    public async Task Attendance_provider_drives_proration_when_manual_days_are_not_supplied()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db = NewDb();
+        var service = NewService(db, new FixedAttendance(
+            new Dictionary<string, decimal> { ["E-1"] = 15.5m }));
+        await AddEmployeeAsync(service, "E-1", "Rafiq", 31_000);
+        var run = await service.GenerateAsync(August);
+        Assert.True(run.Ok, run.Error);
+        Assert.Equal(15_500, run.Value.Payslips.Single().Gross);
+        Assert.Equal(15.5m, run.Value.Payslips.Single().DaysWorked);
+    }
 
     [SkippableFact]
     public async Task A_full_month_pays_the_whole_basic()
@@ -535,5 +550,12 @@ public sealed class PayrollTests : IAsyncLifetime
         public bool Can(string permission) => true;
         public bool InModule(string moduleKey) => true;
         public IReadOnlyCollection<string> Roles { get; } = [];
+    }
+
+    private sealed class FixedAttendance(IReadOnlyDictionary<string, decimal> days)
+        : IPayrollAttendanceProvider
+    {
+        public Task<IReadOnlyDictionary<string, decimal>> PayableDaysByEmployeeCodeAsync(
+            DateOnly month, CancellationToken ct = default) => Task.FromResult(days);
     }
 }

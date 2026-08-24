@@ -15,6 +15,11 @@ public class Employee : AuditableEntity, IConcurrencyChecked
 
     public string Code { get; set; } = "";
     public string FullName { get; set; } = "";
+    public string? FatherName { get; set; }
+    public DateOnly? DateOfBirth { get; set; }
+    public Gender Gender { get; set; } = Gender.Unspecified;
+    public MaritalStatus MaritalStatus { get; set; } = MaritalStatus.Unspecified;
+    public string? BloodGroup { get; set; }
 
     /// <summary>Identity user id when this person can sign in. Null for staff who cannot.</summary>
     public string? UserId { get; set; }
@@ -27,16 +32,44 @@ public class Employee : AuditableEntity, IConcurrencyChecked
 
     public string? Email { get; set; }
     public string? Phone { get; set; }
+    public string? AlternatePhone { get; set; }
+    public string? Address { get; set; }
+    public string? City { get; set; }
+    public string? EmergencyContactName { get; set; }
+    public string? EmergencyContactPhone { get; set; }
     public string? Cnic { get; set; }
 
     public DateOnly JoinedOn { get; set; }
     public DateOnly? LeftOn { get; set; }
 
     public EmploymentStatus Status { get; set; } = EmploymentStatus.Active;
+    public EmploymentType EmploymentType { get; set; } = EmploymentType.Permanent;
+    public DateOnly? ConfirmedOn { get; set; }
+    public string? LeavingReason { get; set; }
+    public string? WorkLocation { get; set; }
+    public string? ReportsToEmployeeCode { get; set; }
 
     public decimal? BasicSalary { get; set; }
 
+    public string? BankName { get; set; }
+    public string? BankAccountNumber { get; set; }
+    public string? BankAccountTitle { get; set; }
+    public string? TaxNumber { get; set; }
+    public string? SocialSecurityNumber { get; set; }
+
+    public string? Notes { get; set; }
+
+    public int? ShiftId { get; set; }
+    public Shift? Shift { get; set; }
+
+    /// <summary>Unique UID typed by the employee's NFC card or fob.</summary>
+    public string? CardNumber { get; set; }
+
+    /// <summary>Secret behind the employee's rotating attendance QR code.</summary>
+    public string? QrSecret { get; set; }
+
     public List<LeaveBalance> LeaveBalances { get; set; } = [];
+    public List<EmployeeDocument> Documents { get; set; } = [];
 
     /// <summary>Employed as at a date. Used by leave and attendance rather than reading Status.</summary>
     public bool IsEmployedOn(DateOnly date) =>
@@ -52,6 +85,12 @@ public enum EmploymentStatus
     Terminated = 4,
     Retired = 5
 }
+
+public enum Gender { Unspecified = 0, Male = 1, Female = 2, Other = 3 }
+#pragma warning disable CA1720 // "Single" is the domain value used by the legacy HR schema.
+public enum MaritalStatus { Unspecified = 0, Single = 1, Married = 2, Other = 3 }
+#pragma warning restore CA1720
+public enum EmploymentType { Permanent = 0, Contract = 1, Probation = 2, Intern = 3, PartTime = 4, Daily = 5 }
 
 /// <summary>
 /// A kind of leave, with its yearly entitlement.
@@ -195,4 +234,5 @@ public class Holiday : AuditableEntity
 
     /// <summary>Recurs on the same calendar date each year, e.g. Independence Day.</summary>
     public bool IsAnnual { get; set; }
+    public bool IsPaid { get; set; } = true;
 }

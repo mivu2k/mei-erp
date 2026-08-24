@@ -117,8 +117,8 @@ else
     private async Task LoadAsync() =>
         _statement = await Parties.StatementAsync(
             PartyId,
-            DateOnly.FromDateTime(_from ?? DateTime.Today),
-            DateOnly.FromDateTime(_to ?? DateTime.Today));
+            DateOnly.FromDateTime(_from ?? Clock.Today.ToDateTime(TimeOnly.MinValue)),
+            DateOnly.FromDateTime(_to ?? Clock.Today.ToDateTime(TimeOnly.MinValue)));
 
     private async Task Pay()
     {

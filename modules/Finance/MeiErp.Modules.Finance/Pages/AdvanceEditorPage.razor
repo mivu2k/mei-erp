@@ -1,0 +1,12 @@
+@page "/finance/advances/new"
+@page "/finance/advances/{Id:int}/edit"
+@attribute [Authorize(Policy = FinanceModule.AdvancesRaise)]
+@rendermode InteractiveServer
+
+@* The dialog and this page render the same editor; only the frame differs.
+   "/edit" avoids colliding with AdvanceDetail's "/finance/advances/{id}" view route. *@
+<AdvanceEditor AsDialog="false" AdvanceId="Id" />
+
+@code {
+    [Parameter] public int? Id { get; set; }
+}

@@ -1,0 +1,137 @@
+@page "/inventory/transfers"
+@attribute [Authorize(Policy=InventoryModule.TransfersManage)]
+@inject ITransferService Service
+@inject IWarehouseService Warehouses
+@inject ICatalogService Catalog
+@inject IClock Clock
+@inject ICurrentUser User
+@inject ISnackbar Snackbar
+
+<ListShell Title="Stock transfers"
+           Subtitle="Moves stock from one warehouse to another, dispatched and then received."
+           Icon="@Icons.Material.Outlined.SwapHoriz"
+           IsEmpty="@(_rows.Count == 0 && !_edit)"
+           EmptyIcon="@Icons.Material.Outlined.SwapHoriz"
+           EmptyTitle="No transfers yet"
+           EmptyHint="Move stock between warehouses here — dispatch it, then receive it at the other end.">
+    <Actions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="New">New transfer</MudButton>
+    </Actions>
+
+    <EmptyAction>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="New">New transfer</MudButton>
+    </EmptyAction>
+
+    <ChildContent>
+    <MudTable Items="_rows" Dense Hover>
+        <HeaderContent>
+            <MudTh>Number</MudTh><MudTh>Date</MudTh><MudTh>From</MudTh><MudTh>To</MudTh>
+            <MudTh>Status</MudTh><MudTh>Lines</MudTh><MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.Number</MudTd>
+            <MudTd>@context.Date</MudTd>
+            <MudTd>@context.FromWarehouse?.Name</MudTd>
+            <MudTd>@context.ToWarehouse?.Name</MudTd>
+            <MudTd>@context.Status</MudTd>
+            <MudTd>@context.Lines.Count</MudTd>
+            <MudTd>
+                @if(context.Status==TransferStatus.Draft)
+                {
+                    <MudButton Size="Size.Small" OnClick="@(()=>Dispatch(context.Id))">Dispatch</MudButton>
+                }
+                else if(context.Status==TransferStatus.InTransit)
+                {
+                    <MudButton Size="Size.Small" OnClick="@(()=>Receive(context))">Receive</MudButton>
+                }
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+    @if(_edit)
+    {
+        <MudPaper Class="pa-4 ma-3" Outlined="true" Elevation="0">
+            <MudText Typo="Typo.h6">New transfer</MudText>
+            <MudGrid>
+                <MudItem xs="6" md="3">
+                    <MudSelect T="int" @bind-Value="_from" Label="From">
+                        @foreach(var w in _warehouses){<MudSelectItem Value="@w.Id">@w.Name</MudSelectItem>}
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudSelect T="int" @bind-Value="_to" Label="To">
+                        @foreach(var w in _warehouses){<MudSelectItem Value="@w.Id">@w.Name</MudSelectItem>}
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="3"><MudTextField @bind-Value="_reference" Label="Reference"/></MudItem>
+                <MudItem xs="12"><MudTextField @bind-Value="_notes" Label="Notes"/></MudItem>
+            </MudGrid>
+            @foreach(var line in _lines)
+            {
+                <div class="d-flex gap-2 align-center mt-2">
+                    <MudSelect T="int" @bind-Value="line.ItemId" Label="Item" Style="min-width:300px">
+                        @foreach(var i in _items){<MudSelectItem Value="@i.Id">@i.Code — @i.Name</MudSelectItem>}
+                    </MudSelect>
+                    <MudNumericField @bind-Value="line.Quantity" Label="Quantity" Style="width:140px"/>
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" OnClick="@(()=>_lines.Remove(line))"/>
+                </div>
+            }
+            <MudButton Class="mt-2" OnClick="@(()=>_lines.Add(new()))">Add line</MudButton>
+            <div class="d-flex justify-end gap-2">
+                <MudButton OnClick="@(()=>_edit=false)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">Save draft</MudButton>
+            </div>
+        </MudPaper>
+    }
+    </ChildContent>
+</ListShell>
+
+@code{
+    private List<StockTransfer> _rows=[];
+    private List<Warehouse> _warehouses=[];
+    private IReadOnlyList<Item> _items=[];
+    private bool _edit;
+    private int _from,_to;
+    private string? _reference,_notes;
+    private List<Line> _lines=[];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _warehouses=await Warehouses.ListAsync();
+        _items=await Catalog.ItemsAsync();
+        await Load();
+    }
+
+    private async Task Load()=>_rows=await Service.ListAsync();
+
+    private void New()
+    {
+        _edit=true;
+        _from=_warehouses.FirstOrDefault()?.Id??0;
+        _to=_warehouses.Skip(1).FirstOrDefault()?.Id??0;
+        _lines=[new()];
+    }
+
+    private async Task Save()
+    {
+        var result=await Service.SaveAsync(new(null,Clock.Today,_from,_to,_reference,_notes,_lines.Select(x=>new TransferLineInput(x.ItemId,x.Quantity)).ToList()));
+        if(result.Failed){Snackbar.Add(result.Error!,Severity.Error);return;}
+        _edit=false;
+        await Load();
+    }
+
+    private async Task Dispatch(int id)
+    {
+        var result=await Service.DispatchAsync(id,User.Name??"Unknown");
+        Snackbar.Add(result.Ok?"Transfer dispatched.":result.Error!,result.Ok?Severity.Success:Severity.Error);
+        await Load();
+    }
+
+    private async Task Receive(StockTransfer row)
+    {
+        var result=await Service.ReceiveAsync(row.Id,row.Lines.ToDictionary(x=>x.Id,x=>x.Quantity),User.Name??"Unknown");
+        Snackbar.Add(result.Ok?"Transfer received.":result.Error!,result.Ok?Severity.Success:Severity.Error);
+        await Load();
+    }
+
+    private sealed class Line{public int ItemId{get;set;}public decimal Quantity{get;set;}=1;}
+}

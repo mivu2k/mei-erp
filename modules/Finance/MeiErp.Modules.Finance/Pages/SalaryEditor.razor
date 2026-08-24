@@ -1,67 +1,70 @@
 @inject IPayrollService Wages
 @inject IClock Clock
 @inject ISnackbar Snackbar
+@inject NavigationManager Nav
 
-<MudDialog>
-    <DialogContent>
+<DocumentShell @ref="_shell" AsDialog="AsDialog" Title="Set salary" Error="@_error" OnClose="DismissedAsync">
+    <Body>
         <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
-            @EmployeeName — this supersedes whatever is in force, from the date below.
+            @_employeeName — this supersedes whatever is in force, from the date below.
             Payslips already issued are untouched.
         </MudText>
 
-        <div class="d-flex gap-3 mb-4">
-            <MudNumericField T="decimal" @bind-Value="_basic" Label="Basic salary"
-                             Variant="Variant.Outlined" HideSpinButtons="true" />
-            <MudDatePicker Label="Effective from" Variant="Variant.Outlined" FixDay="1"
-                           Date="_from" DateChanged="@(d => _from = d)" />
-        </div>
+        <FormSection Title="What they earn" Icon="@Icons.Material.Outlined.Payments"
+                     Hint="A structure runs from its effective date until the next one supersedes it.">
+            <div class="app-form-grid">
+                <MudNumericField T="decimal" @bind-Value="_basic" Label="Basic salary"
+                                 Variant="Variant.Outlined" HideSpinButtons="true" />
+                <MudDatePicker Label="Effective from" Variant="Variant.Outlined" FixDay="1"
+                               Date="_from" DateChanged="@(d => _from = d)" />
+            </div>
+        </FormSection>
 
         @if (_components.Count > 0)
         {
-            <MudText Typo="Typo.subtitle2" Class="mb-2">Allowances and deductions</MudText>
-
-            <MudSimpleTable Dense="true">
-                <tbody>
-                    @foreach (var component in _components)
-                    {
-                        <tr>
-                            <td>
-                                @component.Name
-                                <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
-                                         Color="@(component.Kind == PayComponentKind.Earning ? Color.Success : Color.Warning)">
-                                    @component.Kind
-                                </MudChip>
-                            </td>
-                            <td style="width:150px">
-                                <MudNumericField T="decimal" Value="@Amount(component.Id)"
-                                                 ValueChanged="@(v => SetAmount(component.Id, v))"
-                                                 Variant="Variant.Text" Margin="Margin.Dense"
-                                                 HideSpinButtons="true" />
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </MudSimpleTable>
+            @* A line grid, not standalone fields — it stays a table. *@
+            <FormSection Title="Allowances and deductions" Icon="@Icons.Material.Outlined.Tune"
+                         Hint="Leave a line at zero and it is left off the structure entirely.">
+                <MudSimpleTable Dense="true">
+                    <tbody>
+                        @foreach (var component in _components)
+                        {
+                            <tr>
+                                <td>
+                                    @component.Name
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+                                             Color="@(component.Kind == PayComponentKind.Earning ? Color.Success : Color.Warning)">
+                                        @component.Kind
+                                    </MudChip>
+                                </td>
+                                <td style="width:150px">
+                                    <MudNumericField T="decimal" Value="@Amount(component.Id)"
+                                                     ValueChanged="@(v => SetAmount(component.Id, v))"
+                                                     Variant="Variant.Text" Margin="Margin.Dense"
+                                                     HideSpinButtons="true" />
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            </FormSection>
         }
+    </Body>
 
-        @if (_error is not null)
-        {
-            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-3">@_error</MudAlert>
-        }
-    </DialogContent>
-
-    <DialogActions>
-        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+    <Buttons>
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
                    OnClick="SaveAsync" Disabled="_busy">Save salary</MudButton>
-    </DialogActions>
-</MudDialog>
+    </Buttons>
+</DocumentShell>
 
 @code {
-    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public bool AsDialog { get; set; }
     [Parameter] public int EmployeeId { get; set; }
     [Parameter] public string EmployeeName { get; set; } = "";
+    [Parameter] public EventCallback Saved { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
 
+    private string _employeeName = "";
     private IReadOnlyList<PayComponent> _components = [];
     private readonly Dictionary<int, decimal> _amounts = [];
     private decimal _basic;
@@ -71,6 +74,16 @@
 
     protected override async Task OnInitializedAsync()
     {
+        _employeeName = EmployeeName;
+        if (string.IsNullOrEmpty(_employeeName))
+        {
+            // The dialog is handed the name directly; the routed page only has
+            // an id, so it looks the person up from the same employee list.
+            var employee = (await Wages.EmployeesAsync(includeLeavers: true))
+                .FirstOrDefault(e => e.Id == EmployeeId);
+            _employeeName = employee?.FullName ?? "";
+        }
+
         _components = await Wages.ComponentsAsync();
 
         // Defaults to the start of next month, which is when a salary change
@@ -97,15 +110,25 @@
         try
         {
             var result = await Wages.SaveStructureAsync(
-                EmployeeId, DateOnly.FromDateTime(_from ?? DateTime.Today), _basic,
+                EmployeeId, DateOnly.FromDateTime(_from ?? Clock.Today.ToDateTime(TimeOnly.MinValue)), _basic,
                 [.. _amounts.Where(a => a.Value != 0)
                             .Select(a => new StructureLineInput(a.Key, a.Value))]);
 
             if (result.Failed) { _error = result.Error; return; }
 
             Snackbar.Add("Salary saved.", Severity.Success);
-            Dialog.Close(DialogResult.Ok(true));
+            await Saved.InvokeAsync();
+            if (AsDialog && _shell is not null) await _shell.CloseAsync();
         }
         finally { _busy = false; }
+    }
+
+    private DocumentShell? _shell;
+    
+    /// <summary>The shell has already closed itself; just react to it.</summary>
+    private async Task DismissedAsync()
+    {
+        if (Closed.HasDelegate) { await Closed.InvokeAsync(); return; }
+        Nav.NavigateTo("/finance/payroll/setup");
     }
 }

@@ -44,10 +44,18 @@ public interface IPayrollService
     Task<IReadOnlyList<Payslip>> PayslipsForAsync(string userId, CancellationToken ct = default);
 }
 
+/// <summary>Attendance seam implemented by the composing host, so Finance never references HR.</summary>
+public interface IPayrollAttendanceProvider
+{
+    Task<IReadOnlyDictionary<string, decimal>> PayableDaysByEmployeeCodeAsync(
+        DateOnly month, CancellationToken ct = default);
+}
+
 public sealed record StructureLineInput(int ComponentId, decimal Amount);
 
 public sealed class PayrollService(
-    FinanceDbContext db, IVoucherService vouchers, IClock clock) : IPayrollService
+    FinanceDbContext db, IVoucherService vouchers, IClock clock,
+    IPayrollAttendanceProvider? attendance = null) : IPayrollService
 {
     private const string DefaultSalaryHead = "5210";
     private const string SalariesPayableHead = "2200";
@@ -236,6 +244,10 @@ public sealed class PayrollService(
             .Where(e => e.IsActive)
             .ToListAsync(ct);
 
+        var attendanceDays = daysWorked is null && attendance is not null
+            ? await attendance.PayableDaysByEmployeeCodeAsync(first, ct)
+            : null;
+
         var defaultHead = await db.Accounts.FirstOrDefaultAsync(a => a.Code == DefaultSalaryHead, ct);
         if (defaultHead is null)
             return Result.Fail<PayrollRun>($"The {DefaultSalaryHead} salary head is missing.", "payroll.no-salary-head");
@@ -249,7 +261,9 @@ public sealed class PayrollService(
             var structure = await CurrentStructureAsync(employee.Id, last, ct);
             if (structure is null) continue;   // nobody has set their pay yet
 
-            var worked = daysWorked?.GetValueOrDefault(employee.Id) ?? daysInMonth;
+            var worked = daysWorked?.GetValueOrDefault(employee.Id)
+                ?? attendanceDays?.GetValueOrDefault(employee.Code)
+                ?? daysInMonth;
             worked = Math.Clamp(worked, 0, daysInMonth);
 
             var payslip = new Payslip

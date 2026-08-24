@@ -71,6 +71,7 @@ public sealed class EmailOptions
 /// <inheritdoc />
 public sealed class EmailChannel(
     IOptions<EmailOptions> options,
+    INotificationEmailRenderer renderer,
     ILogger<EmailChannel> logger) : INotificationChannel
 {
     private readonly EmailOptions _options = options.Value;
@@ -87,7 +88,8 @@ public sealed class EmailChannel(
         category is NotificationCategories.ApprovalAssigned
                  or NotificationCategories.ApprovalSettled
                  or NotificationCategories.ApprovalReminder
-                 or NotificationCategories.ApprovalEscalated;
+                 or NotificationCategories.ApprovalEscalated
+                 or NotificationCategories.ReportScheduled;
 
     public string? AddressFor(NotificationRecipient recipient) =>
         !_options.Enabled ? null
@@ -109,18 +111,14 @@ public sealed class EmailChannel(
         message.To.Add(MailboxAddress.Parse(to));
         message.Subject = notification.Subject;
 
-        var body = notification.Body;
-
-        if (!string.IsNullOrWhiteSpace(notification.Url) &&
-            !string.IsNullOrWhiteSpace(_options.BaseUrl))
-        {
-            body += $"\n\n{_options.BaseUrl.TrimEnd('/')}{notification.Url}";
-        }
-
+        var rendered = await renderer.RenderAsync(notification, _options.BaseUrl, ct);
+        var builder = new BodyBuilder { TextBody = rendered.Text, HtmlBody = rendered.Html };
         if (!string.IsNullOrWhiteSpace(_options.RedirectAllTo))
-            body += $"\n\n---\nRedirected here from {address} by Notifications:Email:RedirectAllTo.";
-
-        message.Body = new TextPart(TextFormat.Plain) { Text = body };
+        {
+            builder.TextBody += $"\n\n---\nRedirected here from {address} by Notifications:Email:RedirectAllTo.";
+            builder.HtmlBody += $"<hr><p style=\"color:#666;font-size:12px\">Redirected from {System.Net.WebUtility.HtmlEncode(address)} by staging configuration.</p>";
+        }
+        message.Body = builder.ToMessageBody();
 
         try
         {
@@ -151,6 +149,14 @@ public sealed class EmailChannel(
     }
 }
 
+public interface INotificationEmailRenderer
+{
+    Task<RenderedNotificationEmail> RenderAsync(
+        Notification notification, string? baseUrl, CancellationToken ct = default);
+}
+
+public sealed record RenderedNotificationEmail(string Text, string Html);
+
 /// <summary>
 /// The categories notifications are grouped under.
 ///
@@ -172,8 +178,11 @@ public static class NotificationCategories
     /// <summary>Overdue and now visible to somebody above the approver.</summary>
     public const string ApprovalEscalated = "approval.escalated";
 
+    /// <summary>A report the person explicitly scheduled has finished running.</summary>
+    public const string ReportScheduled = "report.scheduled";
+
     public static IReadOnlyList<string> All =>
     [
-        ApprovalAssigned, ApprovalSettled, ApprovalReminder, ApprovalEscalated
+        ApprovalAssigned, ApprovalSettled, ApprovalReminder, ApprovalEscalated, ReportScheduled
     ];
 }

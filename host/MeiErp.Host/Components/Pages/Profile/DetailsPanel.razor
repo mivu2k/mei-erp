@@ -1,0 +1,58 @@
+@inject UserManager<ApplicationUser> Users
+@inject AuthenticationStateProvider Authentication
+@inject IUserDirectory Directory
+
+@*
+    Who the rest of the system thinks you are.
+
+    Department and designation are shown rather than edited: the department is
+    what department-head approvals route on and the reporting line is what
+    line-manager rules follow, so letting somebody edit their own would let
+    them redirect their own approvals. An administrator sets them, and this
+    says so instead of presenting a field that silently refuses to save.
+*@
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else if (_me is not null)
+{
+    <FormSection Title="You" Icon="@Icons.Material.Outlined.Badge">
+        <div class="app-form-grid">
+            <Field Label="Name" Value="@_me.FullName" />
+            <Field Label="Email" Value="@_me.Email" />
+            <Field Label="Staff number" Value="@_employeeCode" />
+        </div>
+    </FormSection>
+
+    <FormSection Title="Where you sit" Icon="@Icons.Material.Outlined.AccountTree"
+                 Hint="Set by an administrator. Approvals route on these, which is why they are not yours to change.">
+        <div class="app-form-grid">
+            <Field Label="Department" Value="@_me.DepartmentName" />
+            <Field Label="Designation" Value="@_me.Designation" />
+            <Field Label="Reports to" Value="@_lineManager" />
+        </div>
+    </FormSection>
+}
+
+@code {
+    private UserSummary? _me;
+    private string? _employeeCode, _lineManager;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = await Users.GetUserAsync((await Authentication.GetAuthenticationStateAsync()).User);
+        if (user is not null)
+        {
+            _employeeCode = user.EmployeeCode;
+
+            // Sequential: one DbContext per circuit, so these cannot overlap.
+            _me = await Directory.FindAsync(user.Id);
+            _lineManager = (await Directory.LineManagerOfAsync(user.Id))?.FullName;
+        }
+
+        _loading = false;
+    }
+}

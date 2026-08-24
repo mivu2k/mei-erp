@@ -11,6 +11,7 @@ public interface IPrintService
 
     /// <summary>Renders a table to a real Excel workbook, not a CSV with the wrong extension.</summary>
     byte[] ToExcel(PrintTable table, string sheetName, Branding branding);
+    byte[] ToLabels(IReadOnlyList<LabelData> labels, LabelLayout layout, Branding branding);
 }
 
 public sealed class PrintService : IPrintService
@@ -37,6 +38,32 @@ public sealed class PrintService : IPrintService
                 page.Header().Element(h => Header(h, document, branding));
                 page.Content().Element(c => Content(c, document));
                 page.Footer().Element(f => Footer(f, branding, document.Size));
+            });
+        }).GeneratePdf();
+
+    public byte[] ToLabels(IReadOnlyList<LabelData> labels,LabelLayout layout,Branding branding)=>
+        Document.Create(document=>
+        {
+            foreach(var label in labels)document.Page(page=>
+            {
+                if(layout.HeightMm is { } height)page.Size((float)layout.WidthMm,(float)height,Unit.Millimetre);else page.ContinuousSize((float)layout.WidthMm,Unit.Millimetre);
+                page.Margin((float)layout.MarginMm,Unit.Millimetre);
+                var scale=(float)layout.FontScale;
+                page.DefaultTextStyle(x=>x.FontSize(7.5f*scale).FontColor(Ink));
+                page.Content().ScaleToFit().Column(column=>
+                {
+                    var drew=false;
+                    if(layout.ShowCompanyName&&!string.IsNullOrWhiteSpace(branding.Name)){column.Item().Text(branding.Name).FontSize(6.5f*scale);drew=true;}
+                    if(layout.ShowTitle&&!string.IsNullOrWhiteSpace(label.Title)){column.Item().Text(label.Title).FontSize(9.5f*scale).Bold();drew=true;}
+                    foreach(var key in layout.FieldKeys)if(label.Fields.TryGetValue(key,out var value)&&!string.IsNullOrWhiteSpace(value)){column.Item().Text(value).FontSize(7.5f*scale);drew=true;}
+                    if(!string.IsNullOrWhiteSpace(label.Code))
+                    {
+                        if(layout.ShowBarcode)column.Item().PaddingTop(2).Height(24*scale).Image(Symbology.Barcode(label.Code,300,70)).FitArea();
+                        if(layout.ShowQrCode)column.Item().PaddingTop(2).AlignCenter().Width(46*scale).Height(46*scale).Image(Symbology.QrCode(label.Code,160)).FitArea();
+                        column.Item().AlignCenter().Text(label.Code).FontSize(7*scale).Bold();drew=true;
+                    }
+                    if(!drew)column.Item().Text(" ");
+                });
             });
         }).GeneratePdf();
 

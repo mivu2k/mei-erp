@@ -1,5 +1,7 @@
 @page "/gatepass"
 @page "/gatepass/passes"
+@page "/gatepass/passes/outstanding"
+@page "/gatepass/passes/{LegacyId:int}"
 @attribute [Authorize(Policy = GatePassModule.PassesView)]
 @rendermode InteractiveServer
 @inject IGatePassService Gate
@@ -7,39 +9,50 @@
 @inject ISnackbar Snackbar
 @inject IDialogService Dialogs
 
-<PageTitle>Gate passes</PageTitle>
+<ListShell Title="Gate passes"
+           Subtitle="Whoever raises a pass cannot clear it through the gate. That separation is the point."
+           Icon="@Icons.Material.Outlined.DirectionsCar"
+           Loading="_loading"
+           IsEmpty="@(!_loading && _rows.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.DirectionsCar"
+           EmptyTitle="No gate passes yet"
+           EmptyHint="Raise a pass for anything moving in or out through the gate.">
+    <Actions>
+        <AuthorizeView Policy="@GatePassModule.PassesRaise" Context="perms">
+            <Authorized>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+                    New pass
+                </MudButton>
+                <MudTooltip Text="Open as a full page instead">
+                    <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Href="/gatepass/passes/new" />
+                </MudTooltip>
+            </Authorized>
+        </AuthorizeView>
+    </Actions>
 
-<div class="d-flex align-center mb-1">
-    <div>
-        <MudText Typo="Typo.h5">Gate passes</MudText>
-        <MudText Typo="Typo.body2" Class="mud-text-secondary">
-            Whoever raises a pass cannot clear it through the gate. That separation is the point.
-        </MudText>
-    </div>
-    <MudSpacer />
-    <AuthorizeView Policy="@GatePassModule.PassesRaise" Context="perms">
-        <Authorized>
-            <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                       StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
-                New pass
-            </MudButton>
-        </Authorized>
-    </AuthorizeView>
-</div>
+    <Stats>
+        @if (_overdue.Count > 0)
+        {
+            <StatTile Label="Overdue returns" Value="@_overdue.Count.ToString()" Colour="Color.Warning"
+                      Caption="@string.Join(", ", _overdue.Select(p => p.Number))" />
+        }
+    </Stats>
 
-@if (_overdue.Count > 0)
-{
-    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mt-4">
-        <b>@_overdue.Count</b> returnable
-        @(_overdue.Count == 1 ? "pass is" : "passes are")
-        past their return date with goods still out:
-        @string.Join(", ", _overdue.Select(p => p.Number))
-    </MudAlert>
-}
+    <EmptyAction>
+        <AuthorizeView Policy="@GatePassModule.PassesRaise" Context="perms">
+            <Authorized>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+                    New pass
+                </MudButton>
+            </Authorized>
+        </AuthorizeView>
+    </EmptyAction>
 
-<MudPaper Outlined="true" Elevation="0" Class="mt-4">
+    <ChildContent>
     <MudDataGrid T="Pass" Items="_rows" Dense="true" Hover="true" Elevation="0"
-                 Loading="_loading" Filterable="false" RowsPerPage="25">
+                 Filterable="false" RowsPerPage="25">
         <Columns>
             <PropertyColumn Property="@(p => p.Number)" Title="Number" />
             <TemplateColumn Title="Date">
@@ -80,8 +93,20 @@
             <TemplateColumn Title="" Sortable="false">
                 <CellTemplate>
                     <div class="d-flex justify-end gap-1">
+                        <MudIconButton Icon="@Icons.Material.Outlined.Visibility" OnClick="@(() => View(context.Item))" />
+                        <MudIconButton Icon="@Icons.Material.Outlined.Print" Href="@($"/print/gatepass/{context.Item.Id}")" Target="_blank" />
+                        <MudIconButton Icon="@Icons.Material.Outlined.ReceiptLong" Href="@($"/print/gatepass/{context.Item.Id}?size=roll")" Target="_blank" />
                         @if (context.Item.Status is PassStatus.Issued)
                         {
+                            <AuthorizeView Policy="@GatePassModule.PassesRaise" Context="raisePerms">
+                                <Authorized>
+                                    <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small"
+                                                   Href="@($"/gatepass/passes/{context.Item.Id}/edit")"
+                                                   title="Open as a page" />
+                                    <MudIconButton Icon="@Icons.Material.Outlined.Edit" OnClick="@(() => Edit(context.Item))" />
+                                    <MudIconButton Icon="@Icons.Material.Outlined.Cancel" Color="Color.Error" OnClick="@(() => Cancel(context.Item))" />
+                                </Authorized>
+                            </AuthorizeView>
                             <AuthorizeView Policy="@GatePassModule.PassesClear" Context="perms">
                                 <Authorized>
                                     <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
@@ -104,18 +129,34 @@
                 </CellTemplate>
             </TemplateColumn>
         </Columns>
-        <NoRecordsContent>
-            <MudText Class="pa-8 text-center mud-text-secondary">No gate passes yet.</MudText>
-        </NoRecordsContent>
     </MudDataGrid>
-</MudPaper>
+    </ChildContent>
+</ListShell>
+
+@if (_editing)
+{
+    <PassEditor AsDialog="true" PassId="_editingId"
+                Saved="LoadAsync" Closed="@(() => { _editing = false; return Task.CompletedTask; })" />
+}
 
 @code {
+    [Parameter] public int? LegacyId { get; set; }
     private IReadOnlyList<Pass> _rows = [];
     private IReadOnlyList<Pass> _overdue = [];
     private bool _loading = true;
+    private bool _legacyOpened;
 
     protected override Task OnInitializedAsync() => LoadAsync();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && LegacyId is not null && !_legacyOpened)
+        {
+            _legacyOpened = true;
+            var pass = await Gate.GetAsync(LegacyId.Value);
+            if (pass is not null) await View(pass);
+        }
+    }
 
     private async Task LoadAsync()
     {
@@ -134,13 +175,27 @@
         _ => Color.Default
     };
 
-    private async Task Edit(Pass? row)
-    {
-        var parameters = new DialogParameters<PassEditor> { { x => x.PassId, row?.Id } };
-        var dialog = await Dialogs.ShowAsync<PassEditor>(
-            row is null ? "New gate pass" : "Edit pass", parameters,
-            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+    private bool _editing;
+    private int? _editingId;
 
+    private void Edit(Pass? row)
+    {
+        _editingId = row?.Id;
+        _editing = true;
+    }
+
+    private async Task View(Pass row)
+    {
+        var parameters = new DialogParameters<PassDetail> { { x => x.PassId, row.Id } };
+        await Dialogs.ShowAsync<PassDetail>(row.Number, parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+    }
+
+    private async Task Cancel(Pass row)
+    {
+        var parameters = new DialogParameters<CancelPassDialog> { { x => x.PassId, row.Id } };
+        var dialog = await Dialogs.ShowAsync<CancelPassDialog>($"Cancel {row.Number}", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
         if (!(await dialog.Result)!.Canceled) await LoadAsync();
     }
 

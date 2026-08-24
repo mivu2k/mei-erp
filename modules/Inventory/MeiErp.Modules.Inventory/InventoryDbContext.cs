@@ -10,36 +10,63 @@ public class InventoryDbContext(
 {
     protected override string Schema => "inventory";
 
+    public DbSet<StockDomain> StockDomains => Set<StockDomain>();
     public DbSet<Item> Items => Set<Item>();
     public DbSet<ItemCategory> Categories => Set<ItemCategory>();
     public DbSet<StockMovement> StockMovements => Set<StockMovement>();
-    public DbSet<Party> Parties => Set<Party>();
-    public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
-    public DbSet<PurchaseOrderLine> PurchaseOrderLines => Set<PurchaseOrderLine>();
-    public DbSet<GoodsReceipt> GoodsReceipts => Set<GoodsReceipt>();
-    public DbSet<SalesOrder> SalesOrders => Set<SalesOrder>();
-    public DbSet<SalesOrderLine> SalesOrderLines => Set<SalesOrderLine>();
-    public DbSet<Delivery> Deliveries => Set<Delivery>();
-    public DbSet<DeliveryLine> DeliveryLines => Set<DeliveryLine>();
+    public DbSet<Warehouse> Warehouses => Set<Warehouse>();
+    public DbSet<WarehouseBalance> WarehouseBalances => Set<WarehouseBalance>();
+    public DbSet<StockTransfer> StockTransfers => Set<StockTransfer>();
+    public DbSet<StockTransferLine> StockTransferLines => Set<StockTransferLine>();
+    public DbSet<InventoryCount> InventoryCounts => Set<InventoryCount>();
+    public DbSet<InventoryCountLine> InventoryCountLines => Set<InventoryCountLine>();
+    public DbSet<StockUnit> StockUnits => Set<StockUnit>();
+    public DbSet<StockBatch> StockBatches => Set<StockBatch>();
+    public DbSet<ProductFamily> ProductFamilies => Set<ProductFamily>();
+    public DbSet<InventoryReturn> InventoryReturns => Set<InventoryReturn>();
+    public DbSet<InventoryReturnLine> InventoryReturnLines => Set<InventoryReturnLine>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        modelBuilder.Entity<StockDomain>(b =>
+        {
+            b.Property(d => d.Code).HasMaxLength(20).IsRequired();
+            b.Property(d => d.Name).HasMaxLength(100).IsRequired();
+            b.Property(d => d.Description).HasMaxLength(500);
+            b.HasIndex(d => d.Code).IsUnique().HasFilter("\"IsDeleted\" = false");
+        });
 
         modelBuilder.Entity<Item>(b =>
         {
             b.Property(i => i.Code).HasMaxLength(50).IsRequired();
             b.Property(i => i.Name).HasMaxLength(200).IsRequired();
             b.Property(i => i.Unit).HasMaxLength(20);
-            b.HasIndex(i => i.Code).IsUnique().HasFilter("\"IsDeleted\" = false");
+            b.Property(i=>i.Barcode).HasMaxLength(100);
+            b.HasIndex(i=>i.Barcode).IsUnique().HasFilter("\"Barcode\" IS NOT NULL AND \"IsDeleted\" = false");
+
+            // Unique per book, not globally: the main store and the workshop
+            // number their goods independently, and a spare part called
+            // "CABLE-01" must not block the trading item of the same code.
+            b.HasIndex(i => new { i.DomainId, i.Code }).IsUnique().HasFilter("\"IsDeleted\" = false");
             b.HasIndex(i => i.Name);
+
+            // Restrict, not cascade: deleting a book must not silently take its
+            // items - and with them their stock history - down with it.
+            b.HasOne(i => i.Domain).WithMany()
+             .HasForeignKey(i => i.DomainId)
+             .OnDelete(DeleteBehavior.Restrict);
 
             b.HasOne(i => i.Category).WithMany()
              .HasForeignKey(i => i.CategoryId)
              .OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(i=>i.ProductFamily).WithMany(x=>x.Items).HasForeignKey(i=>i.ProductFamilyId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(i=>i.ParentItem).WithMany().HasForeignKey(i=>i.ParentItemId).OnDelete(DeleteBehavior.Restrict);
 
             b.Ignore(i => i.StockValue);
         });
+        modelBuilder.Entity<ProductFamily>(b=>{b.Property(x=>x.Name).HasMaxLength(200).IsRequired();b.Property(x=>x.Category).HasMaxLength(100);b.Property(x=>x.SkuPrefix).HasMaxLength(30);b.HasIndex(x=>x.Name).IsUnique().HasFilter("\"IsDeleted\" = false");});
 
         modelBuilder.Entity<ItemCategory>(b =>
         {
@@ -69,125 +96,35 @@ public class InventoryDbContext(
             b.HasIndex(m => new { m.ItemId, m.Date });
             b.HasIndex(m => m.Date);
 
+            // The stock ledger is read one book at a time. No FK: the movement
+            // carries the domain the way it carries the item code, as a
+            // snapshot, so history stays readable however the books are later
+            // reorganised.
+            b.HasIndex(m => new { m.DomainId, m.Date });
+            b.HasOne(m=>m.Warehouse).WithMany().HasForeignKey(m=>m.WarehouseId).OnDelete(DeleteBehavior.Restrict);
+
             b.Ignore(m => m.Value);
         });
 
-        modelBuilder.Entity<Party>(b =>
-        {
-            b.Property(p => p.Code).HasMaxLength(50).IsRequired();
-            b.Property(p => p.Name).HasMaxLength(200).IsRequired();
-            b.HasIndex(p => p.Code).IsUnique().HasFilter("\"IsDeleted\" = false");
-            b.HasIndex(p => p.Name);
-        });
+        modelBuilder.Entity<Warehouse>(b=>{b.Property(x=>x.Name).HasMaxLength(150).IsRequired();b.Property(x=>x.Code).HasMaxLength(30);b.Property(x=>x.Address).HasMaxLength(500);b.Property(x=>x.Notes).HasMaxLength(1000);b.HasIndex(x=>x.Code).IsUnique().HasFilter("\"Code\" IS NOT NULL AND \"IsDeleted\" = false");b.HasIndex(x=>x.DomainId);b.HasOne(x=>x.Domain).WithMany().HasForeignKey(x=>x.DomainId).OnDelete(DeleteBehavior.Restrict);});
+        modelBuilder.Entity<WarehouseBalance>(b=>{b.HasIndex(x=>new{x.WarehouseId,x.ItemId}).IsUnique();b.HasOne(x=>x.Warehouse).WithMany().HasForeignKey(x=>x.WarehouseId).OnDelete(DeleteBehavior.Restrict);b.HasOne(x=>x.Item).WithMany().HasForeignKey(x=>x.ItemId).OnDelete(DeleteBehavior.Restrict);b.HasQueryFilter(x=>!x.Item!.IsDeleted);});
+        modelBuilder.Entity<StockTransfer>(b=>{b.Property(x=>x.Number).HasMaxLength(30).IsRequired();b.HasIndex(x=>x.Number).IsUnique().HasFilter("\"IsDeleted\" = false");b.HasOne(x=>x.FromWarehouse).WithMany().HasForeignKey(x=>x.FromWarehouseId).OnDelete(DeleteBehavior.Restrict);b.HasOne(x=>x.ToWarehouse).WithMany().HasForeignKey(x=>x.ToWarehouseId).OnDelete(DeleteBehavior.Restrict);b.HasMany(x=>x.Lines).WithOne(x=>x.Transfer).HasForeignKey(x=>x.StockTransferId).OnDelete(DeleteBehavior.Cascade);});
+        modelBuilder.Entity<StockTransferLine>(b=>{b.Property(x=>x.ItemCode).HasMaxLength(50);b.Property(x=>x.ItemName).HasMaxLength(200);b.HasOne(x=>x.Item).WithMany().HasForeignKey(x=>x.ItemId).OnDelete(DeleteBehavior.Restrict);b.Ignore(x=>x.Shortfall);b.HasQueryFilter(x=>!x.Transfer!.IsDeleted);});
+        modelBuilder.Entity<InventoryCount>(b=>{b.Property(x=>x.Number).HasMaxLength(30).IsRequired();b.HasIndex(x=>x.Number).IsUnique().HasFilter("\"IsDeleted\" = false");b.HasOne(x=>x.Warehouse).WithMany().HasForeignKey(x=>x.WarehouseId).OnDelete(DeleteBehavior.Restrict);b.HasMany(x=>x.Lines).WithOne(x=>x.Count).HasForeignKey(x=>x.InventoryCountId).OnDelete(DeleteBehavior.Cascade);b.Ignore(x=>x.VarianceCount);});
+        modelBuilder.Entity<InventoryCountLine>(b=>{b.Property(x=>x.ItemCode).HasMaxLength(50);b.Property(x=>x.ItemName).HasMaxLength(200);b.HasOne(x=>x.Item).WithMany().HasForeignKey(x=>x.ItemId).OnDelete(DeleteBehavior.Restrict);b.Ignore(x=>x.Variance);b.HasQueryFilter(x=>!x.Count!.IsDeleted);});
+        modelBuilder.Entity<StockBatch>(b=>{b.Property(x=>x.BatchNumber).HasMaxLength(100).IsRequired();b.HasIndex(x=>new{x.ItemId,x.BatchNumber}).IsUnique().HasFilter("\"IsDeleted\" = false");b.HasOne(x=>x.Item).WithMany().HasForeignKey(x=>x.ItemId).OnDelete(DeleteBehavior.Restrict);b.HasOne(x=>x.Warehouse).WithMany().HasForeignKey(x=>x.WarehouseId).OnDelete(DeleteBehavior.Restrict);});
+        modelBuilder.Entity<StockUnit>(b=>{b.Property(x=>x.SerialNumber).HasMaxLength(150).IsRequired();b.HasIndex(x=>new{x.ItemId,x.SerialNumber}).IsUnique().HasFilter("\"IsDeleted\" = false");b.HasOne(x=>x.Item).WithMany().HasForeignKey(x=>x.ItemId).OnDelete(DeleteBehavior.Restrict);b.HasOne(x=>x.Warehouse).WithMany().HasForeignKey(x=>x.WarehouseId).OnDelete(DeleteBehavior.Restrict);b.HasOne(x=>x.Batch).WithMany().HasForeignKey(x=>x.StockBatchId).OnDelete(DeleteBehavior.SetNull);b.Ignore(x=>x.CountsAsStock);});
+        modelBuilder.Entity<InventoryReturn>(b=>{b.Property(x=>x.Number).HasMaxLength(30).IsRequired();b.HasIndex(x=>x.Number).IsUnique().HasFilter("\"IsDeleted\" = false");b.HasIndex(x=>x.PartyId);b.HasMany(x=>x.Lines).WithOne(x=>x.Return).HasForeignKey(x=>x.InventoryReturnId).OnDelete(DeleteBehavior.Cascade);b.Ignore(x=>x.Total);});
+        modelBuilder.Entity<InventoryReturnLine>(b=>{b.Property(x=>x.ItemCode).HasMaxLength(50);b.Property(x=>x.ItemName).HasMaxLength(200);b.HasOne(x=>x.Item).WithMany().HasForeignKey(x=>x.ItemId).OnDelete(DeleteBehavior.Restrict);b.HasQueryFilter(x=>!x.Return!.IsDeleted);});
 
-        modelBuilder.Entity<PurchaseOrder>(b =>
-        {
-            b.Property(o => o.Number).HasMaxLength(30).IsRequired();
-            b.HasIndex(o => o.Number).IsUnique().HasFilter("\"IsDeleted\" = false");
-            b.Property(o => o.PartyName).HasMaxLength(200);
-            b.Property(o => o.Notes).HasMaxLength(1000);
-            b.Property(o => o.DecisionComment).HasMaxLength(2000);
 
-            b.HasOne(o => o.Party).WithMany()
-             .HasForeignKey(o => o.PartyId)
-             .OnDelete(DeleteBehavior.Restrict);
 
-            b.HasMany(o => o.Lines).WithOne(l => l.Order)
-             .HasForeignKey(l => l.PurchaseOrderId)
-             .OnDelete(DeleteBehavior.Cascade);
 
-            b.HasIndex(o => o.Status);
-            b.Ignore(o => o.Total);
-            b.Ignore(o => o.IsFullyReceived);
-        });
 
-        modelBuilder.Entity<PurchaseOrderLine>(b =>
-        {
-            b.Property(l => l.ItemCode).HasMaxLength(50);
-            b.Property(l => l.ItemName).HasMaxLength(200);
-            b.HasOne(l => l.Item).WithMany()
-             .HasForeignKey(l => l.ItemId).OnDelete(DeleteBehavior.Restrict);
-            b.Ignore(l => l.LineTotal);
-            b.Ignore(l => l.Outstanding);
 
-            // Children restate the parent's filter, or querying lines directly
-            // returns rows belonging to soft-deleted orders.
-            b.HasQueryFilter(l => !l.Order!.IsDeleted);
-        });
 
-        modelBuilder.Entity<GoodsReceipt>(b =>
-        {
-            b.Property(r => r.Number).HasMaxLength(30).IsRequired();
-            b.HasIndex(r => r.Number).IsUnique().HasFilter("\"IsDeleted\" = false");
-            b.Property(r => r.PartyName).HasMaxLength(200);
 
-            b.HasOne(r => r.Order).WithMany()
-             .HasForeignKey(r => r.PurchaseOrderId).OnDelete(DeleteBehavior.Restrict);
 
-            b.HasMany(r => r.Lines).WithOne(l => l.Receipt)
-             .HasForeignKey(l => l.GoodsReceiptId).OnDelete(DeleteBehavior.Cascade);
-
-            b.Ignore(r => r.Total);
-        });
-
-        modelBuilder.Entity<GoodsReceiptLine>(b =>
-        {
-            b.Property(l => l.ItemCode).HasMaxLength(50);
-            b.Property(l => l.ItemName).HasMaxLength(200);
-            b.HasQueryFilter(l => !l.Receipt!.IsDeleted);
-        });
-
-        modelBuilder.Entity<SalesOrder>(b =>
-        {
-            b.Property(o => o.Number).HasMaxLength(30).IsRequired();
-            b.HasIndex(o => o.Number).IsUnique().HasFilter("\"IsDeleted\" = false");
-            b.Property(o => o.PartyName).HasMaxLength(200);
-            b.Property(o => o.Notes).HasMaxLength(1000);
-
-            b.HasOne(o => o.Party).WithMany()
-             .HasForeignKey(o => o.PartyId).OnDelete(DeleteBehavior.Restrict);
-
-            b.HasMany(o => o.Lines).WithOne(l => l.Order)
-             .HasForeignKey(l => l.SalesOrderId).OnDelete(DeleteBehavior.Cascade);
-
-            b.HasIndex(o => o.Status);
-            b.Ignore(o => o.Total);
-            b.Ignore(o => o.IsFullyDelivered);
-        });
-
-        modelBuilder.Entity<SalesOrderLine>(b =>
-        {
-            b.Property(l => l.ItemCode).HasMaxLength(50);
-            b.Property(l => l.ItemName).HasMaxLength(200);
-            b.HasOne(l => l.Item).WithMany()
-             .HasForeignKey(l => l.ItemId).OnDelete(DeleteBehavior.Restrict);
-            b.Ignore(l => l.LineTotal);
-            b.Ignore(l => l.Outstanding);
-            b.Ignore(l => l.Margin);
-            b.HasQueryFilter(l => !l.Order!.IsDeleted);
-        });
-
-        modelBuilder.Entity<Delivery>(b =>
-        {
-            b.Property(d => d.Number).HasMaxLength(30).IsRequired();
-            b.HasIndex(d => d.Number).IsUnique().HasFilter("\"IsDeleted\" = false");
-            b.Property(d => d.PartyName).HasMaxLength(200);
-            b.Property(d => d.CollectedBy).HasMaxLength(200);
-
-            b.HasOne(d => d.Order).WithMany()
-             .HasForeignKey(d => d.SalesOrderId).OnDelete(DeleteBehavior.Restrict);
-
-            b.HasMany(d => d.Lines).WithOne(l => l.Delivery)
-             .HasForeignKey(l => l.DeliveryId).OnDelete(DeleteBehavior.Cascade);
-        });
-
-        modelBuilder.Entity<DeliveryLine>(b =>
-        {
-            b.Property(l => l.ItemCode).HasMaxLength(50);
-            b.Property(l => l.ItemName).HasMaxLength(200);
-            b.Ignore(l => l.Margin);
-            b.HasQueryFilter(l => !l.Delivery!.IsDeleted);
-        });
 
         modelBuilder.Entity<DocumentSequenceCounter>(b =>
         {

@@ -1,0 +1,34 @@
+@page "/hr/employees/{EmployeeId:int}/documents"
+@attribute [Authorize(Policy = HrModule.DocumentsView)]
+@rendermode InteractiveServer
+@inject IEmployeeDocumentService Documents
+@inject IEmployeeService Employees
+@inject IClock Clock
+@inject ISnackbar Snackbar
+
+<PageTitle>Employee documents</PageTitle>
+<div class="d-flex align-center"><MudIconButton Href="/hr/employees" Icon="@Icons.Material.Outlined.ArrowBack"/><div><MudText Typo="Typo.h5">@_employee?.FullName — documents</MudText><MudText Typo="Typo.body2" Class="mud-text-secondary">Contracts, identity records, licences, certificates and expiry dates.</MudText></div></div>
+<AuthorizeView Policy="@HrModule.DocumentsManage"><MudPaper Outlined="true" Class="pa-4 mt-4"><MudGrid>
+ <MudItem xs="12" md="3"><MudTextField @bind-Value="_title" Label="Title"/></MudItem>
+ <MudItem xs="12" md="2"><MudSelect T="EmployeeDocumentKind" @bind-Value="_kind" Label="Kind">@foreach(var kind in Enum.GetValues<EmployeeDocumentKind>()){<MudSelectItem Value="@kind">@kind</MudSelectItem>}</MudSelect></MudItem>
+ <MudItem xs="12" md="2"><MudDatePicker @bind-Date="_expiry" Label="Expires on" Clearable="true"/></MudItem>
+ <MudItem xs="12" md="3"><MudTextField @bind-Value="_notes" Label="Notes"/></MudItem>
+ <MudItem xs="12" md="2"><InputFile OnChange="ChooseFile" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"/><MudText Typo="Typo.caption">Optional, max 10 MB</MudText></MudItem>
+ <MudItem xs="12"><MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync">@(_editId is null?"Add document":"Save changes")</MudButton>@if(_editId is not null){<MudButton OnClick="ClearEditor">Cancel edit</MudButton>}</MudItem>
+</MudGrid></MudPaper></AuthorizeView>
+<MudPaper Outlined="true" Class="mt-4"><MudSimpleTable Dense="true" Hover="true"><thead><tr><th>Title</th><th>Kind</th><th>Expires</th><th>File</th><th>Notes</th><th></th></tr></thead><tbody>
+@foreach(var row in _rows){var days=row.ExpiresOn?.DayNumber-Clock.Today.DayNumber;<tr><td>@row.Title</td><td>@row.Kind</td><td><MudChip T="string" Size="Size.Small" Color="@(days<0?Color.Error:days<=30?Color.Warning:Color.Default)">@(row.ExpiresOn?.ToString("d MMM yyyy")??"No expiry")</MudChip></td>
+<td>@if(row.HasFile){<MudLink Href="@($"/hr/document/{row.Id}")" Target="_blank">@row.FileName (@FormatSize(row.SizeBytes))</MudLink>}else{<span class="mud-text-secondary">metadata only</span>}</td><td>@row.Notes</td><td>
+<AuthorizeView Policy="@HrModule.DocumentsManage"><MudIconButton Icon="@Icons.Material.Outlined.Edit" OnClick="@(()=>Edit(row))"/><MudIconButton Icon="@Icons.Material.Outlined.Delete" Color="Color.Error" OnClick="@(()=>DeleteAsync(row.Id))"/></AuthorizeView></td></tr>}
+@if(_rows.Count==0){<tr><td colspan="6" class="pa-5 mud-text-secondary">No documents recorded.</td></tr>}</tbody></MudSimpleTable></MudPaper>
+@code{
+ [Parameter]public int EmployeeId{get;set;}private Employee? _employee;private IReadOnlyList<EmployeeDocument> _rows=[];private int? _editId;private string _title="";private string? _notes,_fileName,_contentType;private EmployeeDocumentKind _kind;private DateTime? _expiry;private byte[]? _content;
+ protected override async Task OnParametersSetAsync(){_employee=await Employees.GetAsync(EmployeeId);await LoadAsync();}
+ private async Task LoadAsync()=>_rows=await Documents.ForEmployeeAsync(EmployeeId);
+ private async Task ChooseFile(InputFileChangeEventArgs e){var file=e.File;_fileName=file.Name;_contentType=file.ContentType;await using var stream=file.OpenReadStream(10*1024*1024);using var memory=new MemoryStream();await stream.CopyToAsync(memory);_content=memory.ToArray();}
+ private async Task SaveAsync(){var result=await Documents.SaveAsync(new(_editId,EmployeeId,_title,_kind,_expiry is null?null:DateOnly.FromDateTime(_expiry.Value),_notes,_fileName,_contentType,_content));if(result.Failed){Snackbar.Add(result.Error!,Severity.Error);return;}ClearEditor();await LoadAsync();Snackbar.Add("Document saved.",Severity.Success);}
+ private void Edit(EmployeeDocument x){_editId=x.Id;_title=x.Title;_kind=x.Kind;_expiry=x.ExpiresOn?.ToDateTime(TimeOnly.MinValue);_notes=x.Notes;_content=null;_fileName=null;_contentType=null;}
+ private void ClearEditor(){_editId=null;_title="";_kind=EmployeeDocumentKind.Other;_expiry=null;_notes=null;_content=null;_fileName=null;_contentType=null;}
+ private async Task DeleteAsync(int id){var r=await Documents.DeleteAsync(id);if(r.Failed)Snackbar.Add(r.Error!,Severity.Error);else await LoadAsync();}
+ private static string FormatSize(long bytes)=>bytes<1024?$"{bytes} B":bytes<1048576?$"{bytes/1024d:N1} KB":$"{bytes/1048576d:N1} MB";
+}

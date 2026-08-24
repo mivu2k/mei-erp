@@ -37,6 +37,7 @@ public sealed class GatePassTests : IAsyncLifetime
 
             await using var db = NewDb(Raiser);
             await db.Database.EnsureCreatedAsync();
+            await db.EnsureAuditTableForTestsAsync();
             _available = true;
         }
         catch (NpgsqlException) { _available = false; }
@@ -169,6 +170,44 @@ public sealed class GatePassTests : IAsyncLifetime
         Assert.Equal("pass.no-return-date", result.Code);
     }
 
+    [SkippableFact]
+    public async Task Legacy_carrier_and_reference_metadata_is_preserved()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db = NewDb(Raiser);
+        var input = SamplePass() with
+        {
+            PersonPhone = "0300-1234567", PersonCnic = "35202-1234567-1",
+            CompanyName = "MEI Customer", Department = "Stores", Notes = "Handle carefully",
+            ReferenceType = "RepairJob", ReferenceNumber = "JOB-104"
+        };
+
+        var saved = await NewService(db, Raiser).SaveAsync(input);
+        db.ChangeTracker.Clear();
+        var loaded = await NewService(db, Raiser).GetAsync(saved.Value.Id);
+
+        Assert.Equal("35202-1234567-1", loaded!.PersonCnic);
+        Assert.Equal("MEI Customer", loaded.CompanyName);
+        Assert.Equal("JOB-104", loaded.ReferenceNumber);
+        Assert.Equal("Handle carefully", loaded.Notes);
+    }
+
+    [SkippableFact]
+    public async Task Cancellation_keeps_a_separate_reason_and_timestamp()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db = NewDb(Raiser);
+        var raised = await NewService(db, Raiser).SaveAsync(SamplePass());
+
+        var result = await NewService(db, Raiser).CancelAsync(raised.Value.Id, "Wrong vehicle");
+        var loaded = await NewService(db, Raiser).GetAsync(raised.Value.Id);
+
+        Assert.True(result.Ok, result.Error);
+        Assert.Equal("Wrong vehicle", loaded!.CancellationReason);
+        Assert.Equal(_clock.UtcNow, loaded.CancelledUtc);
+        Assert.Equal("Demo", loaded.Purpose);
+    }
+
     // ---------- returns ----------
 
     [SkippableFact]
@@ -210,6 +249,8 @@ public sealed class GatePassTests : IAsyncLifetime
 
         Assert.Equal(PassStatus.Returned, final.Value.Status);
         Assert.True(final.Value.IsFullyReturned);
+        Assert.Equal(_clock.UtcNow, final.Value.ReturnedUtc);
+        Assert.Equal("Gate Security", final.Value.ReturnReceivedByName);
     }
 
     [SkippableFact]
@@ -284,6 +325,57 @@ public sealed class GatePassTests : IAsyncLifetime
         };
 
         Assert.False(pass.IsOverdue(_clock.Today));
+    }
+
+    private static DemoInput SampleDemo() => new(null, "Demo Customer", "0300", "C-1", "Sales", "REF-9",
+        new DateOnly(2026, 8, 25), "Handle carefully",
+        [new("Projector", "P-1", 1, "Cable", null), new("Screen", null, 1, null, null)]);
+
+    [SkippableFact]
+    public async Task Demo_issuance_gets_a_stable_number_and_issuer()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db=NewDb(Raiser);var result=await new DemoIssuanceService(db,Raiser,_clock).SaveAsync(SampleDemo());
+        Assert.True(result.Ok,result.Error);Assert.Equal("DEMO-26-0001",result.Value.Number);Assert.Equal("Storekeeper",result.Value.IssuedByName);
+    }
+
+    [SkippableFact]
+    public async Task Partial_demo_return_marks_only_selected_items_and_stays_open()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db=NewDb(Raiser);var service=new DemoIssuanceService(db,Raiser,_clock);var issued=await service.SaveAsync(SampleDemo());
+        var selected=issued.Value.Items.First().Id;var result=await new DemoIssuanceService(db,Security,_clock).ReturnAsync(issued.Value.Id,[selected],"Good");
+        Assert.True(result.Ok,result.Error);Assert.Equal(DemoStatus.PartiallyReturned,result.Value.Status);Assert.Single(result.Value.Items,x=>x.ReturnedUtc!=null);
+    }
+
+    [SkippableFact]
+    public async Task Final_demo_item_closes_the_issuance_and_records_receiver()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db=NewDb(Raiser);var service=new DemoIssuanceService(db,Raiser,_clock);var issued=await service.SaveAsync(SampleDemo());
+        await new DemoIssuanceService(db,Security,_clock).ReturnAsync(issued.Value.Id,[issued.Value.Items[0].Id],null);
+        var final=await new DemoIssuanceService(db,Security,_clock).ReturnAsync(issued.Value.Id,[issued.Value.Items[1].Id],"Complete");
+        Assert.Equal(DemoStatus.Returned,final.Value.Status);Assert.Equal("Gate Security",final.Value.ReceivedByName);Assert.Equal("Complete",final.Value.ReturnCondition);
+    }
+
+    [SkippableFact]
+    public async Task Demo_with_return_activity_cannot_be_edited_or_cancelled()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db=NewDb(Raiser);var service=new DemoIssuanceService(db,Raiser,_clock);var issued=await service.SaveAsync(SampleDemo());
+        await new DemoIssuanceService(db,Security,_clock).ReturnAsync(issued.Value.Id,[issued.Value.Items[0].Id],null);
+        var edit=await service.SaveAsync(SampleDemo() with{Id=issued.Value.Id});var cancel=await service.CancelAsync(issued.Value.Id);
+        Assert.Equal("demo.not-editable",edit.Code);Assert.Equal("demo.not-cancellable",cancel.Code);
+    }
+
+    [SkippableFact]
+    public async Task Overdue_demo_filter_includes_partial_issuances_with_items_out()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db=NewDb(Raiser);var service=new DemoIssuanceService(db,Raiser,_clock);
+        var issued=await service.SaveAsync(SampleDemo() with{ExpectedReturnOn=new DateOnly(2026,8,20)});
+        await new DemoIssuanceService(db,Security,_clock).ReturnAsync(issued.Value.Id,[issued.Value.Items[0].Id],null);
+        var rows=await service.ListAsync(new(OverdueOnly:true));Assert.Contains(rows,x=>x.Id==issued.Value.Id);
     }
 
     private sealed class TestUser(string id, string name) : ICurrentUser

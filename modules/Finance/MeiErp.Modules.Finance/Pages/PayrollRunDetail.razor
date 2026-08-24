@@ -75,6 +75,7 @@ else
                                 <b>@payslip.Net.ToString("N2")</b>
                             </td>
                             <td style="text-align:right">
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Print" Href="@($"/print/finance/payslip/{payslip.Id}")" Target="_blank" />
                                 <MudIconButton Size="Size.Small"
                                                Icon="@(_expanded == payslip.Id
                                                    ? Icons.Material.Filled.ExpandLess

@@ -1,9 +1,12 @@
 @inject IRepairService Workshop
+@inject IRepairCustomerDirectory Directory
 @inject IClock Clock
 @inject ISnackbar Snackbar
+@inject NavigationManager Nav
 
-<MudDialog>
-    <DialogContent>
+<DocumentShell @ref="_shell" AsDialog="AsDialog" Title="@Title" StatusLabel="@_statusLabel" StatusColour="@_statusColour"
+               Error="@_error" OnClose="DismissedAsync">
+    <Body>
         <MudForm @ref="_form">
             <MudSelect T="int" @bind-Value="_customerId" Label="Customer" Variant="Variant.Outlined"
                        Class="mb-4">
@@ -34,26 +37,26 @@
             <MudDatePicker Label="Promised by" Variant="Variant.Outlined"
                            Date="_promised" DateChanged="@(d => _promised = d)" />
         </MudForm>
+    </Body>
 
-        @if (_error is not null)
-        {
-            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
-        }
-    </DialogContent>
-
-    <DialogActions>
-        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+    <Buttons>
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
                    OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
-    </DialogActions>
-</MudDialog>
+    </Buttons>
+</DocumentShell>
 
 @code {
-    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public bool AsDialog { get; set; }
     [Parameter] public int? JobId { get; set; }
 
+    /// <summary>Raised after a successful save, so a list can reload behind a dialog.</summary>
+    [Parameter] public EventCallback Saved { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
+
+    private string Title => JobId is null ? "Take in a device" : "Edit job";
+
     private MudForm? _form;
-    private IReadOnlyList<Customer> _customers = [];
+    private IReadOnlyList<RepairCustomer> _customers = [];
     private int _customerId;
     private DateTime? _received;
     private DateTime? _promised;
@@ -62,10 +65,12 @@
     private string _fault = "";
     private string? _error;
     private bool _busy;
+    private string? _statusLabel;
+    private Color _statusColour = Color.Default;
 
     protected override async Task OnInitializedAsync()
     {
-        _customers = await Workshop.CustomersAsync(null);
+        _customers = await Directory.SearchAsync();
         _received = Clock.Today.ToDateTime(TimeOnly.MinValue);
 
         if (JobId is not null)
@@ -79,6 +84,8 @@
                 _make = job.Make; _model = job.Model; _serial = job.SerialNumber;
                 _fault = job.ReportedFault;
                 _promised = job.PromisedOn?.ToDateTime(TimeOnly.MinValue);
+                _statusLabel = job.Status.ToString();
+                _statusColour = Colour(job.Status);
             }
         }
         else if (_customers.Count > 0)
@@ -86,6 +93,16 @@
             _customerId = _customers[0].Id;
         }
     }
+
+    private static Color Colour(JobStatus status) => status switch
+    {
+        JobStatus.Delivered => Color.Success,
+        JobStatus.Completed => Color.Info,
+        JobStatus.InProgress => Color.Primary,
+        JobStatus.AwaitingApproval => Color.Warning,
+        JobStatus.Cancelled => Color.Error,
+        _ => Color.Default
+    };
 
     private async Task SaveAsync()
     {
@@ -100,15 +117,26 @@
         try
         {
             var result = await Workshop.SaveAsync(new JobInput(
-                JobId, _customerId, DateOnly.FromDateTime(_received ?? DateTime.Today),
+        JobId, _customerId, DateOnly.FromDateTime(_received ?? Clock.Today.ToDateTime(TimeOnly.MinValue)),
                 _deviceType, _make, _model, _serial, _fault,
                 _promised is null ? null : DateOnly.FromDateTime(_promised.Value)));
 
             if (result.Failed) { _error = result.Error; return; }
 
             Snackbar.Add($"{result.Value.Number} booked in.", Severity.Success);
-            Dialog.Close(DialogResult.Ok(true));
+            JobId = result.Value.Id;
+            await Saved.InvokeAsync();
+            if (AsDialog && _shell is not null) await _shell.CloseAsync();
         }
         finally { _busy = false; }
+    }
+
+    private DocumentShell? _shell;
+    
+    /// <summary>The shell has already closed itself; just react to it.</summary>
+    private async Task DismissedAsync()
+    {
+        if (Closed.HasDelegate) { await Closed.InvokeAsync(); return; }
+        Nav.NavigateTo("/repair/jobs");
     }
 }

@@ -1,0 +1,11 @@
+@page "/finance/payroll/components/new"
+@page "/finance/payroll/components/{Id:int}"
+@attribute [Authorize(Policy = FinanceModule.PayrollManage)]
+@rendermode InteractiveServer
+
+@* The dialog and this page render the same editor; only the frame differs. *@
+<PayComponentEditor AsDialog="false" ComponentId="Id" />
+
+@code {
+    [Parameter] public int? Id { get; set; }
+}

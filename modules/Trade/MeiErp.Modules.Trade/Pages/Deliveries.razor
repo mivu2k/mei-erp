@@ -1,0 +1,43 @@
+@page "/sales/deliveries"
+@attribute [Authorize(Policy = SalesModule.OrdersView)]
+@rendermode InteractiveServer
+@inject ISalesService Sales
+@using Microsoft.EntityFrameworkCore
+
+@* Delivery notes are raised automatically off a sales order - there is
+   nothing to create from here, only to read and print. *@
+<ListShell Title="Deliveries"
+           Subtitle="Delivery notes raised as sales orders go out."
+           Icon="@Icons.Material.Outlined.LocalShipping"
+           Loading="_loading"
+           IsEmpty="@(_rows.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.LocalShipping"
+           EmptyTitle="No deliveries yet"
+           EmptyHint="A delivery note appears here once a sales order is delivered.">
+    <ChildContent>
+    <MudTable Items="_rows" Dense="true" Hover="true">
+        <HeaderContent>
+            <MudTh>Number</MudTh><MudTh>Date</MudTh><MudTh>Customer</MudTh><MudTh>Collected by</MudTh><MudTh>Lines</MudTh><MudTh/>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.Number</MudTd>
+            <MudTd>@context.Date.ToString("d MMM yyyy")</MudTd>
+            <MudTd>@context.PartyName</MudTd>
+            <MudTd>@context.CollectedBy</MudTd>
+            <MudTd>@context.Lines.Count</MudTd>
+            <MudTd><MudIconButton Icon="@Icons.Material.Outlined.Print" Href="@($"/print/sales/delivery/{context.Id}")" Target="_blank" /></MudTd>
+        </RowTemplate>
+    </MudTable>
+    </ChildContent>
+</ListShell>
+
+@code {
+    private List<Delivery> _rows = [];
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _rows = (await Sales.ListDeliveriesAsync()).ToList();
+        _loading = false;
+    }
+}

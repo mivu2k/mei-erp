@@ -1,0 +1,29 @@
+@*
+    One figure worth knowing before reading any row.
+
+    Deliberately plain: a label, a number, and at most a caption. The colour
+    carries meaning - overdue is red, waiting is amber - so it has to stay
+    reserved for that rather than being decoration.
+*@
+
+<MudPaper Outlined="true" Elevation="0" Class="pa-3" Style="min-width:170px; flex:0 1 auto">
+    <MudText Typo="Typo.caption" Class="mud-text-secondary">@Label</MudText>
+
+    <MudText Typo="Typo.h6" Color="@Colour" Style="font-variant-numeric:tabular-nums">
+        @Value
+    </MudText>
+
+    @if (Caption is not null)
+    {
+        <MudText Typo="Typo.caption" Class="mud-text-secondary">@Caption</MudText>
+    }
+</MudPaper>
+
+@code {
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public string Value { get; set; } = "";
+    [Parameter] public string? Caption { get; set; }
+
+    /// <summary>Default unless the figure means something is wrong or waiting.</summary>
+    [Parameter] public Color Colour { get; set; } = Color.Default;
+}

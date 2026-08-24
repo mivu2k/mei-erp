@@ -1,0 +1,20 @@
+@page "/finance/posting-failures"
+@attribute [Authorize(Policy = FinanceModule.PostingManage)]
+@rendermode InteractiveServer
+@inject IOutboxManagementService Outbox
+@inject ISnackbar Snackbar
+
+<PageTitle>Posting failures</PageTitle>
+<MudText Typo="Typo.h5">Posting failures</MudText>
+<MudText Class="mb-4" Color="Color.Secondary">Messages appear here after five failed delivery attempts. Fix the posting rule or account, then retry.</MudText>
+<MudTable Items="_rows" Dense="true" Hover="true">
+ <HeaderContent><MudTh>Source</MudTh><MudTh>Event</MudTh><MudTh>Occurred</MudTh><MudTh>Attempts</MudTh><MudTh>Error</MudTh><MudTh /></HeaderContent>
+ <RowTemplate><MudTd>@context.Source #@context.Id</MudTd><MudTd>@context.EventType</MudTd><MudTd>@context.OccurredUtc.ToLocalTime().ToString("g")</MudTd><MudTd>@context.Attempts</MudTd><MudTd>@context.LastError</MudTd><MudTd><MudButton Size="Size.Small" OnClick="@(() => RetryAsync(context))">Retry</MudButton></MudTd></RowTemplate>
+</MudTable>
+
+@code {
+ private List<PendingOutboxMessage> _rows=[];
+ protected override async Task OnInitializedAsync()=>await ReloadAsync();
+ private async Task ReloadAsync()=>_rows=[..await Outbox.DeadLettersAsync()];
+ private async Task RetryAsync(PendingOutboxMessage row){await Outbox.RetryAsync(row.Source,row.Id);Snackbar.Add("Queued for retry.",Severity.Success);await ReloadAsync();}
+}

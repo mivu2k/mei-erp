@@ -5,38 +5,53 @@
 @inject IClock Clock
 @inject ISnackbar Snackbar
 @inject IDialogService Dialogs
+@inject IFileRegistryService Files
+@inject NavigationManager Nav
 
-<PageTitle>Projects</PageTitle>
+<ListShell Title="Projects"
+           Subtitle="Progress is averaged from the tasks, never typed in."
+           Icon="@Icons.Material.Outlined.Assignment"
+           Loading="_loading"
+           IsEmpty="@(_rows.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.Assignment"
+           EmptyTitle="No projects yet"
+           EmptyHint="A project turns tasks into a progress figure nobody has to type in by hand.">
+    <Actions>
+        <AuthorizeView Policy="@TenderModule.ProjectsManage" Context="perms">
+            <Authorized>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+                    New project
+                </MudButton>
+                <MudTooltip Text="Open as a full page instead">
+                    <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Href="/tender/projects/new" />
+                </MudTooltip>
+            </Authorized>
+        </AuthorizeView>
+    </Actions>
 
-<div class="d-flex align-center mb-1">
-    <div>
-        <MudText Typo="Typo.h5">Projects</MudText>
-        <MudText Typo="Typo.body2" Class="mud-text-secondary">
-            Progress is averaged from the tasks, never typed in.
-        </MudText>
-    </div>
-    <MudSpacer />
-    <AuthorizeView Policy="@TenderModule.ProjectsManage" Context="perms">
-        <Authorized>
-            <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                       StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
-                New project
-            </MudButton>
-        </Authorized>
-    </AuthorizeView>
-</div>
+    <EmptyAction>
+        <AuthorizeView Policy="@TenderModule.ProjectsManage" Context="perms">
+            <Authorized>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+                    New project
+                </MudButton>
+            </Authorized>
+        </AuthorizeView>
+    </EmptyAction>
 
-@if (_overdue.Count > 0)
-{
-    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mt-4">
-        <b>@_overdue.Count</b> @(_overdue.Count == 1 ? "task is" : "tasks are") past their due date
-        on projects still running.
-    </MudAlert>
-}
+    <ChildContent>
+    @if (_overdue.Count > 0)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="ma-3">
+            <b>@_overdue.Count</b> @(_overdue.Count == 1 ? "task is" : "tasks are") past their due date
+            on projects still running.
+        </MudAlert>
+    }
 
-<MudPaper Outlined="true" Elevation="0" Class="mt-4">
     <MudDataGrid T="Project" Items="_rows" Dense="true" Hover="true" Elevation="0"
-                 Loading="_loading" Filterable="false" RowsPerPage="25">
+                 Filterable="false" RowsPerPage="25">
         <Columns>
             <PropertyColumn Property="@(p => p.Code)" Title="Code" />
             <TemplateColumn Title="Project">
@@ -79,6 +94,8 @@
             <TemplateColumn Title="" Sortable="false">
                 <CellTemplate>
                     <div class="d-flex justify-end gap-1">
+                        <AuthorizeView Policy="@TenderModule.FilesView" Context="filePerms"><Authorized><MudIconButton Icon="@Icons.Material.Filled.Folder" Size="Size.Small" OnClick="@(()=>OpenFile(context.Item))" /></Authorized></AuthorizeView>
+                        <AuthorizeView Policy="@TenderModule.MilestonesManage" Context="milestonePerms"><Authorized><MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(()=>OpenMilestones(context.Item))">Milestones</MudButton></Authorized></AuthorizeView>
                         <AuthorizeView Policy="@TenderModule.TasksManage" Context="perms">
                             <Authorized>
                                 <MudButton Size="Size.Small" Variant="Variant.Text"
@@ -87,6 +104,9 @@
                         </AuthorizeView>
                         <AuthorizeView Policy="@TenderModule.ProjectsManage" Context="perms">
                             <Authorized>
+                                <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small"
+                                               Href="@($"/tender/projects/{context.Item.Id}")"
+                                               title="Open as a page" />
                                 <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small"
                                                OnClick="@(() => Edit(context.Item))" />
                             </Authorized>
@@ -95,11 +115,15 @@
                 </CellTemplate>
             </TemplateColumn>
         </Columns>
-        <NoRecordsContent>
-            <MudText Class="pa-8 text-center mud-text-secondary">No projects yet.</MudText>
-        </NoRecordsContent>
     </MudDataGrid>
-</MudPaper>
+    </ChildContent>
+</ListShell>
+
+@if (_editing)
+{
+    <ProjectEditor AsDialog="true" ProjectId="_editingId"
+                   Saved="LoadAsync" Closed="@(() => { _editing = false; return Task.CompletedTask; })" />
+}
 
 @code {
     private IReadOnlyList<Project> _rows = [];
@@ -116,14 +140,13 @@
         _loading = false;
     }
 
-    private async Task Edit(Project? row)
-    {
-        var parameters = new DialogParameters<ProjectEditor> { { x => x.ProjectId, row?.Id } };
-        var dialog = await Dialogs.ShowAsync<ProjectEditor>(
-            row is null ? "New project" : "Edit project", parameters,
-            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+    private bool _editing;
+    private int? _editingId;
 
-        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    private void Edit(Project? row)
+    {
+        _editingId = row?.Id;
+        _editing = true;
     }
 
     private async Task Board(Project row)
@@ -138,4 +161,6 @@
 
         if (!(await dialog.Result)!.Canceled) await LoadAsync();
     }
+    private async Task OpenFile(Project row){var result=await Files.EnsureAsync(FileOwnerType.Project,row.Id);if(result.Failed){Snackbar.Add(result.Error!,Severity.Error);return;}Nav.NavigateTo($"/tender/files/{result.Value!.Id}");}
+    private async Task OpenMilestones(Project row){var parameters=new DialogParameters<MilestonesDialog>{{x=>x.ProjectId,row.Id},{x=>x.ProjectName,row.Name}};await Dialogs.ShowAsync<MilestonesDialog>("Milestones",parameters,new DialogOptions{MaxWidth=MaxWidth.Medium,FullWidth=true});await LoadAsync();}
 }

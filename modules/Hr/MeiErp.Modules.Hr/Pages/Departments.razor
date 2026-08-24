@@ -1,0 +1,196 @@
+@page "/hr/departments"
+@attribute [Authorize(Policy = PlatformPermissions.DepartmentsManage)]
+@rendermode InteractiveServer
+@inject IAdminService Admin
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+@*
+    The organisation chart, as far as approvals are concerned.
+
+    Departments nest, so this lists them as a tree rather than a flat grid:
+    a section under its division reads as the structure people actually
+    describe, and a head missing two levels up is visible from here instead
+    of only surfacing when an approval has nowhere to go.
+*@
+
+<ListShell Title="Departments"
+           Subtitle="Who heads each one decides where department-head approvals go."
+           Icon="@Icons.Material.Outlined.AccountTree"
+           Loading="_loading"
+           IsEmpty="@(_rows.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.AccountTree"
+           EmptyTitle="No departments yet"
+           EmptyHint="Add one so approvals can route to its head. Departments nest, so a division can hold sections beneath it.">
+    <Actions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+            New department
+        </MudButton>
+        <MudTooltip Text="Open as a full page instead">
+            <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Href="/hr/departments/new" />
+        </MudTooltip>
+    </Actions>
+
+    <Stats>
+        @if (_rows.Count > 0)
+        {
+            <StatTile Label="Departments" Value="@_rows.Count.ToString()" />
+            @if (_headless > 0)
+            {
+                <StatTile Label="Without a head" Value="@_headless.ToString()" Colour="Color.Warning"
+                          Caption="Head approvals have nowhere to go" />
+            }
+        }
+    </Stats>
+
+    <EmptyAction>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+            New department
+        </MudButton>
+    </EmptyAction>
+
+    <ChildContent>
+        <MudTable T="Row" Items="_tree" Dense="true" Hover="true" Elevation="0">
+            <HeaderContent>
+                <MudTh>Department</MudTh>
+                <MudTh Style="width:120px">Code</MudTh>
+                <MudTh Style="width:260px">Head</MudTh>
+                <MudTh Style="width:110px" />
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>
+                    @* Indent carries the nesting; a sub-department reads as one. *@
+                    <div class="d-flex align-center gap-2" style="@($"padding-left:{context.Depth * 22}px")">
+                        @if (context.Depth > 0)
+                        {
+                            <MudIcon Icon="@Icons.Material.Outlined.SubdirectoryArrowRight"
+                                     Size="Size.Small" Class="mud-text-secondary" />
+                        }
+                        <MudText Typo="Typo.body2">
+                            @if (context.Depth == 0)
+                            {
+                                <b>@context.Department.Name</b>
+                            }
+                            else
+                            {
+                                @context.Department.Name
+                            }
+                        </MudText>
+                        @if (context.Children > 0)
+                        {
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Class="ml-1">
+                                @context.Children @(context.Children == 1 ? "section" : "sections")
+                            </MudChip>
+                        }
+                    </div>
+                </MudTd>
+                <MudTd>
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">@context.Department.Code</MudText>
+                </MudTd>
+                <MudTd>
+                    @if (context.Department.Head is null)
+                    {
+                        <MudTooltip Text="Department-head approvals will have nowhere to go.">
+                            <MudChip T="string" Size="Size.Small" Color="Color.Warning"
+                                     Variant="Variant.Text">not set</MudChip>
+                        </MudTooltip>
+                    }
+                    else
+                    {
+                        <span>@context.Department.Head.FullName</span>
+                    }
+                </MudTd>
+                <MudTd>
+                    <div class="d-flex justify-end gap-1">
+                        <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small"
+                                       Href="@($"/hr/departments/{context.Department.Id}")"
+                                       title="Open as a page" />
+                        <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small"
+                                       OnClick="@(() => Edit(context.Department))" />
+                        <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small"
+                                       Color="Color.Error" OnClick="@(() => Delete(context.Department))" />
+                    </div>
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    </ChildContent>
+</ListShell>
+
+@if (_editing)
+{
+    <DepartmentEditor AsDialog="true" DepartmentId="_editingId"
+                      Saved="LoadAsync" Closed="@(() => { _editing = false; return Task.CompletedTask; })" />
+}
+
+@code {
+    private IReadOnlyList<Department> _rows = [];
+    private List<Row> _tree = [];
+    private int _headless;
+    private bool _loading = true, _editing;
+    private string? _editingId;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _rows = await Admin.DepartmentsAsync();
+        _headless = _rows.Count(d => d.HeadUserId is null);
+        _tree = Flatten();
+        _loading = false;
+    }
+
+    /// <summary>
+    /// Depth-first, parents before their children, so the table reads as the
+    /// chart. Anything whose parent is missing is treated as a root rather
+    /// than dropped - an orphan nobody can see is an orphan nobody fixes.
+    /// </summary>
+    private List<Row> Flatten()
+    {
+        var byParent = _rows
+            .GroupBy(d => d.ParentId ?? "")
+            .ToDictionary(g => g.Key, g => g.OrderBy(d => d.Name).ToList());
+
+        var ids = _rows.Select(d => d.Id).ToHashSet();
+        var roots = _rows
+            .Where(d => d.ParentId is null || !ids.Contains(d.ParentId))
+            .OrderBy(d => d.Name);
+
+        var rows = new List<Row>();
+
+        void Walk(Department department, int depth)
+        {
+            var children = byParent.TryGetValue(department.Id, out var kids) ? kids : [];
+            rows.Add(new Row(department, depth, children.Count));
+
+            foreach (var child in children) Walk(child, depth + 1);
+        }
+
+        foreach (var root in roots) Walk(root, 0);
+        return rows;
+    }
+
+    private void Edit(Department? row)
+    {
+        _editingId = row?.Id;
+        _editing = true;
+    }
+
+    private async Task Delete(Department row)
+    {
+        var ok = await Dialogs.ShowMessageBox(
+            $"Delete {row.Name}?", "This cannot be undone.",
+            yesText: "Delete", cancelText: "Cancel");
+        if (ok != true) return;
+
+        var result = await Admin.DeleteDepartmentAsync(row.Id);
+        if (result.Failed) Snackbar.Add(result.Error!, Severity.Error);
+        else Snackbar.Add("Department deleted.", Severity.Success);
+
+        await LoadAsync();
+    }
+
+    private sealed record Row(Department Department, int Depth, int Children);
+}

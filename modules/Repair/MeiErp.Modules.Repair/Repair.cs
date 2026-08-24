@@ -8,16 +8,6 @@ using Microsoft.Extensions.DependencyInjection;
 namespace MeiErp.Modules.Repair;
 
 /// <summary>Someone whose equipment we repair.</summary>
-public class Customer : AuditableEntity
-{
-    public string Code { get; set; } = "";
-    public string Name { get; set; } = "";
-    public string? Phone { get; set; }
-    public string? Email { get; set; }
-    public string? Address { get; set; }
-    public bool IsActive { get; set; } = true;
-}
-
 /// <summary>
 /// One device on the bench.
 ///
@@ -30,15 +20,25 @@ public class Job : AuditableEntity, IConcurrencyChecked
 
     public string Number { get; set; } = "";
     public DateOnly ReceivedOn { get; set; }
+    public int? IntakeId { get; set; }
+    public RepairIntake? Intake { get; set; }
 
+    /// <summary>
+    /// The customer, as the one party master knows them. An id plus a name
+    /// snapshot rather than a navigation: the party lives in another module's
+    /// schema, and this platform never puts a foreign key across that boundary.
+    /// </summary>
     public int CustomerId { get; set; }
-    public Customer? Customer { get; set; }
     public string CustomerName { get; set; } = "";
 
     public string DeviceType { get; set; } = "";
     public string? Make { get; set; }
     public string? Model { get; set; }
     public string? SerialNumber { get; set; }
+    public DeviceCondition Condition { get; set; } = DeviceCondition.Good;
+    public RepairPriority Priority { get; set; } = RepairPriority.Normal;
+    public string? Accessories { get; set; }
+    public string? Symptoms { get; set; }
 
     /// <summary>What the customer says is wrong.</summary>
     public string ReportedFault { get; set; } = "";
@@ -56,12 +56,19 @@ public class Job : AuditableEntity, IConcurrencyChecked
 
     /// <summary>Who collected it. A delivery note is signed against a name.</summary>
     public string? CollectedBy { get; set; }
+    public string? CollectedByPhone { get; set; }
+    public string? CollectedByCnic { get; set; }
+    public string? DeliveredByName { get; set; }
+    public string? DeliveryNote { get; set; }
 
     /// <summary>
     /// The priced list of what was done. A quotation is built from these and
     /// from nothing else, which is why <see cref="Diagnosis"/> stays narrative.
     /// </summary>
     public List<WorkItem> WorkItems { get; set; } = [];
+    public List<RepairDiagnosis> Diagnoses { get; set; } = [];
+    public List<RepairStatusHistory> StatusHistory { get; set; } = [];
+    public List<RepairPhoto> Photos { get; set; } = [];
 
     public int? ApprovalRequestId { get; set; }
     public string? DecisionComment { get; set; }
@@ -120,6 +127,7 @@ public enum WorkItemKind
     Service = 2,
     Other = 3
 }
+public enum RepairCommunicationPreference { Phone, Email, WhatsApp }
 
 public class RepairDbContext(
     DbContextOptions<RepairDbContext> options, ICurrentUser currentUser, IClock clock)
@@ -127,21 +135,18 @@ public class RepairDbContext(
 {
     protected override string Schema => "repair";
 
-    public DbSet<Customer> Customers => Set<Customer>();
     public DbSet<Job> Jobs => Set<Job>();
     public DbSet<WorkItem> WorkItems => Set<WorkItem>();
+    public DbSet<RepairIntake> RepairIntakes => Set<RepairIntake>();
+    public DbSet<RepairCatalogItem> RepairCatalogItems => Set<RepairCatalogItem>();
+    public DbSet<RepairDiagnosis> RepairDiagnoses => Set<RepairDiagnosis>();
+    public DbSet<RepairStatusHistory> RepairStatusHistory => Set<RepairStatusHistory>();
+    public DbSet<RepairPhoto> RepairPhotos => Set<RepairPhoto>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
-        modelBuilder.Entity<Customer>(b =>
-        {
-            b.Property(c => c.Code).HasMaxLength(30).IsRequired();
-            b.Property(c => c.Name).HasMaxLength(200).IsRequired();
-            b.HasIndex(c => c.Code).IsUnique().HasFilter("\"IsDeleted\" = false");
-            b.HasIndex(c => c.Name);
-        });
 
         modelBuilder.Entity<Job>(b =>
         {
@@ -152,14 +157,17 @@ public class RepairDbContext(
             b.Property(j => j.Make).HasMaxLength(60);
             b.Property(j => j.Model).HasMaxLength(60);
             b.Property(j => j.SerialNumber).HasMaxLength(100);
+            b.Property(j => j.Accessories).HasMaxLength(1000);
+            b.Property(j => j.Symptoms).HasMaxLength(1000);
             b.Property(j => j.ReportedFault).HasMaxLength(1000).IsRequired();
             b.Property(j => j.Diagnosis).HasMaxLength(2000);
             b.Property(j => j.CollectedBy).HasMaxLength(200);
+            b.Property(j=>j.CollectedByPhone).HasMaxLength(40);b.Property(j=>j.CollectedByCnic).HasMaxLength(50);b.Property(j=>j.DeliveredByName).HasMaxLength(200);b.Property(j=>j.DeliveryNote).HasMaxLength(2000);
             b.Property(j => j.DecisionComment).HasMaxLength(2000);
 
-            b.HasOne(j => j.Customer).WithMany()
-             .HasForeignKey(j => j.CustomerId)
-             .OnDelete(DeleteBehavior.Restrict);
+            b.Property(j => j.CustomerName).HasMaxLength(200);
+            b.HasIndex(j => j.CustomerId);
+            b.HasOne(j=>j.Intake).WithMany(x=>x.Jobs).HasForeignKey(j=>j.IntakeId).OnDelete(DeleteBehavior.Restrict);
 
             b.HasMany(j => j.WorkItems).WithOne(w => w.Job)
              .HasForeignKey(w => w.JobId)
@@ -180,6 +188,12 @@ public class RepairDbContext(
             b.Ignore(w => w.Margin);
             b.HasQueryFilter(w => !w.Job!.IsDeleted);
         });
+
+        modelBuilder.Entity<RepairIntake>(b=>{b.Property(x=>x.Number).HasMaxLength(30).IsRequired();b.Property(x=>x.ReceivedByName).HasMaxLength(200).IsRequired();b.Property(x=>x.Notes).HasMaxLength(2000);b.HasIndex(x=>x.Number).IsUnique().HasFilter("\"IsDeleted\" = false");b.Property(x=>x.CustomerName).HasMaxLength(200);b.HasIndex(x=>x.CustomerId);});
+        modelBuilder.Entity<RepairCatalogItem>(b=>{b.Property(x=>x.Name).HasMaxLength(150).IsRequired();b.Property(x=>x.Category).HasMaxLength(100);b.HasIndex(x=>new{x.Kind,x.Name}).IsUnique().HasFilter("\"IsDeleted\" = false");});
+        modelBuilder.Entity<RepairDiagnosis>(b=>{b.Property(x=>x.Findings).HasMaxLength(4000).IsRequired();b.Property(x=>x.TechnicianName).HasMaxLength(200).IsRequired();b.HasOne(x=>x.Job).WithMany(x=>x.Diagnoses).HasForeignKey(x=>x.JobId).OnDelete(DeleteBehavior.Restrict);});
+        modelBuilder.Entity<RepairStatusHistory>(b=>{b.Property(x=>x.ChangedByName).HasMaxLength(200).IsRequired();b.Property(x=>x.Note).HasMaxLength(2000);b.HasOne(x=>x.Job).WithMany(x=>x.StatusHistory).HasForeignKey(x=>x.JobId).OnDelete(DeleteBehavior.Cascade);b.HasQueryFilter(x=>!x.Job!.IsDeleted);});
+        modelBuilder.Entity<RepairPhoto>(b=>{b.Property(x=>x.StoredName).HasMaxLength(80).IsRequired();b.Property(x=>x.OriginalName).HasMaxLength(255).IsRequired();b.Property(x=>x.ContentType).HasMaxLength(100).IsRequired();b.Property(x=>x.Caption).HasMaxLength(500);b.HasOne(x=>x.Job).WithMany(x=>x.Photos).HasForeignKey(x=>x.JobId).OnDelete(DeleteBehavior.Restrict);});
     }
 }
 
@@ -225,10 +239,8 @@ public interface IRepairService
     Task<Result<Job>> MoveAsync(int id, JobStatus to, string? note, CancellationToken ct = default);
 
     Task<Result<Job>> SetWorkItemsAsync(int id, IReadOnlyList<WorkItemInput> items, CancellationToken ct = default);
-    Task<Result<Job>> DeliverAsync(int id, string collectedBy, CancellationToken ct = default);
+    Task<Result<Job>> DeliverAsync(int id, DeliveryInput delivery, CancellationToken ct = default);
 
-    Task<IReadOnlyList<Customer>> CustomersAsync(string? search, CancellationToken ct = default);
-    Task<Result<Customer>> SaveCustomerAsync(Customer customer, CancellationToken ct = default);
 }
 
 public sealed record JobInput(
@@ -239,9 +251,14 @@ public sealed record JobInput(
 public sealed record WorkItemInput(
     WorkItemKind Kind, string Description, decimal Quantity,
     decimal UnitPrice, decimal? UnitCost, bool IsBillable);
+public sealed record DeliveryInput(string CollectedBy,string? Phone,string? Cnic,string? Note);
 
 public sealed class RepairService(
-    RepairDbContext db, ICurrentUser currentUser, IClock clock) : IRepairService
+    RepairDbContext db, ICurrentUser currentUser, IClock clock,
+
+    // Optional, so Repair stays buildable on its own; without it a job cannot
+    // name a customer, which is refused rather than guessed.
+    IRepairCustomerDirectory? customers = null) : IRepairService
 {
     public async Task<IReadOnlyList<Job>> ListAsync(
         JobStatus? status, string? search, CancellationToken ct = default)
@@ -263,12 +280,12 @@ public sealed class RepairService(
     }
 
     public Task<Job?> GetAsync(int id, CancellationToken ct = default) =>
-        db.Jobs.Include(j => j.WorkItems).Include(j => j.Customer)
+        db.Jobs.Include(j => j.WorkItems)
               .FirstOrDefaultAsync(j => j.Id == id, ct);
 
     public async Task<Result<Job>> SaveAsync(JobInput input, CancellationToken ct = default)
     {
-        var customer = await db.Customers.FirstOrDefaultAsync(c => c.Id == input.CustomerId, ct);
+        var customer = customers is null ? null : await customers.GetAsync(input.CustomerId, ct);
         if (customer is null) return Result.Fail<Job>("That customer no longer exists.", "job.no-customer");
 
         if (string.IsNullOrWhiteSpace(input.DeviceType))
@@ -352,6 +369,7 @@ public sealed class RepairService(
             job.AssignedToName = currentUser.Name;
         }
 
+        db.RepairStatusHistory.Add(new RepairStatusHistory{JobId=job.Id,FromStatus=job.Status,ToStatus=to,ChangedById=currentUser.UserId??"system",ChangedByName=currentUser.Name??"System",ChangedUtc=clock.UtcNow,Note=note});
         job.Status = to;
         if (!string.IsNullOrWhiteSpace(note)) job.DecisionComment = note;
 
@@ -404,7 +422,7 @@ public sealed class RepairService(
     }
 
     public async Task<Result<Job>> DeliverAsync(
-        int id, string collectedBy, CancellationToken ct = default)
+        int id, DeliveryInput delivery, CancellationToken ct = default)
     {
         var job = await db.Jobs.FirstOrDefaultAsync(j => j.Id == id, ct);
         if (job is null) return Result.Fail<Job>("That job no longer exists.", "job.not-found");
@@ -412,63 +430,23 @@ public sealed class RepairService(
         if (job.Status is not JobStatus.Completed)
             return Result.Fail<Job>("Only a completed job can be delivered.", "job.not-completed");
 
-        if (string.IsNullOrWhiteSpace(collectedBy))
+        if (string.IsNullOrWhiteSpace(delivery.CollectedBy))
         {
             // The delivery note is signed against this. Without it there is no
             // record of who took the device away.
             return Result.Fail<Job>("Record who collected the device.", "job.no-collector");
         }
 
+        db.RepairStatusHistory.Add(new RepairStatusHistory{JobId=job.Id,FromStatus=job.Status,ToStatus=JobStatus.Delivered,ChangedById=currentUser.UserId??"system",ChangedByName=currentUser.Name??"System",ChangedUtc=clock.UtcNow,Note=$"Collected by {delivery.CollectedBy}"});
         job.Status = JobStatus.Delivered;
-        job.CollectedBy = collectedBy;
+        job.CollectedBy = delivery.CollectedBy.Trim();job.CollectedByPhone=delivery.Phone;job.CollectedByCnic=delivery.Cnic;job.DeliveryNote=delivery.Note;job.DeliveredByName=currentUser.Name;
         job.DeliveredUtc = clock.UtcNow;
 
         await db.SaveChangesAsync(ct);
         return Result.Success(job);
     }
 
-    public async Task<IReadOnlyList<Customer>> CustomersAsync(
-        string? search, CancellationToken ct = default)
-    {
-        var query = db.Customers.AsNoTracking().Where(c => c.IsActive);
 
-        if (!string.IsNullOrWhiteSpace(search))
-        {
-            var pattern = $"%{search.Trim()}%";
-            query = query.Where(c =>
-                EF.Functions.ILike(c.Name, pattern) ||
-                (c.Phone != null && EF.Functions.ILike(c.Phone, pattern)));
-        }
-
-        return await query.OrderBy(c => c.Name).Take(200).ToListAsync(ct);
-    }
-
-    public async Task<Result<Customer>> SaveCustomerAsync(
-        Customer customer, CancellationToken ct = default)
-    {
-        if (string.IsNullOrWhiteSpace(customer.Name))
-            return Result.Fail<Customer>("A customer needs a name.", "customer.no-name");
-
-        if (string.IsNullOrWhiteSpace(customer.Code))
-        {
-            var count = await db.Customers.IgnoreQueryFilters().CountAsync(ct);
-            customer.Code = $"C-{count + 1:D5}";
-        }
-
-        if (customer.Id == 0)
-        {
-            db.Customers.Add(customer);
-        }
-        else
-        {
-            var existing = await db.Customers.FirstOrDefaultAsync(c => c.Id == customer.Id, ct);
-            if (existing is null) return Result.Fail<Customer>("That customer no longer exists.", "customer.not-found");
-            db.Entry(existing).CurrentValues.SetValues(customer);
-        }
-
-        await db.SaveChangesAsync(ct);
-        return Result.Success(customer);
-    }
 
     private async Task<string> NextNumberAsync(CancellationToken ct)
     {
@@ -486,8 +464,10 @@ public static class RepairModule
     public const string JobsView = "repair.jobs.view";
     public const string JobsManage = "repair.jobs.manage";
     public const string JobsDeliver = "repair.jobs.deliver";
-    public const string CustomersManage = "repair.customers.manage";
     public const string CostsView = "repair.costs.view";
+    public const string IntakesManage = "repair.intakes.manage";
+    public const string CatalogManage = "repair.catalog.manage";
+    public const string Diagnose = "repair.jobs.diagnose";
 
     public static ModuleDescriptor Descriptor => new()
     {
@@ -497,7 +477,7 @@ public static class RepairModule
         BasePath = "/repair",
         Icon = "Build",
         Color = "#f57c00",
-        SortOrder = 4,
+        SortOrder = 6,
         Schema = "repair",
 
         Permissions =
@@ -505,28 +485,32 @@ public static class RepairModule
             new(JobsView,        "Jobs",      "See repair jobs and the tracking board"),
             new(JobsManage,      "Jobs",      "Take in devices and record the work"),
             new(JobsDeliver,     "Jobs",      "Hand a device back to its owner"),
-            new(CustomersManage, "Customers", "Manage the customer list"),
 
             // Separate so a supervisor can see throughput without seeing margin.
             new(CostsView,       "Reporting", "See cost and margin on repair work")
+            ,new(IntakesManage, "Intakes", "Book multiple devices into one customer intake")
+            ,new(CatalogManage, "Setup", "Manage repair symptoms, accessories, brands and device types")
+            ,new(Diagnose, "Jobs", "Record structured technical diagnoses")
         ],
 
         Nav =
         [
             new("Jobs",      "/repair/jobs", "Build", JobsView),
-            new("Customers", "/repair/customers", "Contacts", CustomersManage)
+            new("Intakes", "/repair/intakes", "MoveToInbox", IntakesManage),
+            new("Tracking", "/repair/tracking", "ViewKanban", JobsView),
+            new("Setup", "/repair/setup", "Settings", CatalogManage)
         ],
 
         RoleTemplates =
         [
             new("Technician", "Works on devices and records what was done.",
-                [JobsView, JobsManage]),
+                [JobsView, JobsManage, Diagnose]),
 
             new("Service Manager", "Runs the workshop, including delivery and margin.",
-                [JobsView, JobsManage, JobsDeliver, CustomersManage, CostsView]),
+                [JobsView, JobsManage, JobsDeliver, CostsView, IntakesManage, CatalogManage, Diagnose]),
 
             new("Front Desk", "Takes devices in and hands them back.",
-                [JobsView, JobsManage, JobsDeliver, CustomersManage])
+                [JobsView, JobsManage, JobsDeliver, IntakesManage])
         ]
     };
 
@@ -543,7 +527,11 @@ public static class RepairModule
                 npgsql.EnableRetryOnFailure(3);
             }));
 
+        services.AddScoped<IScanResolver, RepairScanResolver>();
         services.AddScoped<IRepairService, RepairService>();
+        services.AddScoped<IRepairIntakeService, RepairIntakeService>();
+        services.AddScoped<IRepairWorkshopDepthService, RepairWorkshopDepthService>();
+        services.AddScoped<IRepairPhotoService, RepairPhotoService>();
         return services;
     }
 }

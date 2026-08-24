@@ -1,0 +1,10 @@
+@page "/repair/jobs/{JobId:int}/work"
+@attribute [Authorize(Policy = RepairModule.JobsManage)]
+@rendermode InteractiveServer
+
+@* Work is always against an existing job — there is no "new" route here. *@
+<WorkEditor AsDialog="false" JobId="JobId" />
+
+@code {
+    [Parameter] public int JobId { get; set; }
+}

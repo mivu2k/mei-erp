@@ -1,0 +1,19 @@
+namespace MeiErp.Modules.Ledger;
+
+public static class LedgerPermissions
+{
+    public const string View = "ledger.ledgers.view";
+    public const string Manage = "ledger.ledgers.manage";
+    /// <summary>Writing entries and transfers. Separate from editing the ledger itself.</summary>
+    public const string EntryRecord = "ledger.entries.record";
+    /// <summary>Correcting or removing an entry already written.</summary>
+    public const string EntryAmend = "ledger.entries.amend";
+    public const string ReportsView = "ledger.reports.view";
+    /// <summary>Maintaining the module's own heads.</summary>
+    public const string HeadsManage = "ledger.heads.manage";
+
+    public static IReadOnlyList<string> All =>
+    [
+        View, Manage, EntryRecord, EntryAmend, ReportsView, HeadsManage
+    ];
+}

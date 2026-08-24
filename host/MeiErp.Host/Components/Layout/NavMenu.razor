@@ -11,7 +11,12 @@
     they can actually open.
 *@
 
-<MudNavMenu Class="pt-4">
+<div class="nav-heading">
+    <MudText Typo="Typo.caption">Workspace</MudText>
+    <MudText Typo="Typo.body2">Operations suite</MudText>
+</div>
+
+<MudNavMenu Class="app-nav-menu">
 
     <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Outlined.Dashboard">
         Dashboard
@@ -22,9 +27,23 @@
         My approvals
     </MudNavLink>
 
+    @* One scan screen for the whole suite, rather than one buried in each
+       module. Whoever holds the scanner does not know which module owns the
+       sticker. *@
+    <MudNavLink Href="/scan" Match="NavLinkMatch.Prefix"
+                Icon="@Icons.Material.Outlined.QrCodeScanner">
+        Scan
+    </MudNavLink>
+
     <MudNavLink Href="/reports" Match="NavLinkMatch.Prefix"
                 Icon="@Icons.Material.Outlined.Assessment">
         Reports
+    </MudNavLink>
+
+    @* Personal settings are one entry, not three amongst the company's modules. *@
+    <MudNavLink Href="/profile" Match="NavLinkMatch.Prefix"
+                Icon="@Icons.Material.Outlined.AccountCircle">
+        My profile
     </MudNavLink>
 
     @if (Catalog.All.Count > 0)
@@ -107,14 +126,6 @@
         </Authorized>
     </AuthorizeView>
 
-    <AuthorizeView Policy="@PlatformPermissions.DepartmentsManage" Context="admin">
-        <Authorized>
-            <MudNavLink Href="/admin/departments" Icon="@Icons.Material.Outlined.AccountTree">
-                Departments
-            </MudNavLink>
-        </Authorized>
-    </AuthorizeView>
-
     <AuthorizeView Policy="@PlatformPermissions.WorkflowsManage" Context="admin">
         <Authorized>
             <MudNavLink Href="/admin/workflows" Icon="@Icons.Material.Outlined.AltRoute">
@@ -129,6 +140,22 @@
                 Company profile
             </MudNavLink>
         </Authorized>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@PlatformPermissions.LabelsManage" Context="labelAdmin">
+        <Authorized><MudNavLink Href="/admin/labels" Icon="@Icons.Material.Outlined.Label">Label templates</MudNavLink></Authorized>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@PlatformPermissions.OutboxManage" Context="outboxAdmin">
+        <Authorized>
+            <MudNavLink Href="/admin/failed-notifications" Icon="@Icons.Material.Outlined.MarkEmailUnread">
+                Failed notifications
+            </MudNavLink>
+        </Authorized>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@PlatformPermissions.AuditView" Context="auditAdmin">
+        <Authorized><MudNavLink Href="/admin/audit" Icon="@Icons.Material.Outlined.History">Audit trail</MudNavLink></Authorized>
     </AuthorizeView>
 
 </MudNavMenu>

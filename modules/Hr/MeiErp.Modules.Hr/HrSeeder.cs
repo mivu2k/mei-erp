@@ -16,6 +16,18 @@ public sealed class HrSeeder(HrDbContext db)
     {
         await db.Database.MigrateAsync(ct);
 
+        if (!await db.Shifts.AnyAsync(ct))
+        {
+            db.Shifts.Add(new Shift
+            {
+                Name = "General", StartsAt = new TimeOnly(9, 0), EndsAt = new TimeOnly(17, 0),
+                GraceMinutes = 15, MinimumMinutes = 60, HalfDayMinutes = 240,
+                OvertimeAfterMinutes = 30, WeeklyOffMask = 1 << (int)DayOfWeek.Sunday,
+                IsDefault = true
+            });
+            await db.SaveChangesAsync(ct);
+        }
+
         if (!await db.LeaveTypes.AnyAsync(ct))
         {
             db.LeaveTypes.AddRange(

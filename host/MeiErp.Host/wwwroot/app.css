@@ -1,6 +1,12 @@
 html, body {
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    min-height: 100%;
+    font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--mud-palette-background);
+    color: var(--mud-palette-text-primary);
+    text-rendering: optimizeLegibility;
 }
+
+body { margin: 0; }
 
 a, .btn-link {
     color: #006bb7;
@@ -18,6 +24,384 @@ a, .btn-link {
 
 .content {
     padding-top: 1.1rem;
+}
+
+/* Shared application shell -------------------------------------------------
+   Most screens are module-owned, so the shell and MudBlazor primitives are
+   the design system. Improving them here keeps every present and future page
+   consistent without duplicating layout markup in each module. */
+
+.app-header {
+    min-height: 64px;
+    padding-inline: 12px 18px;
+    backdrop-filter: saturate(150%) blur(14px);
+    box-shadow: 0 1px 0 rgba(22, 32, 43, .08) !important;
+}
+
+.app-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: 8px;
+    color: inherit;
+    text-decoration: none;
+    min-width: 132px;
+}
+
+.app-brand-mark {
+    display: grid;
+    width: 34px;
+    height: 34px;
+    place-items: center;
+    border-radius: 10px;
+    color: #fff;
+    background: linear-gradient(145deg, #1d4e7c, #2872a9);
+    box-shadow: 0 5px 14px rgba(29, 78, 124, .24);
+    font-weight: 750;
+}
+
+.app-brand-copy { display: grid; line-height: 1.05; font-weight: 700; }
+.app-brand-copy small { margin-top: 4px; color: var(--mud-palette-text-secondary); font-size: 10px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; }
+
+.app-navigation { box-shadow: 1px 0 0 rgba(22, 32, 43, .06) !important; }
+.nav-heading { padding: 22px 20px 12px; }
+.nav-heading .mud-typography-caption { color: var(--mud-palette-text-secondary); letter-spacing: .08em; text-transform: uppercase; }
+.nav-heading .mud-typography-body2 { margin-top: 2px; font-weight: 650; }
+.app-nav-menu { padding: 0 10px 24px; }
+.app-nav-menu .mud-nav-link { min-height: 44px; margin: 2px 0; border-radius: 9px; }
+.app-nav-menu .mud-nav-link.active:not(.mud-nav-link-disabled) { background: color-mix(in srgb, var(--mud-palette-primary) 12%, transparent); font-weight: 650; }
+.app-nav-menu .mud-nav-group > .mud-nav-link { font-weight: 600; }
+
+.app-page { padding: 30px 28px 48px; }
+.app-page > .mud-typography-h5:first-child,
+.app-page > div:first-child .mud-typography-h5:first-child { font-size: 1.65rem; font-weight: 700; letter-spacing: -.025em; }
+
+.app-page-header {
+    position: relative;
+    min-height: 64px;
+    padding-left: 18px;
+}
+
+.app-page-header::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 5px;
+    bottom: 5px;
+    width: 4px;
+    border-radius: 99px;
+    background: linear-gradient(180deg, var(--mud-palette-primary), var(--mud-palette-secondary));
+}
+
+.app-page-header > div:first-child { flex: 1 1 320px; min-width: 0; }
+.app-page-header .mud-typography-h5 { font-size: 1.65rem; font-weight: 700; letter-spacing: -.025em; }
+.app-page-header .mud-typography-body2 { max-width: 720px; margin-top: 4px; line-height: 1.55; }
+
+/* Page contract ------------------------------------------------------------
+   Older module pages predate the shared sales shells. These selectors give
+   every routed page the same contract even before its markup is touched:
+   title/actions, supporting copy, content surfaces, tabs and bare tables all
+   land on the same rhythm and visual hierarchy. */
+.app-page > .d-flex:has(.mud-typography-h5):first-child,
+.app-page > .d-flex:has(.mud-typography-h5):nth-child(2) {
+    position: relative;
+    min-height: 64px;
+    margin-bottom: 24px !important;
+    padding-left: 18px;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.app-page > .d-flex:has(.mud-typography-h5):first-child::before,
+.app-page > .d-flex:has(.mud-typography-h5):nth-child(2)::before {
+    content: "";
+    position: absolute;
+    inset: 5px auto 5px 0;
+    width: 4px;
+    border-radius: 99px;
+    background: linear-gradient(180deg, var(--mud-palette-primary), var(--mud-palette-secondary));
+}
+
+.app-page > .mud-typography-h5:first-child {
+    margin-bottom: 4px;
+    font-size: 1.65rem;
+    font-weight: 700;
+    letter-spacing: -.025em;
+}
+
+.app-page > .mud-typography-h5:first-child + .mud-typography-body2,
+.app-page > .mud-typography-h5:first-child + .mud-typography-subtitle1 {
+    max-width: 720px;
+    margin-bottom: 24px;
+    color: var(--mud-palette-text-secondary);
+    line-height: 1.55;
+}
+
+.app-page > .mud-table-root,
+.app-page > .mud-tabs,
+.app-page > .mud-paper:not(.mud-alert) {
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 12px !important;
+    background: var(--mud-palette-surface);
+    box-shadow: 0 8px 26px rgba(25, 39, 52, .045) !important;
+    overflow: hidden;
+}
+
+.app-page > .mud-table-root { margin-top: 16px; }
+.app-page > .mud-tabs .mud-tabs-tabbar { border-bottom: 1px solid var(--mud-palette-lines-default); }
+.app-page > .mud-tabs .mud-tabs-panels { padding: 20px; }
+.app-page .mud-paper > .mud-table-root:last-child { border-radius: 0 0 12px 12px; }
+.app-page .mud-paper > .mud-table-root:first-child { border-radius: 12px; }
+
+.app-page .mud-input-outlined-border { border-color: color-mix(in srgb, var(--mud-palette-lines-default) 86%, var(--mud-palette-text-secondary)); }
+.app-page .mud-input-control-input-container:focus-within .mud-input-outlined-border { border-width: 1.5px; }
+.app-page .mud-expand-panel { border-radius: 10px; }
+.app-page .mud-list-item { border-radius: 8px; }
+.app-page .mud-card { border: 1px solid var(--mud-palette-lines-default); border-radius: 12px; box-shadow: none; }
+
+/* Predictable feedback states shared by all modules. */
+.app-page .mud-progress-linear:first-child { margin-bottom: 20px; border-radius: 99px; }
+.app-page .mud-skeleton { border-radius: 8px; }
+.app-page .mud-table-empty-row .mud-table-cell,
+.app-page .mud-data-grid .mud-table-body:has(.mud-table-empty-row) {
+    color: var(--mud-palette-text-secondary);
+}
+
+/* Editors and detail screens use readable sections instead of one large,
+   undifferentiated form. */
+.app-page .mud-paper.pa-4 > .mud-typography-subtitle1:first-child,
+.app-page .mud-paper.pa-4 > div:first-child .mud-typography-subtitle1 {
+    font-weight: 700;
+    letter-spacing: -.01em;
+}
+.app-page .mud-paper.pa-4 > .mud-grid { margin-top: 4px; }
+.app-page .mud-timeline-item-content { border-radius: 10px; }
+
+/* Editor forms -------------------------------------------------------------
+   A long form is only usable if it reads as a handful of groups rather than
+   one stack of thirty fields. Sections carry a heading and a quiet rule; the
+   field grid below wraps on its own so no editor hand-rolls column widths. */
+
+.app-form-section + .app-form-section {
+    margin-top: 26px;
+    padding-top: 24px;
+    border-top: 1px solid color-mix(in srgb, var(--mud-palette-lines-default) 74%, transparent);
+}
+
+.app-form-section-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    margin-bottom: 16px;
+}
+
+.app-form-section-head .mud-icon-root {
+    margin-top: 1px;
+    padding: 5px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--mud-palette-primary) 11%, transparent);
+    box-sizing: content-box;
+}
+
+.app-form-section-title {
+    font-weight: 700;
+    letter-spacing: -.01em;
+}
+
+.app-form-section-head .mud-typography-caption {
+    display: block;
+    margin-top: 2px;
+    max-width: 620px;
+    line-height: 1.5;
+}
+
+/* A fact that cannot be edited still sits on the field grid, so a panel of
+   them keeps the same rhythm as the forms either side of it. */
+.app-readonly-field {
+    padding: 8px 0 10px;
+    border-bottom: 1px solid color-mix(in srgb, var(--mud-palette-lines-default) 60%, transparent);
+}
+
+.app-readonly-field .mud-typography-body1 { margin-top: 2px; font-weight: 550; }
+
+/* Fields lay themselves out: each claims a sensible minimum and wraps rather
+   than being squeezed, so the same section works in a dialog and full width. */
+.app-form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 4px 16px;
+    align-items: start;
+}
+
+.app-form-grid > .app-form-wide { grid-column: 1 / -1; }
+
+@media (max-width: 599.98px) {
+    .app-form-grid { grid-template-columns: 1fr; }
+}
+
+.app-list-surface { margin-top: 0; box-shadow: 0 8px 26px rgba(25, 39, 52, .045) !important; }
+.app-list-surface > .mud-toolbar { border-bottom: 1px solid var(--mud-palette-lines-default); background: color-mix(in srgb, var(--mud-palette-surface) 96%, var(--mud-palette-primary)); }
+.app-filter-surface { background: color-mix(in srgb, var(--mud-palette-surface) 97%, var(--mud-palette-primary)); }
+.app-detail-surface { box-shadow: 0 8px 26px rgba(25, 39, 52, .045) !important; }
+
+/* Summary cards across dashboards use the same quiet hierarchy as Sales. */
+.app-page .mud-grid .mud-paper-outlined.pa-3,
+.app-page .mud-grid .mud-paper-outlined.pa-4 {
+    transition: border-color .18s ease, box-shadow .18s ease, translate .18s ease;
+}
+.app-page .mud-grid .mud-paper-outlined.pa-3:hover,
+.app-page .mud-grid .mud-paper-outlined.pa-4:hover {
+    border-color: color-mix(in srgb, var(--mud-palette-primary) 30%, var(--mud-palette-lines-default));
+    box-shadow: 0 9px 24px rgba(25, 39, 52, .07) !important;
+    translate: 0 -1px;
+}
+
+.mud-alert { border-radius: 10px; }
+.mud-table-pagination { border-top: 1px solid var(--mud-palette-lines-default); }
+.mud-data-grid .mud-table-cell:last-child { white-space: nowrap; }
+
+/* Consistent surfaces and data-heavy controls ----------------------------- */
+.mud-paper-outlined { border-color: var(--mud-palette-lines-default); border-radius: 12px !important; }
+.mud-table-container { border-radius: inherit; }
+.mud-table-head .mud-table-cell { color: var(--mud-palette-text-secondary); font-size: .73rem; font-weight: 700; letter-spacing: .045em; text-transform: uppercase; }
+.mud-table-row:hover { background-color: color-mix(in srgb, var(--mud-palette-primary) 4%, transparent) !important; }
+.mud-toolbar { min-height: 58px; padding-inline: 16px; gap: 10px; }
+.mud-button-root { border-radius: 8px; font-weight: 650; letter-spacing: 0; text-transform: none; }
+.mud-input-control { margin-bottom: 4px; }
+.mud-dialog { border-radius: 16px !important; box-shadow: 0 24px 64px rgba(9, 18, 28, .24) !important; }
+.mud-dialog-title { font-size: 1.15rem; font-weight: 700; padding: 22px 24px 10px; }
+.mud-dialog-content { padding: 16px 24px 20px; }
+.mud-dialog-actions { padding: 12px 24px 20px; gap: 8px; }
+.mud-chip { font-weight: 600; }
+
+/* Dashboard --------------------------------------------------------------- */
+.dashboard-hero {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+    min-height: 190px;
+    margin: -30px -28px 28px;
+    padding: 42px 36px 30px;
+    color: #fff;
+    background:
+        radial-gradient(circle at 82% 10%, rgba(126, 190, 235, .22), transparent 30%),
+        linear-gradient(135deg, #173a5b 0%, #1d4e7c 58%, #22638f 100%);
+    border-radius: 0 0 20px 20px;
+    overflow: hidden;
+}
+.dashboard-hero .mud-typography-h3 { margin-top: 12px; color: inherit; font-size: clamp(2rem, 4vw, 2.75rem); font-weight: 750; letter-spacing: -.04em; }
+.dashboard-hero .mud-typography-body1 { margin-top: 8px; color: rgba(255,255,255,.75); }
+.dashboard-hero .mud-button-root { flex: none; border-color: rgba(255,255,255,.42); color: #fff; }
+.dashboard-eyebrow { display: flex; align-items: center; gap: 8px; color: rgba(255,255,255,.72); font-size: .78rem; font-weight: 650; letter-spacing: .055em; text-transform: uppercase; }
+
+.dashboard-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 20px; }
+.dashboard-kpi {
+    --kpi-colour: var(--mud-palette-primary);
+    position: relative;
+    display: grid;
+    grid-template-columns: 48px 1fr auto;
+    grid-template-rows: auto auto auto;
+    column-gap: 14px;
+    min-height: 154px;
+    padding: 20px;
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 14px;
+    color: var(--mud-palette-text-primary);
+    background: var(--mud-palette-surface);
+    box-shadow: 0 8px 26px rgba(25,39,52,.05);
+    text-decoration: none;
+    transition: border-color .18s ease, box-shadow .18s ease, translate .18s ease;
+}
+.dashboard-kpi:hover { translate: 0 -2px; border-color: color-mix(in srgb, var(--kpi-colour) 45%, var(--mud-palette-lines-default)); box-shadow: 0 14px 34px rgba(25,39,52,.1); }
+.dashboard-kpi::before { content:""; position:absolute; inset:0 auto 0 0; width:4px; border-radius:14px 0 0 14px; background:var(--kpi-colour); }
+.dashboard-kpi-icon { grid-row: 1 / 3; display:grid; place-items:center; width:46px; height:46px; border-radius:12px; color:var(--kpi-colour); background:color-mix(in srgb, var(--kpi-colour) 12%, transparent); }
+.dashboard-kpi-label { align-self:center; color:var(--mud-palette-text-secondary); font-size:.78rem; font-weight:650; }
+.dashboard-kpi strong { grid-column:2; font-size:2rem; line-height:1.05; font-variant-numeric:tabular-nums; }
+.dashboard-kpi-note { grid-column:2 / 4; align-self:end; color:var(--mud-palette-text-secondary); font-size:.74rem; }
+.dashboard-kpi-arrow { position:absolute; right:16px; top:18px; color:var(--mud-palette-text-secondary); transition:translate .18s ease; }
+.dashboard-kpi:hover .dashboard-kpi-arrow { translate:3px 0; color:var(--kpi-colour); }
+.kpi-warning { --kpi-colour: var(--mud-palette-warning); }
+.kpi-info { --kpi-colour: var(--mud-palette-info); }
+.kpi-error { --kpi-colour: var(--mud-palette-error); }
+
+.dashboard-columns { display:grid; grid-template-columns:minmax(0, .9fr) minmax(0, 1.1fr); gap:20px; }
+.dashboard-panel { border:1px solid var(--mud-palette-lines-default); border-radius:14px; background:var(--mud-palette-surface); box-shadow:0 8px 26px rgba(25,39,52,.045); overflow:hidden; }
+.dashboard-panel-header { display:flex; align-items:center; justify-content:space-between; min-height:76px; padding:17px 20px; border-bottom:1px solid var(--mud-palette-lines-default); }
+.dashboard-panel-header .mud-typography-h6 { font-size:1rem; font-weight:700; }
+.dashboard-panel-header .mud-typography-body2 { margin-top:2px; color:var(--mud-palette-text-secondary); font-size:.76rem; }
+.dashboard-panel-count { display:grid; place-items:center; min-width:34px; height:28px; padding:0 8px; border-radius:99px; color:var(--mud-palette-error); background:color-mix(in srgb, var(--mud-palette-error) 11%, transparent); font-size:.78rem; font-weight:750; }
+.attention-list, .module-launcher { display:grid; }
+.attention-row, .module-launcher-item { display:grid; align-items:center; gap:13px; min-height:72px; padding:12px 20px; color:inherit; text-decoration:none; border-bottom:1px solid color-mix(in srgb, var(--mud-palette-lines-default) 72%, transparent); transition:background .15s ease; }
+.attention-row { grid-template-columns:42px 1fr auto; }
+.attention-row:last-child, .module-launcher-item:last-child { border-bottom:0; }
+.attention-row:hover, .module-launcher-item:hover { background:color-mix(in srgb, var(--mud-palette-primary) 5%, transparent); }
+.attention-row > span:nth-child(2), .module-launcher-item > span:nth-child(2) { display:grid; min-width:0; }
+.attention-row b, .module-launcher-item b { font-size:.84rem; }
+.attention-row small, .module-launcher-item small { margin-top:2px; color:var(--mud-palette-text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.attention-row > strong { font-size:1.05rem; font-variant-numeric:tabular-nums; }
+.attention-icon, .module-launcher-icon { display:grid; width:40px; height:40px; place-items:center; border-radius:10px; }
+.attention-error { color:var(--mud-palette-error); background:color-mix(in srgb, var(--mud-palette-error) 11%, transparent); }
+.attention-warning { color:var(--mud-palette-warning); background:color-mix(in srgb, var(--mud-palette-warning) 12%, transparent); }
+.attention-info { color:var(--mud-palette-info); background:color-mix(in srgb, var(--mud-palette-info) 11%, transparent); }
+.module-launcher { grid-template-columns:repeat(2, minmax(0,1fr)); }
+.module-launcher-item { grid-template-columns:42px 1fr auto; }
+.module-launcher-item:nth-child(odd) { border-right:1px solid color-mix(in srgb, var(--mud-palette-lines-default) 72%, transparent); }
+.module-launcher-icon { color:var(--module-colour, var(--mud-palette-primary)); background:color-mix(in srgb, var(--module-colour, var(--mud-palette-primary)) 12%, transparent); }
+
+#blazor-error-ui {
+    display: none;
+    position: fixed;
+    inset: auto 20px 20px 20px;
+    z-index: 10000;
+    max-width: 720px;
+    margin-inline: auto;
+    padding: 14px 52px 14px 18px;
+    border: 1px solid #e7b7b0;
+    border-radius: 12px;
+    background: #fff4f2;
+    color: #792d25;
+    box-shadow: 0 14px 38px rgba(60, 20, 15, .18);
+}
+
+#blazor-error-ui .reload { margin-left: 8px; color: inherit; font-weight: 700; }
+#blazor-error-ui .dismiss { position: absolute; top: 50%; right: 12px; width: 32px; height: 32px; display: grid; place-items: center; translate: 0 -50%; border-radius: 8px; color: inherit; cursor: pointer; text-decoration: none; }
+#blazor-error-ui .dismiss:hover { background: rgba(121, 45, 37, .1); }
+
+@media (max-width: 959.98px) {
+    .app-brand { min-width: auto; }
+    .app-brand-copy { display: none; }
+    .app-page { padding: 22px 16px 36px; }
+    .mud-dialog { max-height: calc(100dvh - 24px); margin: 12px; }
+    .mud-toolbar { flex-wrap: wrap; height: auto; padding-block: 10px; }
+    .dashboard-kpis { grid-template-columns:repeat(2, minmax(0,1fr)); }
+    .dashboard-columns { grid-template-columns:1fr; }
+}
+
+@media (max-width: 599.98px) {
+    .app-header { padding-inline: 6px 8px; }
+    .app-brand-mark { width: 31px; height: 31px; }
+    .app-page { padding-inline: 12px; }
+    .mud-dialog-container { align-items: flex-end; }
+    .mud-dialog { width: 100%; max-width: none !important; margin: 0; border-radius: 18px 18px 0 0 !important; }
+    .mud-table-cell { padding-inline: 10px; }
+    .app-page-header { align-items: flex-start !important; padding-left: 14px; }
+    .app-page-header > .mud-button-root { width: 100%; }
+    .app-page-header .mud-spacer { display: none; }
+    .app-page > .d-flex:has(.mud-typography-h5):first-child,
+    .app-page > .d-flex:has(.mud-typography-h5):nth-child(2) {
+        align-items: flex-start !important;
+        padding-left: 14px;
+    }
+    .app-page > .d-flex:has(.mud-typography-h5) .mud-spacer { display: none; }
+    .app-page > .d-flex:has(.mud-typography-h5) > .mud-button-root { width: 100%; }
+    .app-page > .mud-tabs .mud-tabs-panels { padding: 14px; }
+    .dashboard-hero { align-items:flex-start; flex-direction:column; min-height:220px; margin:-22px -12px 20px; padding:30px 20px 24px; border-radius:0 0 16px 16px; }
+    .dashboard-hero .mud-button-root { width:100%; }
+    .dashboard-kpis { grid-template-columns:1fr; gap:12px; }
+    .dashboard-kpi { min-height:136px; }
+    .module-launcher { grid-template-columns:1fr; }
+    .module-launcher-item:nth-child(odd) { border-right:0; }
 }
 
 h1:focus {

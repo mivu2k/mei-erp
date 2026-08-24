@@ -1,0 +1,35 @@
+@page "/finance/my-ledger"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject IPersonalLedgerService Ledger
+
+<PageTitle>My Ledger</PageTitle>
+<MudText Typo="Typo.h5">My Ledger</MudText>
+<MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+    Advances and other posted entries tagged to your login.
+</MudText>
+
+@if (_accounts.Count == 0)
+{
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+        No personal ledger yet. It appears when Finance posts an advance or another entry against your login.
+    </MudAlert>
+}
+@foreach (var account in _accounts)
+{
+    <MudPaper Class="pa-4 mb-4" Outlined="true">
+        <div class="d-flex align-center mb-2"><MudText Typo="Typo.h6">@account.Code — @account.Name</MudText><MudSpacer />
+            <MudChip T="decimal" Color="@(account.Balance == 0 ? Color.Success : Color.Warning)">Balance @account.Balance.ToString("N2")</MudChip></div>
+        <MudTable Items="account.Rows" Dense="true" Hover="true">
+            <HeaderContent><MudTh>Date</MudTh><MudTh>Voucher</MudTh><MudTh>Description</MudTh><MudTh>Received</MudTh><MudTh>Cleared</MudTh><MudTh>Balance</MudTh></HeaderContent>
+            <RowTemplate><MudTd>@context.Date</MudTd><MudTd>@context.VoucherNumber</MudTd><MudTd>@context.Narration</MudTd>
+                <MudTd>@(context.Debit == 0 ? "" : context.Debit.ToString("N2"))</MudTd>
+                <MudTd>@(context.Credit == 0 ? "" : context.Credit.ToString("N2"))</MudTd><MudTd>@context.RunningBalance.ToString("N2")</MudTd></RowTemplate>
+        </MudTable>
+    </MudPaper>
+}
+
+@code {
+    private IReadOnlyList<PersonalLedgerAccount> _accounts = [];
+    protected override async Task OnInitializedAsync() => _accounts = await Ledger.MineAsync();
+}

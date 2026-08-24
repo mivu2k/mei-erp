@@ -28,11 +28,18 @@ public class Pass : AuditableEntity, IConcurrencyChecked
 
     /// <summary>Who or where the goods are going to, or coming from.</summary>
     public string PartyName { get; set; } = "";
+    public string? PersonPhone { get; set; }
+    public string? PersonCnic { get; set; }
+    public string? CompanyName { get; set; }
+    public string? Department { get; set; }
 
     public string? VehicleNumber { get; set; }
     public string? DriverName { get; set; }
 
     public string? Purpose { get; set; }
+    public string? Notes { get; set; }
+    public string? ReferenceType { get; set; }
+    public string? ReferenceNumber { get; set; }
 
     public string RaisedByUserId { get; set; } = "";
     public string RaisedByName { get; set; } = "";
@@ -43,6 +50,10 @@ public class Pass : AuditableEntity, IConcurrencyChecked
     public DateTime? ClearedUtc { get; set; }
     public string? ClearedByUserId { get; set; }
     public string? ClearedByName { get; set; }
+    public DateTime? CancelledUtc { get; set; }
+    public string? CancellationReason { get; set; }
+    public DateTime? ReturnedUtc { get; set; }
+    public string? ReturnReceivedByName { get; set; }
 
     public List<PassItem> Items { get; set; } = [];
 
@@ -98,6 +109,7 @@ public class PassItem : Entity
     public string Unit { get; set; } = "each";
 
     public string? SerialNumber { get; set; }
+    public string? Remarks { get; set; }
 
     /// <summary>How much has come back. Only meaningful on a returnable pass.</summary>
     public decimal ReturnedQuantity { get; set; }
@@ -113,6 +125,8 @@ public class GatePassDbContext(
 
     public DbSet<Pass> Passes => Set<Pass>();
     public DbSet<PassItem> PassItems => Set<PassItem>();
+    public DbSet<DemoIssuance> DemoIssuances => Set<DemoIssuance>();
+    public DbSet<DemoIssuanceItem> DemoIssuanceItems => Set<DemoIssuanceItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -123,9 +137,18 @@ public class GatePassDbContext(
             b.Property(p => p.Number).HasMaxLength(30).IsRequired();
             b.HasIndex(p => p.Number).IsUnique().HasFilter("\"IsDeleted\" = false");
             b.Property(p => p.PartyName).HasMaxLength(200).IsRequired();
+            b.Property(p => p.PersonPhone).HasMaxLength(50);
+            b.Property(p => p.PersonCnic).HasMaxLength(30);
+            b.Property(p => p.CompanyName).HasMaxLength(200);
+            b.Property(p => p.Department).HasMaxLength(150);
             b.Property(p => p.VehicleNumber).HasMaxLength(30);
             b.Property(p => p.DriverName).HasMaxLength(200);
             b.Property(p => p.Purpose).HasMaxLength(500);
+            b.Property(p => p.Notes).HasMaxLength(2000);
+            b.Property(p => p.ReferenceType).HasMaxLength(100);
+            b.Property(p => p.ReferenceNumber).HasMaxLength(100);
+            b.Property(p => p.CancellationReason).HasMaxLength(1000);
+            b.Property(p => p.ReturnReceivedByName).HasMaxLength(200);
 
             b.HasMany(p => p.Items).WithOne(i => i.Pass)
              .HasForeignKey(i => i.PassId)
@@ -142,8 +165,27 @@ public class GatePassDbContext(
             b.Property(i => i.Description).HasMaxLength(300).IsRequired();
             b.Property(i => i.Unit).HasMaxLength(20);
             b.Property(i => i.SerialNumber).HasMaxLength(100);
+            b.Property(i => i.Remarks).HasMaxLength(500);
             b.Ignore(i => i.Outstanding);
             b.HasQueryFilter(i => !i.Pass!.IsDeleted);
+        });
+
+        modelBuilder.Entity<DemoIssuance>(b =>
+        {
+            b.Property(x=>x.Number).HasMaxLength(30).IsRequired(); b.HasIndex(x=>x.Number).IsUnique().HasFilter("\"IsDeleted\" = false");
+            b.Property(x=>x.CustomerName).HasMaxLength(200).IsRequired(); b.Property(x=>x.CustomerPhone).HasMaxLength(50);
+            b.Property(x=>x.CustomerReference).HasMaxLength(100); b.Property(x=>x.Department).HasMaxLength(150);
+            b.Property(x=>x.ReferenceLetter).HasMaxLength(150); b.Property(x=>x.IssuedByUserId).HasMaxLength(450);
+            b.Property(x=>x.IssuedByName).HasMaxLength(200); b.Property(x=>x.ReceivedByName).HasMaxLength(200);
+            b.Property(x=>x.ReturnCondition).HasMaxLength(1000); b.Property(x=>x.Notes).HasMaxLength(2000);
+            b.HasMany(x=>x.Items).WithOne(x=>x.DemoIssuance).HasForeignKey(x=>x.DemoIssuanceId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x=>new{x.Status,x.ExpectedReturnOn});
+        });
+        modelBuilder.Entity<DemoIssuanceItem>(b =>
+        {
+            b.Property(x=>x.Description).HasMaxLength(300).IsRequired(); b.Property(x=>x.SerialNumber).HasMaxLength(100);
+            b.Property(x=>x.Accessories).HasMaxLength(500); b.Property(x=>x.Remarks).HasMaxLength(500);
+            b.HasQueryFilter(x=>!x.DemoIssuance!.IsDeleted);
         });
     }
 }
@@ -173,7 +215,11 @@ public sealed record PassInput(
     int? Id, PassDirection Direction, DateOnly Date, string PartyName,
     bool IsReturnable, DateOnly? ExpectedBack,
     string? VehicleNumber, string? DriverName, string? Purpose,
-    IReadOnlyList<PassItemInput> Items);
+    IReadOnlyList<PassItemInput> Items,
+    string? PersonPhone = null, string? PersonCnic = null,
+    string? CompanyName = null, string? Department = null,
+    string? Notes = null, string? ReferenceType = null,
+    string? ReferenceNumber = null);
 
 public sealed record PassItemInput(string Description, decimal Quantity, string Unit, string? SerialNumber);
 
@@ -251,6 +297,13 @@ public sealed class GatePassService(
         pass.VehicleNumber = input.VehicleNumber;
         pass.DriverName = input.DriverName;
         pass.Purpose = input.Purpose;
+        pass.PersonPhone = input.PersonPhone;
+        pass.PersonCnic = input.PersonCnic;
+        pass.CompanyName = input.CompanyName;
+        pass.Department = input.Department;
+        pass.Notes = input.Notes;
+        pass.ReferenceType = input.ReferenceType;
+        pass.ReferenceNumber = input.ReferenceNumber;
 
         foreach (var item in input.Items)
         {
@@ -341,6 +394,11 @@ public sealed class GatePassService(
         // Stays open until the last item is ticked back - partial returns are
         // the normal case, not an exception.
         pass.Status = pass.IsFullyReturned ? PassStatus.Returned : PassStatus.PartiallyReturned;
+        if (pass.IsFullyReturned)
+        {
+            pass.ReturnedUtc = clock.UtcNow;
+            pass.ReturnReceivedByName = currentUser.Name;
+        }
 
         await db.SaveChangesAsync(ct);
         return Result.Success(pass);
@@ -364,7 +422,8 @@ public sealed class GatePassService(
             return Result.Fail("Say why the pass is being cancelled.", "pass.no-reason");
 
         pass.Status = PassStatus.Cancelled;
-        pass.Purpose = $"{pass.Purpose} [Cancelled: {reason}]".Trim();
+        pass.CancelledUtc = clock.UtcNow;
+        pass.CancellationReason = reason.Trim();
 
         await db.SaveChangesAsync(ct);
         return Result.Success();
@@ -411,6 +470,10 @@ public static class GatePassModule
     public const string PassesClear = "gatepass.passes.clear";
 
     public const string PassesReturn = "gatepass.passes.return";
+    public const string ReportsView = "gatepass.reports.view";
+    public const string DemosView = "gatepass.demos.view";
+    public const string DemosManage = "gatepass.demos.manage";
+    public const string DemosReturn = "gatepass.demos.return";
 
     public static ModuleDescriptor Descriptor => new()
     {
@@ -420,7 +483,7 @@ public static class GatePassModule
         BasePath = "/gatepass",
         Icon = "LocalShipping",
         Color = "#388e3c",
-        SortOrder = 6,
+        SortOrder = 8,
         Schema = "gatepass",
 
         Permissions =
@@ -428,21 +491,26 @@ public static class GatePassModule
             new(PassesView,   "Passes", "See gate passes"),
             new(PassesRaise,  "Passes", "Raise a gate pass"),
             new(PassesClear,  "Gate",   "Clear goods through the gate — held by security, not by the raiser"),
-            new(PassesReturn, "Gate",   "Tick returnable goods back in")
+            new(PassesReturn, "Gate",   "Tick returnable goods back in"),
+            new(ReportsView,  "Reports", "View outstanding and overdue returnable goods")
+            ,new(DemosView,"Demo goods","View demo issuances")
+            ,new(DemosManage,"Demo goods","Issue and edit demo goods")
+            ,new(DemosReturn,"Demo goods","Record demo goods returning")
         ],
 
         Nav =
         [
-            new("Gate passes", "/gatepass/passes", "LocalShipping", PassesView)
+            new("Gate passes", "/gatepass/passes", "LocalShipping", PassesView),
+            new("Demo goods", "/gatepass/demos", "Inventory2", DemosView)
         ],
 
         RoleTemplates =
         [
             new("Gate Security", "Clears goods through the gate and receives returns.",
-                [PassesView, PassesClear, PassesReturn]),
+                [PassesView, PassesClear, PassesReturn, ReportsView, DemosView, DemosReturn]),
 
             new("Pass Raiser", "Raises passes but cannot clear them.",
-                [PassesView, PassesRaise])
+                [PassesView, PassesRaise, DemosView, DemosManage])
         ]
     };
 
@@ -460,6 +528,8 @@ public static class GatePassModule
             }));
 
         services.AddScoped<IGatePassService, GatePassService>();
+        services.AddScoped<IScanResolver, GatePassScanResolver>();
+        services.AddScoped<IDemoIssuanceService, DemoIssuanceService>();
         return services;
     }
 }

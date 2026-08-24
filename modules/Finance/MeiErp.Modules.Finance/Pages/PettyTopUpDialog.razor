@@ -72,7 +72,7 @@
         {
             var result = await Petty.TopUpAsync(
                 BoxId, _amount, _fromId!.Value,
-                DateOnly.FromDateTime(_date ?? DateTime.Today), _note);
+                DateOnly.FromDateTime(_date ?? Clock.Today.ToDateTime(TimeOnly.MinValue)), _note);
 
             if (result.Failed) { _error = result.Error; return; }
 

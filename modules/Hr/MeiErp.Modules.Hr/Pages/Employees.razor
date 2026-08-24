@@ -4,30 +4,41 @@
 @rendermode InteractiveServer
 @inject IEmployeeService Staff
 @inject ISnackbar Snackbar
-@inject IDialogService Dialogs
 
-<PageTitle>Employees</PageTitle>
+<ListShell Title="Employees"
+           Subtitle="Staff records. An employee is separate from a login - plenty of staff never sign in."
+           Icon="@Icons.Material.Outlined.Badge"
+           Loading="_loading"
+           IsEmpty="@(!_loading && _rows.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.Badge"
+           EmptyTitle="No employees yet"
+           EmptyHint="Add a staff record to get started - a login can be linked later, or never.">
+    <Actions>
+        <AuthorizeView Policy="@HrModule.EmployeesManage">
+            <Authorized>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.PersonAdd" OnClick="@(() => Edit(null))">
+                    New employee
+                </MudButton>
+                <MudTooltip Text="Open as a full page instead">
+                    <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Href="/hr/employees/new" />
+                </MudTooltip>
+            </Authorized>
+        </AuthorizeView>
+    </Actions>
 
-<div class="d-flex align-center mb-1">
-    <div>
-        <MudText Typo="Typo.h5">Employees</MudText>
-        <MudText Typo="Typo.body2" Class="mud-text-secondary">
-            Staff records. An employee is separate from a login - plenty of staff never sign in.
-        </MudText>
-    </div>
-    <MudSpacer />
-    <AuthorizeView Policy="@HrModule.EmployeesManage">
-        <Authorized>
-            <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                       StartIcon="@Icons.Material.Filled.PersonAdd" OnClick="@(() => Edit(null))">
-                New employee
-            </MudButton>
-        </Authorized>
-    </AuthorizeView>
-</div>
+    <EmptyAction>
+        <AuthorizeView Policy="@HrModule.EmployeesManage">
+            <Authorized>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.PersonAdd" OnClick="@(() => Edit(null))">
+                    New employee
+                </MudButton>
+            </Authorized>
+        </AuthorizeView>
+    </EmptyAction>
 
-<MudPaper Outlined="true" Elevation="0" Class="mt-4">
-    <MudToolBar Dense="true">
+    <Toolbar>
         <MudTextField @bind-Value="_search" @bind-Value:after="LoadAsync"
                       Placeholder="Search name, staff number or designation"
                       Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
@@ -35,10 +46,11 @@
         <MudSpacer />
         <MudSwitch T="bool" @bind-Value="_includeLeavers" @bind-Value:after="LoadAsync"
                    Color="Color.Primary" Label="Include leavers" />
-    </MudToolBar>
+    </Toolbar>
 
+    <ChildContent>
     <MudDataGrid T="Employee" Items="_rows" Dense="true" Hover="true" Elevation="0"
-                 Loading="_loading" Filterable="false" RowsPerPage="25">
+                 Filterable="false" RowsPerPage="25">
         <Columns>
             <PropertyColumn Property="@(e => e.Code)" Title="Staff no." />
             <TemplateColumn Title="Name" SortBy="@(e => e.FullName)">
@@ -75,9 +87,16 @@
             </TemplateColumn>
             <TemplateColumn Title="" Sortable="false">
                 <CellTemplate>
+                    <MudIconButton Icon="@Icons.Material.Outlined.Print" Size="Size.Small" Href="@($"/print/hr/employee/{context.Item.Id}")" Target="_blank" />
+                    <AuthorizeView Policy="@HrModule.DocumentsView" Context="documents">
+                        <MudIconButton Icon="@Icons.Material.Outlined.AttachFile" Size="Size.Small" Href="@($"/hr/employees/{context.Item.Id}/documents")" />
+                    </AuthorizeView>
                     <AuthorizeView Policy="@HrModule.EmployeesManage" Context="perms">
                         <Authorized>
                             <div class="d-flex justify-end">
+                                <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small"
+                                               Href="@($"/hr/employees/{context.Item.Id}")"
+                                               title="Open as a page" />
                                 <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small"
                                                OnClick="@(() => Edit(context.Item))" />
                             </div>
@@ -86,19 +105,23 @@
                 </CellTemplate>
             </TemplateColumn>
         </Columns>
-        <NoRecordsContent>
-            <MudText Class="pa-8 text-center mud-text-secondary">
-                No employees yet. Add one to get started.
-            </MudText>
-        </NoRecordsContent>
     </MudDataGrid>
-</MudPaper>
+    </ChildContent>
+</ListShell>
+
+@if (_editing)
+{
+    <EmployeeEditor AsDialog="true" EmployeeId="_editingId"
+                    Saved="LoadAsync" Closed="@(() => { _editing = false; return Task.CompletedTask; })" />
+}
 
 @code {
     private IReadOnlyList<Employee> _rows = [];
     private string? _search;
     private bool _includeLeavers;
     private bool _loading = true;
+    private bool _editing;
+    private int? _editingId;
 
     protected override Task OnInitializedAsync() => LoadAsync();
 
@@ -117,13 +140,9 @@
         _ => Color.Default
     };
 
-    private async Task Edit(Employee? row)
+    private void Edit(Employee? row)
     {
-        var parameters = new DialogParameters<EmployeeEditor> { { x => x.EmployeeId, row?.Id } };
-        var dialog = await Dialogs.ShowAsync<EmployeeEditor>(
-            row is null ? "New employee" : "Edit employee", parameters,
-            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
-
-        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+        _editingId = row?.Id;
+        _editing = true;
     }
 }

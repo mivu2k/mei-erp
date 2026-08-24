@@ -1,0 +1,11 @@
+@page "/hr/employees/new"
+@page "/hr/employees/{Id:int}"
+@attribute [Authorize(Policy = HrModule.EmployeesManage)]
+@rendermode InteractiveServer
+
+@* The dialog and this page render the same editor; only the frame differs. *@
+<EmployeeEditor AsDialog="false" EmployeeId="Id" />
+
+@code {
+    [Parameter] public int? Id { get; set; }
+}

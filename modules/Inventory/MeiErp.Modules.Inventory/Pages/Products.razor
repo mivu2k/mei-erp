@@ -1,0 +1,97 @@
+@page "/inventory/products"
+@attribute [Authorize(Policy=InventoryModule.ProductsManage)]
+@inject IProductHierarchyService Hierarchy
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<ListShell Title="Product families"
+           Subtitle="Families organize stock-keeping models and their accessories. Quantities remain on the individual model/accessory item."
+           Icon="@Icons.Material.Outlined.Category"
+           IsEmpty="@(_rows.Count == 0 && _edit is null)"
+           EmptyIcon="@Icons.Material.Outlined.Category"
+           EmptyTitle="No product families yet"
+           EmptyHint="Group related models and accessories into a family so they list together.">
+    <Actions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="@(()=>Edit(new ProductFamily()))">New family</MudButton>
+    </Actions>
+
+    <EmptyAction>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="@(()=>Edit(new ProductFamily()))">New family</MudButton>
+    </EmptyAction>
+
+    <ChildContent>
+    <div class="pa-3">
+    @foreach(var family in _rows)
+    {
+        <MudPaper Class="pa-4 mb-3" Outlined="true" Elevation="0">
+            <div class="d-flex align-center">
+                <div>
+                    <MudText Typo="Typo.h6">@family.Name</MudText>
+                    <MudText Typo="Typo.caption">@family.Category · @family.SkuPrefix</MudText>
+                </div>
+                <MudSpacer/>
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" OnClick="@(()=>Edit(family))"/>
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(()=>Delete(family.Id))"/>
+            </div>
+            @foreach(var model in family.Items.Where(x=>x.Kind==InventoryItemKind.Model))
+            {
+                <div class="mt-2 ml-2">
+                    <b>@model.Code — @model.Name</b> <span class="mud-text-secondary">@model.QuantityOnHand @model.Unit</span>
+                    @foreach(var acc in family.Items.Where(x=>x.ParentItemId==model.Id))
+                    {
+                        <div class="ml-6">↳ @acc.Code — @acc.Name <span class="mud-text-secondary">@acc.QuantityOnHand @acc.Unit</span></div>
+                    }
+                </div>
+            }
+            <MudButton Class="mt-3" Size="Size.Small" Href="/inventory/items">Add/edit model or accessory</MudButton>
+        </MudPaper>
+    }
+    @if(_edit is not null)
+    {
+        <MudPaper Class="pa-4" Outlined="true" Elevation="0">
+            <MudTextField @bind-Value="_edit.Name" Label="Name"/>
+            <MudTextField @bind-Value="_edit.Category" Label="Category"/>
+            <MudTextField @bind-Value="_edit.SkuPrefix" Label="SKU prefix"/>
+            <MudTextField @bind-Value="_edit.Description" Label="Description" Lines="2"/>
+            <MudSwitch @bind-Value="_edit.IsActive" Label="Active"/>
+            <div class="d-flex justify-end gap-2">
+                <MudButton OnClick="@(()=>_edit=null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">Save</MudButton>
+            </div>
+        </MudPaper>
+    }
+    </div>
+    </ChildContent>
+</ListShell>
+
+@code{
+    private List<ProductFamily> _rows=[];
+    private ProductFamily? _edit;
+
+    protected override async Task OnInitializedAsync()=>await Load();
+    private async Task Load()=>_rows=await Hierarchy.ListAsync();
+
+    private void Edit(ProductFamily x)=>_edit=new(){Id=x.Id,Name=x.Name,Category=x.Category,SkuPrefix=x.SkuPrefix,Description=x.Description,IsActive=x.Id==0||x.IsActive};
+
+    private async Task Save()
+    {
+        try
+        {
+            await Hierarchy.SaveAsync(_edit!);
+            _edit=null;
+            await Load();
+            Snackbar.Add("Product family saved.",Severity.Success);
+        }
+        catch(Exception ex){Snackbar.Add(ex.Message,Severity.Error);}
+    }
+
+    private async Task Delete(int id)
+    {
+        try{await Hierarchy.DeleteAsync(id);await Load();}
+        catch(Exception ex){Snackbar.Add(ex.Message,Severity.Error);}
+    }
+}

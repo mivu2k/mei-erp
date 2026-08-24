@@ -2,9 +2,10 @@
 @inject IEmployeeService Staff
 @inject IClock Clock
 @inject ISnackbar Snackbar
+@inject NavigationManager Nav
 
-<MudDialog>
-    <DialogContent>
+<DocumentShell @ref="_shell" AsDialog="AsDialog" Title="@Title" Error="@_error" OnClose="DismissedAsync">
+    <Body>
         <MudForm @ref="_form">
             <MudSelect T="int" @bind-Value="_leaveTypeId" Label="Leave type" Required="true"
                        Variant="Variant.Outlined" Class="mb-4">
@@ -34,15 +35,9 @@
                           Variant="Variant.Outlined"
                           HelperText="Who picks up your work. Helps whoever approves this." />
         </MudForm>
+    </Body>
 
-        @if (_error is not null)
-        {
-            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
-        }
-    </DialogContent>
-
-    <DialogActions>
-        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+    <Buttons>
         <MudButton Variant="Variant.Text" OnClick="@(() => SaveAsync(false))" Disabled="_busy">
             Save draft
         </MudButton>
@@ -50,13 +45,23 @@
                    OnClick="@(() => SaveAsync(true))" Disabled="_busy">
             Save &amp; submit
         </MudButton>
-    </DialogActions>
-</MudDialog>
+    </Buttons>
+</DocumentShell>
 
 @code {
-    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public bool AsDialog { get; set; }
     [Parameter] public int? RequestId { get; set; }
-    [Parameter] public int EmployeeId { get; set; }
+
+    /// <summary>Passed from the list when opened as a dialog. When opened as a
+    /// page (e.g. a fresh tab) there is no route segment for it, so it is
+    /// resolved from the signed-in user instead.</summary>
+    [Parameter] public int? EmployeeId { get; set; }
+
+    [Parameter] public EventCallback Saved { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
+
+    private string Title => RequestId is null ? "Request leave" : "Edit request";
+    private int _employeeId;
 
     private MudForm? _form;
     private IReadOnlyList<LeaveType> _types = [];
@@ -77,6 +82,7 @@
             var existing = await Leave.GetAsync(RequestId.Value);
             if (existing is not null)
             {
+                _employeeId = existing.EmployeeId;
                 _leaveTypeId = existing.LeaveTypeId;
                 _range = new DateRange(
                     existing.FromDate.ToDateTime(TimeOnly.MinValue),
@@ -86,9 +92,13 @@
                 _coveredBy = existing.CoveredByName;
             }
         }
-        else if (_types.Count > 0)
+        else
         {
-            _leaveTypeId = _types[0].Id;
+            if (_types.Count > 0) _leaveTypeId = _types[0].Id;
+
+            // Passed in when opened from the list; resolved from the signed-in
+            // user when opened as a page, since there is no route segment for it.
+            _employeeId = EmployeeId ?? (await Leave.MeAsync())?.Id ?? 0;
         }
     }
 
@@ -117,7 +127,7 @@
         try
         {
             var saved = await Leave.SaveDraftAsync(new LeaveRequestInput(
-                RequestId, EmployeeId, _leaveTypeId,
+                RequestId, _employeeId, _leaveTypeId,
                 DateOnly.FromDateTime(_range.Start.Value),
                 DateOnly.FromDateTime(_range.End.Value),
                 _reason, _coveredBy));
@@ -141,8 +151,19 @@
                 Snackbar.Add("Draft saved.", Severity.Success);
             }
 
-            Dialog.Close(DialogResult.Ok(true));
+            RequestId = saved.Value.Id;
+            await Saved.InvokeAsync();
+            if (AsDialog && _shell is not null) await _shell.CloseAsync();
         }
         finally { _busy = false; }
+    }
+
+    private DocumentShell? _shell;
+    
+    /// <summary>The shell has already closed itself; just react to it.</summary>
+    private async Task DismissedAsync()
+    {
+        if (Closed.HasDelegate) { await Closed.InvokeAsync(); return; }
+        Nav.NavigateTo("/hr/leave");
     }
 }

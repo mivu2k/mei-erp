@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+  <PropertyGroup>
+    <RootNamespace>MeiErp.Modules.Ledger</RootNamespace>
+    <AddRazorSupportForMvc>true</AddRazorSupportForMvc>
+  </PropertyGroup>
+  <ItemGroup><FrameworkReference Include="Microsoft.AspNetCore.App" /></ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\platform\MeiErp.Platform.Kernel\MeiErp.Platform.Kernel.csproj" />
+    <ProjectReference Include="..\..\..\platform\MeiErp.Platform.Persistence\MeiErp.Platform.Persistence.csproj" />
+    <ProjectReference Include="..\..\..\platform\MeiErp.Platform.Reporting\MeiErp.Platform.Reporting.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="MudBlazor" />
+  </ItemGroup>
+</Project>

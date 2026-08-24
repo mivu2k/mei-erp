@@ -1,0 +1,10 @@
+@page "/purchase/quotations"
+@attribute [Authorize(Policy = PurchaseModule.QuotationsView)]
+@rendermode InteractiveServer
+
+<PageTitle>Supplier quotations</PageTitle>
+
+<AuthorizeView Policy="@PurchaseModule.QuotationsManage" Context="manage">
+    <Authorized><QuotationList IsPurchase="true" CanManage="true" /></Authorized>
+    <NotAuthorized><QuotationList IsPurchase="true" CanManage="false" /></NotAuthorized>
+</AuthorizeView>

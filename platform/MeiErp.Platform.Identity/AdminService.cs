@@ -141,7 +141,7 @@ public sealed class AdminService(
         {
             UserName = input.Email,
             Email = input.Email,
-            EmailConfirmed = true,
+            EmailConfirmed = false,
             FullName = input.FullName,
             EmployeeCode = string.IsNullOrWhiteSpace(input.EmployeeCode) ? null : input.EmployeeCode,
             Designation = input.Designation,
@@ -180,9 +180,11 @@ public sealed class AdminService(
                 "user.manager-cycle");
         }
 
+        var emailChanged = !string.Equals(user.Email, input.Email, StringComparison.OrdinalIgnoreCase);
         user.FullName = input.FullName;
         user.Email = input.Email;
         user.UserName = input.Email;
+        if (emailChanged) user.EmailConfirmed = false;
         user.EmployeeCode = string.IsNullOrWhiteSpace(input.EmployeeCode) ? null : input.EmployeeCode;
         user.Designation = input.Designation;
         user.DepartmentId = string.IsNullOrWhiteSpace(input.DepartmentId) ? null : input.DepartmentId;

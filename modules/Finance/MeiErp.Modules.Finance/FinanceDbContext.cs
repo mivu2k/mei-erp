@@ -14,6 +14,7 @@ public class FinanceDbContext(
     public DbSet<Voucher> Vouchers => Set<Voucher>();
     public DbSet<VoucherLine> VoucherLines => Set<VoucherLine>();
     public DbSet<PaymentRequest> PaymentRequests => Set<PaymentRequest>();
+    public DbSet<PaymentRequestLine> PaymentRequestLines => Set<PaymentRequestLine>();
     public DbSet<FiscalYear> FiscalYears => Set<FiscalYear>();
     public DbSet<ThirdParty> ThirdParties => Set<ThirdParty>();
     public DbSet<PettyCashBox> PettyCashBoxes => Set<PettyCashBox>();
@@ -31,6 +32,7 @@ public class FinanceDbContext(
     public DbSet<PayslipLine> PayslipLines => Set<PayslipLine>();
     public DbSet<Reconciliation> Reconciliations => Set<Reconciliation>();
     public DbSet<ReconciliationLine> ReconciliationLines => Set<ReconciliationLine>();
+    public DbSet<PostingRule> PostingRules => Set<PostingRule>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -62,6 +64,9 @@ public class FinanceDbContext(
 
             // Finding the voucher a module's document produced, and vice versa.
             b.HasIndex(v => new { v.SourceModule, v.SourceDocumentType, v.SourceDocumentId });
+            b.Property(v => v.SourceIdempotencyKey).HasMaxLength(200);
+            b.HasIndex(v => new { v.SourceModule, v.SourceDocumentType, v.SourceIdempotencyKey })
+             .IsUnique().HasFilter("\"SourceIdempotencyKey\" IS NOT NULL AND \"IsDeleted\" = false");
 
             b.HasMany(v => v.Lines).WithOne(l => l.Voucher)
              .HasForeignKey(l => l.VoucherId)
@@ -71,6 +76,17 @@ public class FinanceDbContext(
             b.Ignore(v => v.TotalCredit);
             b.Ignore(v => v.IsBalanced);
             b.Ignore(v => v.IsPosted);
+        });
+
+        modelBuilder.Entity<PostingRule>(b =>
+        {
+            b.Property(r => r.EventType).HasMaxLength(200).IsRequired();
+            b.Property(r => r.Name).HasMaxLength(200).IsRequired();
+            b.HasIndex(r => r.EventType).IsUnique().HasFilter("\"IsDeleted\" = false");
+            b.HasOne(r => r.DebitAccount).WithMany().HasForeignKey(r => r.DebitAccountId)
+             .OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(r => r.CreditAccount).WithMany().HasForeignKey(r => r.CreditAccountId)
+             .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<VoucherLine>(b =>
@@ -96,6 +112,11 @@ public class FinanceDbContext(
             b.HasIndex(l => l.AccountId);
             b.HasIndex(l => l.PersonId);
 
+            // Match Account's soft-delete filter on the required navigation.
+            // AccountService prevents deleting an account with history, so this
+            // cannot hide a legitimate posted line and removes EF's model warning.
+            b.HasQueryFilter(l => !l.Account!.IsDeleted);
+
             b.Ignore(l => l.SignedAmount);
         });
 
@@ -107,6 +128,7 @@ public class FinanceDbContext(
             b.Property(r => r.Description).HasMaxLength(2000);
             b.Property(r => r.DecisionComment).HasMaxLength(2000);
             b.Property(r => r.PayeeName).HasMaxLength(200);
+            b.HasIndex(r => r.IsDirectorRequest);
 
             b.HasOne(r => r.ExpenseAccount).WithMany()
              .HasForeignKey(r => r.ExpenseAccountId)
@@ -121,6 +143,21 @@ public class FinanceDbContext(
              .OnDelete(DeleteBehavior.Restrict);
 
             b.HasIndex(r => r.Status);
+
+            b.HasMany(r => r.Lines).WithOne(l => l.PaymentRequest)
+             .HasForeignKey(l => l.PaymentRequestId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PaymentRequestLine>(b =>
+        {
+            b.Property(l => l.Category).HasMaxLength(120);
+            b.Property(l => l.Reason).HasMaxLength(500);
+            b.Property(l => l.Description).HasMaxLength(1000);
+            b.HasOne(l => l.ExpenseAccount).WithMany()
+             .HasForeignKey(l => l.ExpenseAccountId)
+             .OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(l => l.PaymentRequestId);
         });
 
         modelBuilder.Entity<FiscalYear>(b =>
@@ -204,6 +241,7 @@ public class FinanceDbContext(
         {
             b.Property(a => a.Reference).HasMaxLength(30).IsRequired();
             b.HasIndex(a => a.Reference).IsUnique().HasFilter("\"IsDeleted\" = false");
+            b.HasIndex(a => a.IsDirectorRequest);
             b.Property(a => a.Purpose).HasMaxLength(500).IsRequired();
             b.Property(a => a.PersonName).HasMaxLength(200);
             b.Property(a => a.DecisionComment).HasMaxLength(2000);

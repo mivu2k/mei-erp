@@ -18,6 +18,8 @@
         {
             <div class="signin-error" role="alert">@ErrorMessage</div>
         }
+        @if (Reset is not null) { <div class="signin-error" role="status">Password reset. You can sign in now.</div> }
+        @if (Confirmed is not null) { <div class="signin-error" role="status">Email confirmed. You can sign in now.</div> }
 
         @* A plain form post: setting an auth cookie needs a real HTTP response,
            which an interactive circuit can no longer produce. *@
@@ -39,12 +41,15 @@
 
             <button type="submit">Sign in</button>
         </form>
+        <p class="mt-4"><a href="/forgot-password">Forgot password or need a confirmation link?</a></p>
     </div>
 </div>
 
 @code {
     [SupplyParameterFromQuery] private string? Error { get; set; }
     [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
+    [SupplyParameterFromQuery] private string? Reset { get; set; }
+    [SupplyParameterFromQuery] private string? Confirmed { get; set; }
 
     private string _companyName = "MEI";
 
@@ -61,6 +66,8 @@
     private string ErrorMessage => Error switch
     {
         "locked" => "That account is locked for 15 minutes after too many failed attempts.",
+        "confirm" => "Confirm your email address before signing in.",
+        "confirm-invalid" => "That confirmation link is invalid or expired.",
         _ => "That email and password do not match. Please try again."
     };
 

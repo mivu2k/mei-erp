@@ -7,30 +7,39 @@
 @inject ISnackbar Snackbar
 @inject IDialogService Dialogs
 
-<PageTitle>Payment requests</PageTitle>
+<ListShell Title="@(_directorOnly ? "Director fund requests" : "Payment requests")"
+           Subtitle="Approval authorises the spend. The voucher is posted when it is actually paid."
+           Icon="@Icons.Material.Outlined.RequestPage"
+           Loading="_loading"
+           IsEmpty="@(_rows.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.RequestPage"
+           EmptyTitle="No payment requests yet"
+           EmptyHint="Raise one to get spend approved before it is paid.">
+    <Actions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+            @(_directorOnly ? "New director fund" : "New request")
+        </MudButton>
+        <MudTooltip Text="Open as a full page instead">
+            <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Href="/finance/requests/new" />
+        </MudTooltip>
+    </Actions>
 
-<div class="d-flex align-center mb-1">
-    <div>
-        <MudText Typo="Typo.h5">Payment requests</MudText>
-        <MudText Typo="Typo.body2" Class="mud-text-secondary">
-            Approval authorises the spend. The voucher is posted when it is actually paid.
-        </MudText>
-    </div>
-    <MudSpacer />
-    <MudButton Variant="Variant.Filled" Color="Color.Primary"
-               StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
-        New request
-    </MudButton>
-</div>
+    <EmptyAction>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+            @(_directorOnly ? "New director fund" : "New request")
+        </MudButton>
+    </EmptyAction>
 
-<MudPaper Outlined="true" Elevation="0" Class="mt-4">
-    <MudToolBar Dense="true">
+    <Toolbar>
         <MudSwitch T="bool" @bind-Value="_mineOnly" @bind-Value:after="LoadAsync"
                    Color="Color.Primary" Label="Only mine" />
-    </MudToolBar>
+    </Toolbar>
 
+    <ChildContent>
     <MudDataGrid T="PaymentRequest" Items="_rows" Dense="true" Hover="true" Elevation="0"
-                 Loading="_loading" Filterable="false" RowsPerPage="25">
+                 Filterable="false" RowsPerPage="25">
         <Columns>
             <PropertyColumn Property="@(r => r.Reference)" Title="Reference" />
             <TemplateColumn Title="For">
@@ -76,6 +85,9 @@
                         @if (context.Item.Status is PaymentRequestStatus.Draft
                                                  or PaymentRequestStatus.Returned)
                         {
+                            <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small"
+                                           Href="@($"/finance/requests/{context.Item.Id}")"
+                                           title="Open as a page" />
                             <MudButton Size="Size.Small" Variant="Variant.Text"
                                        OnClick="@(() => Edit(context.Item))">Edit</MudButton>
                             <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
@@ -94,23 +106,29 @@
                 </CellTemplate>
             </TemplateColumn>
         </Columns>
-        <NoRecordsContent>
-            <MudText Class="pa-8 text-center mud-text-secondary">No payment requests yet.</MudText>
-        </NoRecordsContent>
     </MudDataGrid>
-</MudPaper>
+    </ChildContent>
+</ListShell>
+
+@if (_editing)
+{
+    <RequestEditor AsDialog="true" RequestId="_editingId" DirectorMode="_directorOnly"
+                   Saved="LoadAsync" Closed="@(() => { _editing = false; return Task.CompletedTask; })" />
+}
 
 @code {
     private IReadOnlyList<PaymentRequest> _rows = [];
     private bool _mineOnly;
     private bool _loading = true;
+    [SupplyParameterFromQuery(Name = "director")]
+    public bool _directorOnly { get; set; }
 
     protected override Task OnInitializedAsync() => LoadAsync();
 
     private async Task LoadAsync()
     {
         _loading = true;
-        _rows = await Payments.ListAsync(null, _mineOnly);
+        _rows = await Payments.ListAsync(null, _mineOnly, _directorOnly);
         _loading = false;
     }
 
@@ -124,14 +142,13 @@
         _ => Color.Default
     };
 
-    private async Task Edit(PaymentRequest? row)
-    {
-        var parameters = new DialogParameters<RequestEditor> { { x => x.RequestId, row?.Id } };
-        var dialog = await Dialogs.ShowAsync<RequestEditor>(
-            row is null ? "New request" : "Edit request", parameters,
-            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+    private bool _editing;
+    private int? _editingId;
 
-        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    private void Edit(PaymentRequest? row)
+    {
+        _editingId = row?.Id;
+        _editing = true;
     }
 
     private async Task Submit(PaymentRequest row)

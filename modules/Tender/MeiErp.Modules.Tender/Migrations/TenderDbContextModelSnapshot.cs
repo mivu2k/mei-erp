@@ -23,6 +23,85 @@ namespace MeiErp.Modules.Tender.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("MeiErp.Modules.Tender.FileMovement", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("Action")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("DeletedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly?>("DueBack")
+                        .HasColumnType("date");
+
+                    b.Property<string>("FromHolderName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("FromLocation")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("ModifiedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly>("MovedOn")
+                        .HasColumnType("date");
+
+                    b.Property<int>("PhysicalFileId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Purpose")
+                        .HasColumnType("text");
+
+                    b.Property<string>("RecordedById")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("RecordedByName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Remarks")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ToHolderName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ToHolderUserId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ToLocation")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("PhysicalFileId", "MovedOn");
+
+                    b.ToTable("FileMovements", "tender");
+                });
+
             modelBuilder.Entity("MeiErp.Modules.Tender.Guarantee", b =>
                 {
                     b.Property<int>("Id")
@@ -34,9 +113,27 @@ namespace MeiErp.Modules.Tender.Migrations
                     b.Property<decimal>("Amount")
                         .HasColumnType("numeric(18,4)");
 
+                    b.Property<string>("BankContactPerson")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("BankContactPhone")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
                     b.Property<string>("BankName")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
+
+                    b.Property<string>("BranchName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<decimal?>("Charges")
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<DateOnly?>("ClaimPeriodEndDate")
+                        .HasColumnType("date");
 
                     b.Property<string>("CreatedBy")
                         .HasColumnType("text");
@@ -57,6 +154,9 @@ namespace MeiErp.Modules.Tender.Migrations
                         .HasMaxLength(60)
                         .HasColumnType("character varying(60)");
 
+                    b.Property<int>("InstrumentType")
+                        .HasColumnType("integer");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
@@ -72,8 +172,22 @@ namespace MeiErp.Modules.Tender.Migrations
                     b.Property<DateTime?>("ModifiedUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("ReleaseReference")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<DateOnly?>("ReleasedOn")
                         .HasColumnType("date");
+
+                    b.Property<string>("Remarks")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int?>("RenewalOfGuaranteeId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
 
                     b.Property<int>("TenderRecordId")
                         .HasColumnType("integer");
@@ -89,6 +203,101 @@ namespace MeiErp.Modules.Tender.Migrations
                     b.ToTable("Guarantees", "tender");
                 });
 
+            modelBuilder.Entity("MeiErp.Modules.Tender.PhysicalFile", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateOnly?>("ClosedOn")
+                        .HasColumnType("date");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("DeletedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FileNumber")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("HolderName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("HolderUserId")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Location")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("ModifiedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly>("OpenedOn")
+                        .HasColumnType("date");
+
+                    b.Property<int>("OwnerId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("OwnerReference")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("OwnerTitle")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<int>("OwnerType")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Remarks")
+                        .HasColumnType("text");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<string>("VolumeNumber")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FileNumber")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("OwnerType", "OwnerId")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false");
+
+                    b.ToTable("PhysicalFiles", "tender");
+                });
+
             modelBuilder.Entity("MeiErp.Modules.Tender.Project", b =>
                 {
                     b.Property<int>("Id")
@@ -100,6 +309,10 @@ namespace MeiErp.Modules.Tender.Migrations
                     b.Property<DateOnly?>("ActualEndDate")
                         .HasColumnType("date");
 
+                    b.Property<decimal?>("Budget")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
                     b.Property<string>("ClientName")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
@@ -108,6 +321,18 @@ namespace MeiErp.Modules.Tender.Migrations
                         .IsRequired()
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)");
+
+                    b.Property<string>("ContactEmail")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ContactPerson")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ContactPhone")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
 
                     b.Property<decimal?>("ContractValue")
                         .HasColumnType("numeric(18,4)");
@@ -124,8 +349,16 @@ namespace MeiErp.Modules.Tender.Migrations
                     b.Property<DateTime?>("DeletedUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("Description")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("Location")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
 
                     b.Property<string>("ManagerName")
                         .HasColumnType("text");
@@ -143,6 +376,13 @@ namespace MeiErp.Modules.Tender.Migrations
                         .IsRequired()
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<int>("Priority")
+                        .HasColumnType("integer");
 
                     b.Property<DateOnly?>("StartDate")
                         .HasColumnType("date");
@@ -172,6 +412,73 @@ namespace MeiErp.Modules.Tender.Migrations
                     b.ToTable("Projects", "tender");
                 });
 
+            modelBuilder.Entity("MeiErp.Modules.Tender.ProjectMilestone", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateOnly?>("AchievedDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("DeletedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text");
+
+                    b.Property<DateOnly>("DueDate")
+                        .HasColumnType("date");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("ModifiedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<decimal?>("PaymentAmount")
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("ProjectId", "DueDate");
+
+                    b.ToTable("ProjectMilestones", "tender");
+                });
+
             modelBuilder.Entity("MeiErp.Modules.Tender.ProjectTask", b =>
                 {
                     b.Property<int>("Id")
@@ -179,6 +486,10 @@ namespace MeiErp.Modules.Tender.Migrations
                         .HasColumnType("integer");
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal?>("ActualHours")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(18,4)");
 
                     b.Property<string>("AssigneeName")
                         .HasColumnType("text");
@@ -208,6 +519,10 @@ namespace MeiErp.Modules.Tender.Migrations
                     b.Property<DateOnly?>("DueDate")
                         .HasColumnType("date");
 
+                    b.Property<decimal?>("EstimatedHours")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(18,4)");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
@@ -217,11 +532,24 @@ namespace MeiErp.Modules.Tender.Migrations
                     b.Property<DateTime?>("ModifiedUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
                     b.Property<int>("PercentComplete")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Priority")
                         .HasColumnType("integer");
 
                     b.Property<int>("ProjectId")
                         .HasColumnType("integer");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<DateOnly?>("StartDate")
+                        .HasColumnType("date");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
@@ -240,6 +568,125 @@ namespace MeiErp.Modules.Tender.Migrations
                     b.ToTable("ProjectTasks", "tender");
                 });
 
+            modelBuilder.Entity("MeiErp.Modules.Tender.TenderCompetitor", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("BidderName")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("DeletedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsOwnBid")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("ModifiedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("QuotedAmount")
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<int?>("Rank")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Remarks")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int>("TenderRecordId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("TenderRecordId", "Rank");
+
+                    b.ToTable("Competitors", "tender");
+                });
+
+            modelBuilder.Entity("MeiErp.Modules.Tender.TenderDocument", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("Category")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("DeletedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly?>("DocumentDate")
+                        .HasColumnType("date");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("ModifiedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("ReferenceNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("TenderRecordId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("TenderRecordId", "Category");
+
+                    b.ToTable("Documents", "tender");
+                });
+
             modelBuilder.Entity("MeiErp.Modules.Tender.TenderItem", b =>
                 {
                     b.Property<int>("Id")
@@ -248,16 +695,67 @@ namespace MeiErp.Modules.Tender.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("Brand")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<decimal?>("CostRate")
                         .HasColumnType("numeric(18,4)");
+
+                    b.Property<string>("CountryOfOrigin")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("DeletedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("DeliveryDays")
+                        .HasColumnType("integer");
 
                     b.Property<string>("Description")
                         .IsRequired()
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
+                    b.Property<decimal?>("EstimatedRate")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ItemCode")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("ModifiedUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<decimal>("Quantity")
                         .HasColumnType("numeric(18,4)");
+
+                    b.Property<string>("Remarks")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Specification")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
 
                     b.Property<int>("TenderRecordId")
                         .HasColumnType("integer");
@@ -272,6 +770,8 @@ namespace MeiErp.Modules.Tender.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("IsDeleted");
+
                     b.HasIndex("TenderRecordId");
 
                     b.ToTable("TenderItems", "tender");
@@ -285,10 +785,40 @@ namespace MeiErp.Modules.Tender.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<DateOnly?>("AwardDate")
+                        .HasColumnType("date");
+
+                    b.Property<decimal?>("AwardedValue")
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<int?>("BidValidityDays")
+                        .HasColumnType("integer");
+
                     b.Property<string>("ClientName")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
+
+                    b.Property<int?>("CompletionPeriodDays")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ContactEmail")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ContactPerson")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ContactPhone")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateOnly?>("ContractEndDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly?>("ContractStartDate")
+                        .HasColumnType("date");
 
                     b.Property<string>("CreatedBy")
                         .HasColumnType("text");
@@ -296,17 +826,49 @@ namespace MeiErp.Modules.Tender.Migrations
                     b.Property<DateTime>("CreatedUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int?>("DefectLiabilityPeriodMonths")
+                        .HasColumnType("integer");
+
                     b.Property<string>("DeletedBy")
                         .HasColumnType("text");
 
                     b.Property<DateTime?>("DeletedUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("Department")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<decimal?>("EmdAmount")
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<string>("EmdExemptionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<decimal?>("EstimatedValue")
                         .HasColumnType("numeric(18,4)");
 
+                    b.Property<DateOnly?>("FinancialOpeningDate")
+                        .HasColumnType("date");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
+
+                    b.Property<bool>("IsEmdExempted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("IssuingAuthority")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<decimal?>("L1Amount")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
 
                     b.Property<string>("ModifiedBy")
                         .HasColumnType("text");
@@ -321,11 +883,26 @@ namespace MeiErp.Modules.Tender.Migrations
                     b.Property<DateOnly?>("OpeningDate")
                         .HasColumnType("date");
 
+                    b.Property<int?>("OurRank")
+                        .HasColumnType("integer");
+
                     b.Property<string>("OwnerName")
                         .HasColumnType("text");
 
                     b.Property<string>("OwnerUserId")
                         .HasColumnType("text");
+
+                    b.Property<string>("PaymentTerms")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<decimal?>("PerformanceGuaranteePercentage")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<string>("PortalReference")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
 
                     b.Property<DateOnly?>("PublishedOn")
                         .HasColumnType("date");
@@ -335,11 +912,24 @@ namespace MeiErp.Modules.Tender.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
+                    b.Property<decimal?>("RetentionMoneyPercentage")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(18,4)");
+
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
                     b.Property<DateOnly?>("SubmissionDeadline")
                         .HasColumnType("date");
+
+                    b.Property<int>("SubmissionMode")
+                        .HasColumnType("integer");
+
+                    b.Property<DateOnly?>("TechnicalOpeningDate")
+                        .HasColumnType("date");
+
+                    b.Property<decimal?>("TenderFee")
+                        .HasColumnType("numeric(18,4)");
 
                     b.Property<string>("Title")
                         .IsRequired()
@@ -352,6 +942,10 @@ namespace MeiErp.Modules.Tender.Migrations
                         .HasColumnType("xid")
                         .HasColumnName("xmin");
 
+                    b.Property<string>("WorkOrderNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("IsDeleted");
@@ -363,6 +957,148 @@ namespace MeiErp.Modules.Tender.Migrations
                     b.HasIndex("Status", "SubmissionDeadline");
 
                     b.ToTable("Tenders", "tender");
+                });
+
+            modelBuilder.Entity("MeiErp.Modules.Tender.TenderTask", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal?>("ActualHours")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<string>("AssigneeName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("AssigneeUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<DateOnly?>("CompletedOn")
+                        .HasColumnType("date");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("DeletedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateOnly?>("DueDate")
+                        .HasColumnType("date");
+
+                    b.Property<decimal?>("EstimatedHours")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("ModifiedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int>("PercentComplete")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Priority")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<DateOnly?>("StartDate")
+                        .HasColumnType("date");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("TenderRecordId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("TenderRecordId", "DueDate");
+
+                    b.ToTable("TenderTasks", "tender");
+                });
+
+            modelBuilder.Entity("MeiErp.Platform.Persistence.AuditLogEntry", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("EntityId")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("EntityName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.Property<string>("ModuleKey")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("NewValues")
+                        .HasColumnType("text");
+
+                    b.Property<string>("OldValues")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("TimestampUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UserId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("UserName")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("AuditLogs", "platform", t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
                 });
 
             modelBuilder.Entity("MeiErp.Platform.Persistence.OutboxMessage", b =>
@@ -407,6 +1143,17 @@ namespace MeiErp.Modules.Tender.Migrations
                     b.ToTable("outbox_messages", "tender");
                 });
 
+            modelBuilder.Entity("MeiErp.Modules.Tender.FileMovement", b =>
+                {
+                    b.HasOne("MeiErp.Modules.Tender.PhysicalFile", "PhysicalFile")
+                        .WithMany("Movements")
+                        .HasForeignKey("PhysicalFileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("PhysicalFile");
+                });
+
             modelBuilder.Entity("MeiErp.Modules.Tender.Guarantee", b =>
                 {
                     b.HasOne("MeiErp.Modules.Tender.TenderRecord", "Tender")
@@ -416,6 +1163,17 @@ namespace MeiErp.Modules.Tender.Migrations
                         .IsRequired();
 
                     b.Navigation("Tender");
+                });
+
+            modelBuilder.Entity("MeiErp.Modules.Tender.ProjectMilestone", b =>
+                {
+                    b.HasOne("MeiErp.Modules.Tender.Project", "Project")
+                        .WithMany("Milestones")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Project");
                 });
 
             modelBuilder.Entity("MeiErp.Modules.Tender.ProjectTask", b =>
@@ -429,6 +1187,28 @@ namespace MeiErp.Modules.Tender.Migrations
                     b.Navigation("Project");
                 });
 
+            modelBuilder.Entity("MeiErp.Modules.Tender.TenderCompetitor", b =>
+                {
+                    b.HasOne("MeiErp.Modules.Tender.TenderRecord", "Tender")
+                        .WithMany("Competitors")
+                        .HasForeignKey("TenderRecordId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Tender");
+                });
+
+            modelBuilder.Entity("MeiErp.Modules.Tender.TenderDocument", b =>
+                {
+                    b.HasOne("MeiErp.Modules.Tender.TenderRecord", "Tender")
+                        .WithMany("Documents")
+                        .HasForeignKey("TenderRecordId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Tender");
+                });
+
             modelBuilder.Entity("MeiErp.Modules.Tender.TenderItem", b =>
                 {
                     b.HasOne("MeiErp.Modules.Tender.TenderRecord", "Tender")
@@ -440,16 +1220,40 @@ namespace MeiErp.Modules.Tender.Migrations
                     b.Navigation("Tender");
                 });
 
+            modelBuilder.Entity("MeiErp.Modules.Tender.TenderTask", b =>
+                {
+                    b.HasOne("MeiErp.Modules.Tender.TenderRecord", "Tender")
+                        .WithMany("Tasks")
+                        .HasForeignKey("TenderRecordId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Tender");
+                });
+
+            modelBuilder.Entity("MeiErp.Modules.Tender.PhysicalFile", b =>
+                {
+                    b.Navigation("Movements");
+                });
+
             modelBuilder.Entity("MeiErp.Modules.Tender.Project", b =>
                 {
+                    b.Navigation("Milestones");
+
                     b.Navigation("Tasks");
                 });
 
             modelBuilder.Entity("MeiErp.Modules.Tender.TenderRecord", b =>
                 {
+                    b.Navigation("Competitors");
+
+                    b.Navigation("Documents");
+
                     b.Navigation("Guarantees");
 
                     b.Navigation("Items");
+
+                    b.Navigation("Tasks");
                 });
 #pragma warning restore 612, 618
         }

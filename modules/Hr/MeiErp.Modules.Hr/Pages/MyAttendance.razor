@@ -1,0 +1,48 @@
+@page "/hr/me"
+@attribute [Authorize(Policy = HrModule.AttendanceView)]
+@rendermode InteractiveServer
+@inject IAttendanceService Attendance
+@inject ILeaveService Leaves
+@inject IClock Clock
+
+<PageTitle>My Attendance</PageTitle>
+<MudText Typo="Typo.h5">My Attendance</MudText>
+
+@if (_employee is null)
+{
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-4">
+        Your login is not linked to an employee record. Ask HR to set the linked login on your employee profile.
+    </MudAlert>
+}
+else
+{
+    <div class="d-flex gap-3 my-4">
+        <MudSelect T="int" @bind-Value="_month" Label="Month" Variant="Variant.Outlined">
+            @for (var m = 1; m <= 12; m++) { var value = m; <MudSelectItem Value="@value">@(new DateTime(2000, value, 1).ToString("MMMM"))</MudSelectItem> }
+        </MudSelect>
+        <MudNumericField T="int" @bind-Value="_year" Label="Year" Variant="Variant.Outlined" />
+        <MudButton Variant="Variant.Filled" OnClick="LoadAsync">View</MudButton>
+    </div>
+    @if (_summary is not null)
+    {
+        <MudGrid Class="mb-4">
+            @foreach (var item in SummaryCards()) { <MudItem xs="6" md="2"><MudPaper Class="pa-3" Outlined="true"><MudText Typo="Typo.caption">@item.Label</MudText><MudText Typo="Typo.h5">@item.Value</MudText></MudPaper></MudItem> }
+        </MudGrid>
+        <MudTable Items="_summary.Days.Values.OrderBy(x => x.Date)" Dense="true" Hover="true" Outlined="true">
+            <HeaderContent><MudTh>Date</MudTh><MudTh>Status</MudTh><MudTh>In</MudTh><MudTh>Out</MudTh><MudTh>Worked</MudTh><MudTh>Late</MudTh><MudTh>Overtime</MudTh></HeaderContent>
+            <RowTemplate><MudTd>@context.Date.ToString("ddd, dd MMM")</MudTd><MudTd>@context.Status</MudTd><MudTd>@context.FirstIn?.ToString("HH:mm")</MudTd><MudTd>@context.LastOut?.ToString("HH:mm")</MudTd><MudTd>@Minutes(context.WorkedMinutes)</MudTd><MudTd>@context.LateMinutes</MudTd><MudTd>@context.OvertimeMinutes</MudTd></RowTemplate>
+        </MudTable>
+        <MudText Typo="Typo.h6" Class="mt-5 mb-2">Leave balances @_year</MudText>
+        <MudTable Items="_balances" Dense="true" Outlined="true"><HeaderContent><MudTh>Type</MudTh><MudTh>Entitled</MudTh><MudTh>Pending</MudTh><MudTh>Taken</MudTh><MudTh>Available</MudTh></HeaderContent>
+            <RowTemplate><MudTd>@context.LeaveType?.Name</MudTd><MudTd>@(context.Entitled + context.CarriedForward)</MudTd><MudTd>@context.Pending</MudTd><MudTd>@context.Taken</MudTd><MudTd><b>@context.Available</b></MudTd></RowTemplate></MudTable>
+    }
+}
+
+@code {
+    private Employee? _employee; private MonthlyAttendance? _summary; private IReadOnlyList<LeaveBalance> _balances = [];
+    private int _year; private int _month;
+    protected override async Task OnInitializedAsync() { _year = Clock.Today.Year; _month = Clock.Today.Month; _employee = await Leaves.MeAsync(); await LoadAsync(); }
+    private async Task LoadAsync() { if (_employee is null) return; _summary = (await Attendance.MonthlyAsync(_year, _month)).SingleOrDefault(); _balances = await Leaves.BalancesAsync(_employee.Id, _year); }
+    private IEnumerable<(string Label, string Value)> SummaryCards() { if (_summary is null) yield break; yield return ("Present", _summary.Present.ToString()); yield return ("Late", _summary.Late.ToString()); yield return ("Absent", _summary.Absent.ToString()); yield return ("Leave", _summary.OnLeave.ToString()); yield return ("Worked", Minutes(_summary.WorkedMinutes)); yield return ("Overtime", Minutes(_summary.OvertimeMinutes)); }
+    private static string Minutes(int value) => $"{value / 60}h {value % 60:00}m";
+}

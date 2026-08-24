@@ -7,32 +7,39 @@
 @inject ISnackbar Snackbar
 @inject IDialogService Dialogs
 
-<PageTitle>Utilities</PageTitle>
+<ListShell Title="Utilities"
+           Subtitle="Bills tracked per connection, so a jump in consumption shows against its own history."
+           Icon="@Icons.Material.Outlined.Bolt"
+           Loading="_loading"
+           IsEmpty="@(_bills.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.Bolt"
+           EmptyTitle="No bills recorded yet"
+           EmptyHint="Add a connection first, then enter its bills as they arrive.">
+    <Actions>
+        <MudButton Variant="Variant.Text" OnClick="NewConnection" Class="mr-2">New connection</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Bill(null))"
+                   Disabled="_connections.Count == 0">Enter a bill</MudButton>
+        <MudTooltip Text="Open as a full page instead">
+            <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Href="/finance/utilities/bills/new" />
+        </MudTooltip>
+    </Actions>
 
-<div class="d-flex align-center mb-1">
-    <div>
-        <MudText Typo="Typo.h5">Utilities</MudText>
-        <MudText Typo="Typo.body2" Class="mud-text-secondary">
-            Bills tracked per connection, so a jump in consumption shows against its own history.
-        </MudText>
-    </div>
-    <MudSpacer />
-    <MudButton Variant="Variant.Text" OnClick="NewConnection" Class="mr-2">New connection</MudButton>
-    <MudButton Variant="Variant.Filled" Color="Color.Primary"
-               StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Bill(null))"
-               Disabled="_connections.Count == 0">Enter a bill</MudButton>
-</div>
+    <Stats>
+        @if (_overdue.Count > 0)
+        {
+            <StatTile Label="Overdue" Value="@_overdue.Count.ToString()" Colour="Color.Warning"
+                      Caption="@_overdue.Sum(b => b.Amount).ToString("N2")" />
+        }
+    </Stats>
 
-@if (_overdue.Count > 0)
-{
-    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mt-4">
-        <b>@_overdue.Count</b> unpaid @(_overdue.Count == 1 ? "bill is" : "bills are") past due,
-        totalling @_overdue.Sum(b => b.Amount).ToString("N2").
-    </MudAlert>
-}
+    <EmptyAction>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Bill(null))"
+                   Disabled="_connections.Count == 0">Enter a bill</MudButton>
+    </EmptyAction>
 
-<MudPaper Outlined="true" Elevation="0" Class="mt-4">
-    <MudToolBar Dense="true">
+    <Toolbar>
         <MudSelect T="int?" @bind-Value="_connectionId" @bind-Value:after="LoadAsync"
                    Label="Connection" Clearable="true" Variant="Variant.Text"
                    Margin="Margin.Dense" Class="mt-0" Style="max-width:260px">
@@ -44,10 +51,11 @@
         <MudSpacer />
         <MudSwitch T="bool" @bind-Value="_unpaidOnly" @bind-Value:after="LoadAsync"
                    Color="Color.Primary" Label="Unpaid only" />
-    </MudToolBar>
+    </Toolbar>
 
+    <ChildContent>
     <MudDataGrid T="UtilityBill" Items="_bills" Dense="true" Hover="true" Elevation="0"
-                 Loading="_loading" Filterable="false" RowsPerPage="25">
+                 Filterable="false" RowsPerPage="25">
         <Columns>
             <TemplateColumn Title="Connection">
                 <CellTemplate>
@@ -97,6 +105,9 @@
                     <div class="d-flex justify-end gap-1">
                         @if (!context.Item.IsPaid)
                         {
+                            <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small"
+                                           Href="@($"/finance/utilities/bills/{context.Item.Id}")"
+                                           title="Open as a page" />
                             <MudButton Size="Size.Small" Variant="Variant.Text"
                                        OnClick="@(() => Bill(context.Item))">Edit</MudButton>
                             <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
@@ -106,11 +117,21 @@
                 </CellTemplate>
             </TemplateColumn>
         </Columns>
-        <NoRecordsContent>
-            <MudText Class="pa-8 text-center mud-text-secondary">No bills recorded yet.</MudText>
-        </NoRecordsContent>
     </MudDataGrid>
-</MudPaper>
+    </ChildContent>
+</ListShell>
+
+@if (_addingConnection)
+{
+    <ConnectionEditor AsDialog="true"
+                       Saved="LoadAsync" Closed="@(() => { _addingConnection = false; return Task.CompletedTask; })" />
+}
+
+@if (_editingBill)
+{
+    <BillEditor AsDialog="true" BillId="_editingBillId"
+                Saved="LoadAsync" Closed="@(() => { _editingBill = false; return Task.CompletedTask; })" />
+}
 
 @code {
     private IReadOnlyList<UtilityConnection> _connections = [];
@@ -131,22 +152,16 @@
         _loading = false;
     }
 
-    private async Task NewConnection()
+    private bool _addingConnection;
+    private bool _editingBill;
+    private int? _editingBillId;
+
+    private void NewConnection() => _addingConnection = true;
+
+    private void Bill(UtilityBill? row)
     {
-        var dialog = await Dialogs.ShowAsync<ConnectionEditor>("New connection",
-            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
-
-        if (!(await dialog.Result)!.Canceled) await LoadAsync();
-    }
-
-    private async Task Bill(UtilityBill? row)
-    {
-        var parameters = new DialogParameters<BillEditor> { { x => x.BillId, row?.Id } };
-        var dialog = await Dialogs.ShowAsync<BillEditor>(
-            row is null ? "Enter a bill" : "Edit bill", parameters,
-            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
-
-        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+        _editingBillId = row?.Id;
+        _editingBill = true;
     }
 
     private async Task Pay(UtilityBill row)

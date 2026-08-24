@@ -1,0 +1,60 @@
+@page "/purchase/part-purchases"
+@attribute [Authorize(Policy = PurchaseModule.OrdersManage)]
+@rendermode InteractiveServer
+@inject IPartProcurementService Procurement
+
+<ListShell Title="Part purchases"
+           Subtitle="Receipts update last and weighted-average cost automatically."
+           Icon="@Icons.Material.Outlined.Inventory2"
+           Loading="false"
+           IsEmpty="@(_rows.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.Inventory2"
+           EmptyTitle="No part purchases yet"
+           EmptyHint="Receive a purchase to start tracking parts cost.">
+    <Actions>
+        <MudButton Href="/purchase/part-purchases/new" Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add">
+            Receive purchase
+        </MudButton>
+    </Actions>
+
+    <EmptyAction>
+        <MudButton Href="/purchase/part-purchases/new" Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add">
+            Receive purchase
+        </MudButton>
+    </EmptyAction>
+
+    <Toolbar>
+        <MudTextField @bind-Value="_search" @bind-Value:after="Load"
+                      Placeholder="Search purchase, supplier or invoice"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                      Variant="Variant.Text" Margin="Margin.Dense" Class="mt-0" />
+    </Toolbar>
+
+    <ChildContent>
+    <MudTable Items="_rows" Dense="true" Hover="true">
+        <HeaderContent>
+            <MudTh>Number</MudTh><MudTh>Date</MudTh><MudTh>Supplier</MudTh><MudTh>Invoice</MudTh><MudTh>Lines</MudTh><MudTh>Total</MudTh><MudTh/>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.Number</MudTd>
+            <MudTd>@context.PurchasedOn.ToString("d MMM yyyy")</MudTd>
+            <MudTd>@context.PartyName</MudTd>
+            <MudTd>@context.SupplierInvoiceNumber</MudTd>
+            <MudTd>@context.Lines.Count</MudTd>
+            <MudTd>@context.Total.ToString("N2")</MudTd>
+            <MudTd><MudIconButton Href="@($"/print/purchase/part-purchase/{context.Id}")" Target="_blank" Icon="@Icons.Material.Outlined.Print" /></MudTd>
+        </RowTemplate>
+    </MudTable>
+    </ChildContent>
+</ListShell>
+
+@code {
+    private IReadOnlyList<PartPurchase> _rows = [];
+    private string? _search;
+
+    protected override Task OnInitializedAsync() => Load();
+
+    private async Task Load() => _rows = await Procurement.PurchasesAsync(_search);
+}

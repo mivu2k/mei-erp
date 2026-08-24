@@ -1,5 +1,6 @@
 using MeiErp.Platform.Kernel;
 using MeiErp.Platform.Workflow;
+using MeiErp.Platform.Messaging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,6 +18,8 @@ public static class FinanceModule
     public const string VouchersReverse = "finance.vouchers.reverse";
     public const string RequestsRaise = "finance.requests.raise";
     public const string RequestsPay = "finance.requests.pay";
+    public const string DirectorFundsRequest = "finance.directorfunds.request";
+    public const string DirectorFundsView = "finance.directorfunds.view";
     public const string ReportsView = "finance.reports.view";
     public const string YearClose = "finance.year.close";
     public const string PartiesManage = "finance.parties.manage";
@@ -28,6 +31,7 @@ public static class FinanceModule
     public const string PayrollManage = "finance.payroll.manage";
     public const string PayrollPay = "finance.payroll.pay";
     public const string ReconcileManage = "finance.reconcile.manage";
+    public const string PostingManage = "finance.posting.manage";
 
     public static ModuleDescriptor Descriptor => new()
     {
@@ -49,6 +53,8 @@ public static class FinanceModule
             new(VouchersReverse,  "Vouchers", "Reverse a posted voucher"),
             new(RequestsRaise,    "Payments", "Raise a payment request"),
             new(RequestsPay,      "Payments", "Pay an approved request and post its voucher"),
+            new(DirectorFundsRequest, "Director funds", "Raise a director fund request"),
+            new(DirectorFundsView, "Director funds", "View director fund activity"),
             new(ReportsView,      "Reports",  "See the trial balance and financial statements"),
             new(YearClose,        "Period",   "Close a fiscal year"),
             new(PartiesManage,    "Parties",  "Manage third parties and record their payments"),
@@ -59,7 +65,8 @@ public static class FinanceModule
             new(PayrollView,      "Payroll",  "See payroll runs and payslips"),
             new(PayrollManage,    "Payroll",  "Set salaries and build payroll runs"),
             new(PayrollPay,       "Payroll",  "Approve and pay a payroll run"),
-            new(ReconcileManage,  "Period",   "Reconcile a bank account to its statement")
+            new(ReconcileManage,  "Period",   "Reconcile a bank account to its statement"),
+            new(PostingManage,    "Integration", "Configure cross-module posting and retry failures")
         ],
 
         RoleTemplates =
@@ -67,18 +74,22 @@ public static class FinanceModule
             new("Accountant", "Full access to the books, short of closing the year.",
                 [AccountsView, AccountsManage, VouchersView, VouchersPost,
                  VouchersReverse, RequestsRaise, RequestsPay, ReportsView,
+                 DirectorFundsRequest, DirectorFundsView,
                  PartiesManage, PettyCashManage, UtilitiesManage,
                  AdvancesRaise, AdvancesManage, PayrollView, ReconcileManage]),
 
             new("Finance Manager", "Everything an accountant can do, plus closing the year.",
                 [AccountsView, AccountsManage, VouchersView, VouchersPost, VouchersReverse,
                  RequestsRaise, RequestsPay, ReportsView, YearClose,
+                 DirectorFundsRequest, DirectorFundsView,
                  PartiesManage, PettyCashManage, UtilitiesManage,
                  AdvancesRaise, AdvancesManage,
-                 PayrollView, PayrollManage, PayrollPay, ReconcileManage]),
+                 PayrollView, PayrollManage, PayrollPay, ReconcileManage, PostingManage]),
 
             new("Requester", "Can ask for money and follow their own requests.",
-                [RequestsRaise, AdvancesRaise])
+                [RequestsRaise, AdvancesRaise]),
+            new("Director", "Can raise and review director fund requests.",
+                [DirectorFundsRequest, DirectorFundsView, RequestsRaise, AdvancesRaise])
         ],
 
         Nav =
@@ -88,6 +99,7 @@ public static class FinanceModule
             new("Day book",          "/finance/day-book", "MenuBook", VouchersView),
 
             new("Payment requests",  "/finance/requests", "RequestQuote", RequestsRaise, "Spending"),
+            new("Director funds",    "/finance/advances?director=true", "AccountBalanceWallet", DirectorFundsView, "Spending"),
             new("Advances",          "/finance/advances", "AccountBalanceWallet", AdvancesRaise, "Spending"),
             new("Petty cash",        "/finance/petty-cash", "Savings", PettyCashManage, "Spending"),
             new("Utilities",         "/finance/utilities", "Bolt", UtilitiesManage, "Spending"),
@@ -95,10 +107,13 @@ public static class FinanceModule
             new("Third parties",     "/finance/third-parties", "Handshake", PartiesManage, "People"),
             new("Payroll",           "/finance/payroll", "Payments", PayrollView, "People"),
             new("My payslips",       "/finance/my-payslips", "Description", null, "People"),
+            new("My ledger",         "/finance/my-ledger", "AccountBalanceWallet", null, "People"),
 
             new("Reports",           "/finance/reports", "Assessment", ReportsView, "Period"),
             new("Reconciliation",    "/finance/reconcile", "Rule", ReconcileManage, "Period"),
-            new("Fiscal years",      "/finance/year-end", "EventAvailable", YearClose, "Period")
+            new("Fiscal years",      "/finance/year-end", "EventAvailable", YearClose, "Period"),
+            new("Posting rules",     "/finance/posting-rules", "AltRoute", PostingManage, "Integration"),
+            new("Posting failures",  "/finance/posting-failures", "ErrorOutline", PostingManage, "Integration")
         ],
 
         Approvables =
@@ -124,6 +139,7 @@ public static class FinanceModule
         services.AddScoped<IAccountService, AccountService>();
         services.AddScoped<IVoucherService, VoucherService>();
         services.AddScoped<IFinanceReports, FinanceReports>();
+        services.AddScoped<IPersonalLedgerService, PersonalLedgerService>();
         services.AddScoped<IPaymentRequestService, PaymentRequestService>();
         services.AddScoped<IApprovalSink, PaymentRequestApprovalSink>();
         services.AddScoped<IThirdPartyService, ThirdPartyService>();
@@ -134,6 +150,9 @@ public static class FinanceModule
         services.AddScoped<IPayrollService, PayrollService>();
         services.AddScoped<IReconciliationService, ReconciliationService>();
         services.AddScoped<IYearEndService, YearEndService>();
+        services.AddScoped<IPostingRuleService, PostingRuleService>();
+        services.AddScoped<IIntegrationEventConsumer, GoodsReceiptPostingHandler>();
+        services.AddScoped<IIntegrationEventConsumer, RepairOrderPostingHandler>();
 
         return services;
     }
@@ -181,6 +200,7 @@ public sealed class FinanceSeeder(FinanceDbContext db, IClock clock)
             ("3000", "Equity",              AccountType.Equity,    false, null),
             ("3100", "Capital",             AccountType.Equity,    true,  "3000"),
             ("3200", "Retained earnings",   AccountType.Equity,    true,  "3000"),
+            ("3210", "Director capital",     AccountType.Equity,    true,  "3000"),
 
             ("4000", "Income",              AccountType.Income,    false, null),
             ("4100", "Sales",               AccountType.Income,    true,  "4000"),

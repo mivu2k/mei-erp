@@ -1,0 +1,94 @@
+@page "/purchase/parts"
+@attribute [Authorize(Policy = PurchaseModule.OrdersManage)]
+@rendermode InteractiveServer
+@inject IPartProcurementService Procurement
+@inject ISnackbar Snackbar
+
+<ListShell Title="Parts catalog"
+           Subtitle="Selling prices backed by purchase-cost history."
+           Icon="@Icons.Material.Outlined.Category"
+           Loading="false"
+           IsEmpty="@(_rows.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.Category"
+           EmptyTitle="No parts yet"
+           EmptyHint="Add a part to start recording purchase cost and selling price against it.">
+    <Actions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="New">
+            New part
+        </MudButton>
+    </Actions>
+
+    <EmptyAction>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="New">
+            New part
+        </MudButton>
+    </EmptyAction>
+
+    <Toolbar>
+        <MudTextField @bind-Value="_search" @bind-Value:after="Load"
+                      Placeholder="Search name or SKU"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                      Variant="Variant.Text" Margin="Margin.Dense" Class="mt-0" />
+    </Toolbar>
+
+    <ChildContent>
+    @if (_editing is not null)
+    {
+        <MudPaper Class="pa-4 ma-3" Outlined="true">
+            <MudGrid>
+                <MudItem xs="12" md="2"><MudTextField @bind-Value="_editing.Sku" Label="SKU" /></MudItem>
+                <MudItem xs="12" md="4"><MudTextField @bind-Value="_editing.Name" Label="Name" Required="true" /></MudItem>
+                <MudItem xs="6" md="2"><MudTextField @bind-Value="_editing.Brand" Label="Brand" /></MudItem>
+                <MudItem xs="6" md="2"><MudTextField @bind-Value="_editing.Model" Label="Model" /></MudItem>
+                <MudItem xs="12" md="2"><MudNumericField @bind-Value="_editing.SellingPrice" Label="Selling price" /></MudItem>
+            </MudGrid>
+            <MudButton Variant="Variant.Filled" OnClick="Save">Save</MudButton>
+            <MudButton OnClick="@(() => _editing = null)">Cancel</MudButton>
+        </MudPaper>
+    }
+    <MudTable Items="_rows" Dense="true" Hover="true">
+        <HeaderContent>
+            <MudTh>SKU</MudTh><MudTh>Part</MudTh><MudTh>Last cost</MudTh><MudTh>Average cost</MudTh><MudTh>Selling</MudTh><MudTh>Margin</MudTh><MudTh/>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.Sku</MudTd>
+            <MudTd>@context.Name<br /><small>@context.Brand @context.Model</small></MudTd>
+            <MudTd>@context.LastPurchaseCost?.ToString("N2")</MudTd>
+            <MudTd>@context.AverageCost?.ToString("N2")</MudTd>
+            <MudTd>@context.SellingPrice.ToString("N2")</MudTd>
+            <MudTd>@context.MarginPercent?.ToString("N2")%</MudTd>
+            <MudTd><MudIconButton Icon="@Icons.Material.Outlined.Edit" OnClick="@(() => Edit(context))" /></MudTd>
+        </RowTemplate>
+    </MudTable>
+    </ChildContent>
+</ListShell>
+
+@code {
+    private IReadOnlyList<Part> _rows = [];
+    private Part? _editing;
+    private string? _search;
+
+    protected override Task OnInitializedAsync() => Load();
+
+    private async Task Load() => _rows = await Procurement.PartsAsync(_search);
+
+    private void New() => _editing = new();
+
+    private void Edit(Part x) => _editing = new()
+    {
+        Id = x.Id, Sku = x.Sku, Name = x.Name, Brand = x.Brand, Model = x.Model, SellingPrice = x.SellingPrice
+    };
+
+    private async Task Save()
+    {
+        var r = await Procurement.SavePartAsync(_editing!);
+        Snackbar.Add(r.Ok ? "Part saved." : r.Error!, r.Ok ? Severity.Success : Severity.Error);
+        if (r.Ok)
+        {
+            _editing = null;
+            await Load();
+        }
+    }
+}

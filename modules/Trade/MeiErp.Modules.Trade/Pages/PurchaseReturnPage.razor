@@ -1,0 +1,8 @@
+@page "/purchase/returns/new"
+@attribute [Authorize(Policy = PurchaseModule.ReceiptPost)]
+@rendermode InteractiveServer
+
+<PageTitle>Record a supplier return</PageTitle>
+
+@* The dialog and this page render the same editor; only the frame differs. *@
+<ReturnEditor AsDialog="false" SupplierReturns="true" />

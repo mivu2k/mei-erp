@@ -1,0 +1,54 @@
+@inject IFleetService Fleet
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-3">Complete maintenance history for <b>@Registration</b>.</MudText>
+        <MudTable Items="_rows" Dense="true" Hover="true">
+            <HeaderContent>
+                <MudTh>Date</MudTh><MudTh>Kind</MudTh><MudTh>Description</MudTh><MudTh>Odometer</MudTh>
+                <MudTh>Cost</MudTh><MudTh>Vendor</MudTh><MudTh>Next due</MudTh><MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.Date</MudTd><MudTd>@context.Kind</MudTd><MudTd>@context.Description</MudTd>
+                <MudTd>@context.Odometer</MudTd><MudTd>@context.Cost.ToString("N2")</MudTd>
+                <MudTd>@context.Vendor</MudTd><MudTd>@context.NextDueDate @context.NextDueOdometer</MudTd>
+                <MudTd>
+                    <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" OnClick="@(() => Edit(context))" />
+                    <MudIconButton Icon="@Icons.Material.Outlined.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => DeleteAsync(context))" />
+                </MudTd>
+            </RowTemplate>
+            <NoRecordsContent><MudText Class="pa-4 mud-text-secondary">No service records yet.</MudText></NoRecordsContent>
+        </MudTable>
+    </DialogContent>
+    <DialogActions><MudButton OnClick="@(() => Dialog.Close())">Close</MudButton></DialogActions>
+</MudDialog>
+
+@if (_editingServiceId is not null)
+{
+    <ServiceEditor AsDialog="true" VehicleId="VehicleId" ServiceId="_editingServiceId"
+                    Registration="Registration" LastOdometer="LastOdometer"
+                    Saved="LoadAsync" Closed="@(() => { _editingServiceId = null; return Task.CompletedTask; })" />
+}
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int VehicleId { get; set; }
+    [Parameter] public string Registration { get; set; } = "";
+    [Parameter] public int? LastOdometer { get; set; }
+    private IReadOnlyList<VehicleService> _rows = [];
+    private int? _editingServiceId;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+    private async Task LoadAsync() => _rows = await Fleet.ServicesAsync(VehicleId);
+
+    private void Edit(VehicleService row) => _editingServiceId = row.Id;
+
+    private async Task DeleteAsync(VehicleService row)
+    {
+        var result = await Fleet.DeleteServiceAsync(row.Id);
+        Snackbar.Add(result.Ok ? "Service record removed." : result.Error!,
+            result.Ok ? Severity.Success : Severity.Error);
+        if (result.Ok) await LoadAsync();
+    }
+}

@@ -1,0 +1,141 @@
+@inject IPartyService PartyMaster
+
+@*
+    The party master, shown from one side.
+
+    Sales and Purchase are separate modules, but a customer and a supplier are
+    the same kind of record and very often the same company - so there is one
+    table underneath and this one component, filtered to the side the module
+    cares about. Two party lists would mean the same company entered twice, with
+    two sets of contact details drifting apart.
+
+    A party that is both still appears in both lists, and the badge says so.
+*@
+
+<ListShell Title="@Title"
+           Subtitle="@Subtitle"
+           Icon="@(Suppliers ? Icons.Material.Outlined.LocalShipping : Icons.Material.Outlined.People)"
+           Loading="_loading"
+           IsEmpty="@(_rows.Count == 0)"
+           EmptyIcon="@(Suppliers ? Icons.Material.Outlined.LocalShipping : Icons.Material.Outlined.People)"
+           EmptyTitle="@($"No {Noun}s yet")"
+           EmptyHint="@($"Add a {Noun} before raising an order.")">
+    <Actions>
+        @if (CanManage)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+                New @Noun
+            </MudButton>
+            <MudTooltip Text="Open as a full page instead">
+                <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Href="@($"{BasePath}/new")" />
+            </MudTooltip>
+        }
+    </Actions>
+
+    <EmptyAction>
+        @if (CanManage)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+                New @Noun
+            </MudButton>
+        }
+    </EmptyAction>
+
+    <Toolbar>
+        <MudTextField @bind-Value="_search" @bind-Value:after="LoadAsync"
+                      Placeholder="Search name or code" DebounceInterval="300"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                      Variant="Variant.Text" Margin="Margin.Dense" Class="mt-0" />
+    </Toolbar>
+
+    <ChildContent>
+    <MudDataGrid T="Party" Items="_rows" Dense="true" Hover="true" Elevation="0"
+                 Loading="_loading" Filterable="false" RowsPerPage="25">
+        <Columns>
+            <PropertyColumn Property="@(p => p.Code)" Title="Code" />
+            <PropertyColumn Property="@(p => p.Name)" Title="Name" />
+            <TemplateColumn Title="Also">
+                <CellTemplate>
+                    @* Only worth saying when they are the other side as well. *@
+                    @if (context.Item.IsCustomer && context.Item.IsSupplier)
+                    {
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                 Color="Color.Secondary">
+                            @(Suppliers ? "Also a customer" : "Also a supplier")
+                        </MudChip>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            <PropertyColumn Property="@(p => p.Phone)" Title="Phone" />
+            <TemplateColumn Title="Terms">
+                <CellTemplate>
+                    @if (context.Item.PaymentTermDays is { } days)
+                    {
+                        <span>Net @days</span>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="" Sortable="false">
+                <CellTemplate>
+                    <div class="d-flex justify-end gap-1">
+                        <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small"
+                                       Href="@($"{BasePath}/{context.Item.Id}")" title="Open as a page" />
+                        @if (CanManage)
+                        {
+                            <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small"
+                                           OnClick="@(() => Edit(context.Item))" />
+                        }
+                    </div>
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+    </MudDataGrid>
+    </ChildContent>
+</ListShell>
+
+@if (_editing)
+{
+    <PartyEditor AsDialog="true" PartyId="_editingId" DefaultSupplier="Suppliers"
+                 Saved="LoadAsync" Closed="@(() => { _editing = false; return Task.CompletedTask; })" />
+}
+
+@code {
+    /// <summary>True for the supplier side, false for the customer side.</summary>
+    [Parameter] public bool Suppliers { get; set; }
+
+    /// <summary>Whether the holding module's permission allows editing.</summary>
+    [Parameter] public bool CanManage { get; set; }
+
+    private IReadOnlyList<Party> _rows = [];
+    private string? _search;
+    private bool _loading = true, _editing;
+    private int? _editingId;
+
+    private string BasePath => Suppliers ? "/purchase/suppliers" : "/sales/customers";
+    private string Noun => Suppliers ? "supplier" : "customer";
+    private string Title => Suppliers ? "Suppliers" : "Customers";
+
+    private string Subtitle => Suppliers
+        ? "Everyone the business buys from. One record per company."
+        : "Everyone the business sells to. One record per company.";
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _rows = await PartyMaster.ListAsync(
+            customers: Suppliers ? null : true,
+            suppliers: Suppliers ? true : null,
+            search: _search);
+        _loading = false;
+    }
+
+    private void Edit(Party? row)
+    {
+        _editingId = row?.Id;
+        _editing = true;
+    }
+}

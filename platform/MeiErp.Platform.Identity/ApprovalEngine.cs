@@ -479,6 +479,7 @@ public sealed class ApprovalEngine(
         var approval = await db.ApprovalRequests
             .Include(r => r.StepStates)
             .Include(r => r.Actions)
+            .AsSplitQuery()
             .Where(r => r.DocumentType == documentType && r.DocumentId == documentId)
             .OrderByDescending(r => r.Id)
             .FirstOrDefaultAsync(ct);
@@ -503,6 +504,7 @@ public sealed class ApprovalEngine(
         db.ApprovalRequests
           .Include(r => r.StepStates)
           .Include(r => r.Actions)
+          .AsSplitQuery()
           .FirstOrDefaultAsync(r => r.Id == id, ct);
 }
 
@@ -519,9 +521,17 @@ public sealed class ApproverResolver(
         ApprovalStepState step, ApprovalRequest request, CancellationToken ct = default)
     {
         var direct = await ResolveDirectAsync(step, request, ct);
-        if (direct.Count == 0) return direct;
+        var eligible = direct.Count == 0
+            ? []
+            : await ApplyDelegationsAsync(direct, request, ct);
 
-        return await ApplyDelegationsAsync(direct, request, ct);
+        if (step.EscalatedUtc is not null && !string.IsNullOrWhiteSpace(step.EscalateToRole))
+        {
+            var escalated = await directory.InRoleAsync(step.EscalateToRole, ct);
+            eligible = [.. eligible, .. escalated.Select(Map)];
+        }
+
+        return eligible.DistinctBy(a => a.UserId).ToList();
     }
 
     private async Task<List<EligibleApprover>> ResolveDirectAsync(

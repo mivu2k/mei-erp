@@ -2,89 +2,92 @@
 @inject IAccountService Chart
 @inject IClock Clock
 @inject ISnackbar Snackbar
+@inject NavigationManager Nav
 
-<MudDialog>
-    <DialogContent>
-        <div class="d-flex gap-3 mb-4">
-            <MudSelect T="VoucherType" @bind-Value="_type" Label="Type" Variant="Variant.Outlined">
-                @foreach (var t in new[] { VoucherType.Journal, VoucherType.Payment,
-                                           VoucherType.Receipt, VoucherType.Contra })
-                {
-                    <MudSelectItem Value="@t">@t</MudSelectItem>
-                }
-            </MudSelect>
-            <MudDatePicker Label="Date" Variant="Variant.Outlined"
-                           Date="_date" DateChanged="@(d => _date = d)" />
-        </div>
+<DocumentShell @ref="_shell" AsDialog="AsDialog" Title="@Title" Error="@_error" OnClose="DismissedAsync">
+    <Body>
+        <FormSection Title="The entry" Icon="@Icons.Material.Outlined.ReceiptLong"
+                     Hint="The date decides which year it lands in — nothing posts into a closed one.">
+            <div class="app-form-grid">
+                <MudSelect T="VoucherType" @bind-Value="_type" Label="Type" Variant="Variant.Outlined">
+                    @foreach (var t in new[] { VoucherType.Journal, VoucherType.Payment,
+                                               VoucherType.Receipt, VoucherType.Contra })
+                    {
+                        <MudSelectItem Value="@t">@t</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudDatePicker Label="Date" Variant="Variant.Outlined"
+                               Date="_date" DateChanged="@(d => _date = d)" />
+                <MudTextField @bind-Value="_narration" Label="Narration" Variant="Variant.Outlined"
+                              Class="app-form-wide"
+                              HelperText="What this entry is for, in plain words." />
+            </div>
+        </FormSection>
 
-        <MudTextField @bind-Value="_narration" Label="Narration" Variant="Variant.Outlined"
-                      Class="mb-4" HelperText="What this entry is for, in plain words." />
+        @* The line grid is a table, not a set of standalone fields, so it stays
+           out of app-form-grid. *@
+        <FormSection Title="Lines" Icon="@Icons.Material.Outlined.TableRows"
+                     Hint="Debits must equal credits; an unbalanced entry is refused at posting.">
+            <MudTable T="LineRow" Items="_lines" Dense="true" Hover="false" Elevation="0" Bordered="true">
+                <HeaderContent>
+                    <MudTh>Account</MudTh>
+                    <MudTh Style="width:150px">Debit</MudTh>
+                    <MudTh Style="width:150px">Credit</MudTh>
+                    <MudTh Style="width:48px"></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>
+                        <MudSelect T="int" @bind-Value="context.AccountId" Variant="Variant.Text"
+                                   Margin="Margin.Dense" Dense="true">
+                            @foreach (var a in _accounts)
+                            {
+                                <MudSelectItem T="int" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudTd>
+                    <MudTd>
+                        <MudNumericField T="decimal" @bind-Value="context.Debit"
+                                         @bind-Value:after="Recalculate"
+                                         Variant="Variant.Text" Margin="Margin.Dense" HideSpinButtons="true" />
+                    </MudTd>
+                    <MudTd>
+                        <MudNumericField T="decimal" @bind-Value="context.Credit"
+                                         @bind-Value:after="Recalculate"
+                                         Variant="Variant.Text" Margin="Margin.Dense" HideSpinButtons="true" />
+                    </MudTd>
+                    <MudTd>
+                        <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small"
+                                       OnClick="@(() => Remove(context))" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
 
-        <MudTable T="LineRow" Items="_lines" Dense="true" Hover="false" Elevation="0" Bordered="true">
-            <HeaderContent>
-                <MudTh>Account</MudTh>
-                <MudTh Style="width:150px">Debit</MudTh>
-                <MudTh Style="width:150px">Credit</MudTh>
-                <MudTh Style="width:48px"></MudTh>
-            </HeaderContent>
-            <RowTemplate>
-                <MudTd>
-                    <MudSelect T="int" @bind-Value="context.AccountId" Variant="Variant.Text"
-                               Margin="Margin.Dense" Dense="true">
-                        @foreach (var a in _accounts)
-                        {
-                            <MudSelectItem T="int" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
-                        }
-                    </MudSelect>
-                </MudTd>
-                <MudTd>
-                    <MudNumericField T="decimal" @bind-Value="context.Debit"
-                                     @bind-Value:after="Recalculate"
-                                     Variant="Variant.Text" Margin="Margin.Dense" HideSpinButtons="true" />
-                </MudTd>
-                <MudTd>
-                    <MudNumericField T="decimal" @bind-Value="context.Credit"
-                                     @bind-Value:after="Recalculate"
-                                     Variant="Variant.Text" Margin="Margin.Dense" HideSpinButtons="true" />
-                </MudTd>
-                <MudTd>
-                    <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small"
-                                   OnClick="@(() => Remove(context))" />
-                </MudTd>
-            </RowTemplate>
-        </MudTable>
+            <MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="AddLine" Class="mt-2">Add line</MudButton>
 
-        <MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
-                   OnClick="AddLine" Class="mt-2">Add line</MudButton>
-
-        @* The running difference, shown while typing. An entry that does not
-           balance is refused at posting, so saying so now saves a round trip. *@
-        <div class="d-flex mt-4 pa-3" style="background:var(--mud-palette-background-grey);border-radius:6px">
-            <MudText Typo="Typo.body2">
-                Debits <b>@_totalDebit.ToString("N2")</b>
-                &nbsp;·&nbsp; Credits <b>@_totalCredit.ToString("N2")</b>
-            </MudText>
-            <MudSpacer />
-            @if (_totalDebit == _totalCredit && _totalDebit > 0)
-            {
-                <MudText Typo="Typo.body2" Color="Color.Success"><b>Balanced</b></MudText>
-            }
-            else
-            {
-                <MudText Typo="Typo.body2" Color="Color.Error">
-                    <b>Out by @Math.Abs(_totalDebit - _totalCredit).ToString("N2")</b>
+            @* The running difference, shown while typing. An entry that does not
+               balance is refused at posting, so saying so now saves a round trip. *@
+            <div class="d-flex mt-4 pa-3" style="background:var(--mud-palette-background-grey);border-radius:6px">
+                <MudText Typo="Typo.body2">
+                    Debits <b>@_totalDebit.ToString("N2")</b>
+                    &nbsp;·&nbsp; Credits <b>@_totalCredit.ToString("N2")</b>
                 </MudText>
-            }
-        </div>
+                <MudSpacer />
+                @if (_totalDebit == _totalCredit && _totalDebit > 0)
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Success"><b>Balanced</b></MudText>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Error">
+                        <b>Out by @Math.Abs(_totalDebit - _totalCredit).ToString("N2")</b>
+                    </MudText>
+                }
+            </div>
+        </FormSection>
+    </Body>
 
-        @if (_error is not null)
-        {
-            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
-        }
-    </DialogContent>
-
-    <DialogActions>
-        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+    <Buttons>
         <MudButton Variant="Variant.Text" OnClick="@(() => SaveAsync(false))" Disabled="_busy">
             Save draft
         </MudButton>
@@ -92,12 +95,16 @@
                    OnClick="@(() => SaveAsync(true))" Disabled="_busy">
             Save &amp; post
         </MudButton>
-    </DialogActions>
-</MudDialog>
+    </Buttons>
+</DocumentShell>
 
 @code {
-    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public bool AsDialog { get; set; }
     [Parameter] public int? VoucherId { get; set; }
+    [Parameter] public EventCallback Saved { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
+
+    private string Title => VoucherId is null ? "New entry" : "Edit entry";
 
     private sealed class LineRow
     {
@@ -168,7 +175,7 @@
         {
             var saved = await Books.SaveDraftAsync(new VoucherInput(
                 VoucherId, _type,
-                DateOnly.FromDateTime(_date ?? DateTime.Today),
+                DateOnly.FromDateTime(_date ?? Clock.Today.ToDateTime(TimeOnly.MinValue)),
                 _narration,
                 [.. _lines.Where(l => l.AccountId != 0)
                           .Select(l => new VoucherLineInput(l.AccountId, l.Debit, l.Credit))]));
@@ -191,8 +198,19 @@
                 Snackbar.Add("Draft saved.", Severity.Success);
             }
 
-            Dialog.Close(DialogResult.Ok(true));
+            VoucherId = saved.Value.Id;
+            await Saved.InvokeAsync();
+            if (AsDialog && _shell is not null) await _shell.CloseAsync();
         }
         finally { _busy = false; }
+    }
+
+    private DocumentShell? _shell;
+    
+    /// <summary>The shell has already closed itself; just react to it.</summary>
+    private async Task DismissedAsync()
+    {
+        if (Closed.HasDelegate) { await Closed.InvokeAsync(); return; }
+        Nav.NavigateTo("/finance/vouchers");
     }
 }

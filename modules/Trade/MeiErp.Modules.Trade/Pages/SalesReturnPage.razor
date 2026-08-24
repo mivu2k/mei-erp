@@ -1,0 +1,8 @@
+@page "/sales/returns/new"
+@attribute [Authorize(Policy = SalesModule.DeliveryPost)]
+@rendermode InteractiveServer
+
+<PageTitle>Record a customer return</PageTitle>
+
+@* The dialog and this page render the same editor; only the frame differs. *@
+<ReturnEditor AsDialog="false" SupplierReturns="false" />

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace MeiErp.Platform.Notifications;
 
@@ -24,6 +25,7 @@ public static class NotificationRegistration
         // which is what the detail view reads best.
         services.AddScoped<INotificationChannel, InAppChannel>();
         services.AddScoped<INotificationChannel, EmailChannel>();
+        services.TryAddScoped<INotificationEmailRenderer, BasicNotificationEmailRenderer>();
 
         services.AddScoped<INotifier, NotificationService>();
 

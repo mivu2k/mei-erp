@@ -7,7 +7,7 @@ namespace MeiErp.Modules.Finance;
 public interface IPaymentRequestService
 {
     Task<IReadOnlyList<PaymentRequest>> ListAsync(
-        PaymentRequestStatus? status, bool mineOnly, CancellationToken ct = default);
+        PaymentRequestStatus? status, bool mineOnly, bool directorOnly = false, CancellationToken ct = default);
 
     Task<PaymentRequest?> GetAsync(int id, CancellationToken ct = default);
     Task<Result<PaymentRequest>> SaveDraftAsync(PaymentRequestInput input, CancellationToken ct = default);
@@ -24,7 +24,12 @@ public interface IPaymentRequestService
 
 public sealed record PaymentRequestInput(
     int? Id, string Title, string? Description, decimal Amount,
-    int? ExpenseAccountId, string? PayeeName, DateOnly NeededBy, string? DepartmentId);
+    int? ExpenseAccountId, string? PayeeName, DateOnly NeededBy, string? DepartmentId,
+    bool IsDirectorRequest = false,
+    IReadOnlyList<PaymentRequestLineInput>? Lines = null);
+
+public sealed record PaymentRequestLineInput(
+    string? Category, decimal Amount, string? Reason, string? Description, int? ExpenseAccountId);
 
 public sealed class PaymentRequestService(
     FinanceDbContext db,
@@ -36,10 +41,11 @@ public sealed class PaymentRequestService(
     public const string DocumentType = "finance.payment-request";
 
     public async Task<IReadOnlyList<PaymentRequest>> ListAsync(
-        PaymentRequestStatus? status, bool mineOnly, CancellationToken ct = default)
+        PaymentRequestStatus? status, bool mineOnly, bool directorOnly = false, CancellationToken ct = default)
     {
         var query = db.PaymentRequests.AsNoTracking()
             .Include(r => r.ExpenseAccount)
+            .Include(r => r.Lines).ThenInclude(l => l.ExpenseAccount)
             .AsQueryable();
 
         if (status is not null) query = query.Where(r => r.Status == status);
@@ -50,6 +56,8 @@ public sealed class PaymentRequestService(
             query = query.Where(r => r.RequestedByUserId == me);
         }
 
+        query = query.Where(r => r.IsDirectorRequest == directorOnly);
+
         return await query.OrderByDescending(r => r.Id).Take(500).ToListAsync(ct);
     }
 
@@ -58,6 +66,7 @@ public sealed class PaymentRequestService(
           .Include(r => r.ExpenseAccount)
           .Include(r => r.PaidFromAccount)
           .Include(r => r.Voucher)
+          .Include(r => r.Lines).ThenInclude(l => l.ExpenseAccount)
           .FirstOrDefaultAsync(r => r.Id == id, ct);
 
     public async Task<Result<PaymentRequest>> SaveDraftAsync(
@@ -66,8 +75,18 @@ public sealed class PaymentRequestService(
         if (string.IsNullOrWhiteSpace(input.Title))
             return Result.Fail<PaymentRequest>("Say what the money is for.", "request.no-title");
 
-        if (input.Amount <= 0)
+        if (input.Amount <= 0 && (input.Lines is null || input.Lines.Count == 0))
             return Result.Fail<PaymentRequest>("The amount must be more than nothing.", "request.bad-amount");
+
+        if (input.Lines is not null)
+        {
+            if (input.Lines.Count == 0)
+                return Result.Fail<PaymentRequest>("Add at least one item to an itemized request.", "request.no-lines");
+            if (input.Lines.Any(l => l.Amount <= 0))
+                return Result.Fail<PaymentRequest>("Every request item needs a positive amount.", "request.bad-line-amount");
+            if (input.Lines.Any(l => string.IsNullOrWhiteSpace(l.Reason)))
+                return Result.Fail<PaymentRequest>("Every request item needs a reason.", "request.no-line-reason");
+        }
 
         PaymentRequest request;
 
@@ -75,7 +94,7 @@ public sealed class PaymentRequestService(
         {
             request = new PaymentRequest
             {
-                Reference = await NextReferenceAsync(ct),
+                Reference = await NextReferenceAsync(input.IsDirectorRequest, ct),
                 RequestedByUserId = currentUser.UserId ?? "",
                 RequestedByName = currentUser.Name ?? "",
                 Status = PaymentRequestStatus.Draft
@@ -84,7 +103,8 @@ public sealed class PaymentRequestService(
         }
         else
         {
-            var existing = await db.PaymentRequests.FirstOrDefaultAsync(r => r.Id == input.Id, ct);
+            var existing = await db.PaymentRequests.Include(r => r.Lines)
+                .FirstOrDefaultAsync(r => r.Id == input.Id, ct);
             if (existing is null)
                 return Result.Fail<PaymentRequest>("That request no longer exists.", "request.not-found");
 
@@ -107,6 +127,24 @@ public sealed class PaymentRequestService(
         request.PayeeName = input.PayeeName;
         request.NeededBy = input.NeededBy;
         request.DepartmentId = input.DepartmentId;
+        request.IsDirectorRequest = input.IsDirectorRequest;
+
+        if (input.Lines is not null)
+        {
+            db.PaymentRequestLines.RemoveRange(request.Lines);
+            request.Lines = input.Lines.Select(line => new PaymentRequestLine
+            {
+                Category = line.Category,
+                Amount = line.Amount,
+                Reason = line.Reason,
+                Description = line.Description,
+                ExpenseAccountId = line.ExpenseAccountId
+            }).ToList();
+            request.Amount = request.Lines.Sum(line => line.Amount);
+            request.ExpenseAccountId = request.Lines.Count == 1
+                ? request.Lines[0].ExpenseAccountId
+                : null;
+        }
 
         await db.SaveChangesAsync(ct);
         return Result.Success(request);
@@ -114,7 +152,8 @@ public sealed class PaymentRequestService(
 
     public async Task<Result<PaymentRequest>> SubmitAsync(int id, CancellationToken ct = default)
     {
-        var request = await db.PaymentRequests.FirstOrDefaultAsync(r => r.Id == id, ct);
+        var request = await db.PaymentRequests.Include(r => r.Lines)
+            .FirstOrDefaultAsync(r => r.Id == id, ct);
         if (request is null)
             return Result.Fail<PaymentRequest>("That request no longer exists.", "request.not-found");
 
@@ -126,7 +165,7 @@ public sealed class PaymentRequestService(
             DocumentType: DocumentType,
             DocumentId: request.Id,
             DocumentReference: request.Reference,
-            Summary: $"{request.Title} — {request.Amount:N2}" +
+            Summary: (request.IsDirectorRequest ? "Director fund: " : "") + $"{request.Title} — {request.Amount:N2}" +
                      (request.PayeeName is null ? "" : $" to {request.PayeeName}"),
             DocumentUrl: $"/finance/requests/{request.Id}",
 
@@ -151,7 +190,8 @@ public sealed class PaymentRequestService(
     public async Task<Result<PaymentRequest>> PayAsync(
         int id, int paidFromAccountId, DateOnly date, CancellationToken ct = default)
     {
-        var request = await db.PaymentRequests.FirstOrDefaultAsync(r => r.Id == id, ct);
+        var request = await db.PaymentRequests.Include(r => r.Lines)
+            .FirstOrDefaultAsync(r => r.Id == id, ct);
         if (request is null)
             return Result.Fail<PaymentRequest>("That request no longer exists.", "request.not-found");
 
@@ -163,8 +203,11 @@ public sealed class PaymentRequestService(
                 "Only an approved request can be paid.", "request.not-approved");
         }
 
-        if (request.ExpenseAccountId is null)
+        if (request.ExpenseAccountId is null && request.Lines.Count == 0)
             return Result.Fail<PaymentRequest>("Choose which expense head this is charged to.", "request.no-expense-head");
+
+        if (request.Lines.Any(line => line.ExpenseAccountId is null))
+            return Result.Fail<PaymentRequest>("Assign an expense head to every request item before paying.", "request.no-line-expense-head");
 
         if (request.VoucherId is not null)
             return Result.Fail<PaymentRequest>("This has already been paid.", "request.already-paid");
@@ -178,8 +221,13 @@ public sealed class PaymentRequestService(
                        (request.PayeeName is null ? "" : $" — {request.PayeeName}"),
             Lines:
             [
-                new VoucherLineInput(request.ExpenseAccountId.Value, request.Amount, 0,
-                    request.Title, request.RequestedByUserId, request.RequestedByName),
+                ..(request.Lines.Count > 0
+                    ? request.Lines.Select(line => new VoucherLineInput(
+                        line.ExpenseAccountId!.Value, line.Amount, 0,
+                        line.Reason ?? line.Description ?? line.Category ?? request.Title,
+                        request.RequestedByUserId, request.RequestedByName))
+                    : [new VoucherLineInput(request.ExpenseAccountId!.Value, request.Amount, 0,
+                        request.Title, request.RequestedByUserId, request.RequestedByName)]),
                 new VoucherLineInput(paidFromAccountId, 0, request.Amount, request.PayeeName)
             ],
             Module: FinanceModule.Key,
@@ -223,10 +271,10 @@ public sealed class PaymentRequestService(
         return Result.Success();
     }
 
-    private async Task<string> NextReferenceAsync(CancellationToken ct)
+    private async Task<string> NextReferenceAsync(bool director, CancellationToken ct)
     {
         var year = clock.Today.Year;
-        var stem = $"PR-{year % 100:D2}-";
+        var stem = $"{(director ? "DFR" : "PR")}-{year % 100:D2}-";
         var count = await db.PaymentRequests
             .IgnoreQueryFilters()
             .CountAsync(r => r.Reference.StartsWith(stem), ct);

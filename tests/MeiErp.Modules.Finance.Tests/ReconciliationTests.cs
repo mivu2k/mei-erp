@@ -38,6 +38,7 @@ public sealed class ReconciliationTests : IAsyncLifetime
 
             await using var db = NewDb();
             await db.Database.EnsureCreatedAsync();
+            await db.EnsureAuditTableForTestsAsync();
 
             var bank = new Account { Code = "1210", Name = "Current account", Type = AccountType.Asset, IsPostable = true };
             var sales = new Account { Code = "4100", Name = "Sales", Type = AccountType.Income, IsPostable = true };

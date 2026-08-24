@@ -1,0 +1,32 @@
+@page "/finance/posting-rules"
+@attribute [Authorize(Policy = FinanceModule.PostingManage)]
+@rendermode InteractiveServer
+@inject IPostingRuleService Rules
+@inject IAccountService Accounts
+@inject ISnackbar Snackbar
+
+<PageTitle>Posting rules</PageTitle>
+<MudText Typo="Typo.h5">Cross-module posting rules</MudText>
+<MudText Class="mb-4" Color="Color.Secondary">Choose the two Finance accounts used when another module completes a financial event.</MudText>
+<MudPaper Class="pa-4 mb-4" Outlined="true">
+ <MudGrid>
+  <MudItem xs="12" md="4"><MudTextField @bind-Value="_name" Label="Rule name" /></MudItem>
+  <MudItem xs="12" md="4"><MudSelect T="string" @bind-Value="_eventType" Label="Event"><MudSelectItem Value="@GoodsReceiptPostingHandler.Event">Inventory goods receipt</MudSelectItem><MudSelectItem Value="@RepairOrderPostingHandler.Event">Repair customer order</MudSelectItem></MudSelect></MudItem>
+  <MudItem xs="12" md="4"><MudCheckBox T="bool" @bind-Value="_active" Label="Active" /></MudItem>
+  <MudItem xs="12" md="6"><MudSelect T="int?" @bind-Value="_debit" Label="Debit account">@foreach(var a in _accounts){<MudSelectItem T="int?" Value="a.Id">@a.Code — @a.Name</MudSelectItem>}</MudSelect></MudItem>
+  <MudItem xs="12" md="6"><MudSelect T="int?" @bind-Value="_credit" Label="Credit account">@foreach(var a in _accounts){<MudSelectItem T="int?" Value="a.Id">@a.Code — @a.Name</MudSelectItem>}</MudSelect></MudItem>
+ </MudGrid>
+ <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync">Save rule</MudButton>
+</MudPaper>
+<MudTable Items="_rules" Dense="true" Hover="true">
+ <HeaderContent><MudTh>Event</MudTh><MudTh>Debit</MudTh><MudTh>Credit</MudTh><MudTh>Active</MudTh><MudTh /></HeaderContent>
+ <RowTemplate><MudTd>@context.Name<br/><small>@context.EventType</small></MudTd><MudTd>@context.DebitAccount?.Code — @context.DebitAccount?.Name</MudTd><MudTd>@context.CreditAccount?.Code — @context.CreditAccount?.Name</MudTd><MudTd>@context.IsActive</MudTd><MudTd><MudIconButton Icon="@Icons.Material.Outlined.Edit" OnClick="@(() => Edit(context))" /></MudTd></RowTemplate>
+</MudTable>
+
+@code {
+ private List<PostingRule> _rules=[]; private List<Account> _accounts=[]; private int? _id; private string _name="Goods receipt to payable"; private string _eventType=GoodsReceiptPostingHandler.Event; private int? _debit; private int? _credit; private bool _active=true;
+ protected override async Task OnInitializedAsync(){_accounts=[..await Accounts.PostableAsync()];await ReloadAsync();}
+ private async Task ReloadAsync()=>_rules=[..await Rules.ListAsync()];
+ private void Edit(PostingRule r){_id=r.Id;_name=r.Name;_eventType=r.EventType;_debit=r.DebitAccountId;_credit=r.CreditAccountId;_active=r.IsActive;}
+ private async Task SaveAsync(){if(_debit is null||_credit is null){Snackbar.Add("Select both accounts.",Severity.Warning);return;}var r=await Rules.SaveAsync(new(_id,_eventType,_name,_debit.Value,_credit.Value,_active));Snackbar.Add(r.Ok?"Posting rule saved.":r.Error!,r.Ok?Severity.Success:Severity.Error);if(r.Ok){_id=null;await ReloadAsync();}}
+}

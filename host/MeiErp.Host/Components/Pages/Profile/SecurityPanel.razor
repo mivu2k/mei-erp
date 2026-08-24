@@ -1,0 +1,150 @@
+@using MeiErp.Platform.Printing
+@inject UserManager<ApplicationUser> Users
+@inject AuthenticationStateProvider Authentication
+@inject ISnackbar Snackbar
+
+@*
+    Everything about getting into this account, in one place: the password and
+    the second factor. They were on separate screens, which meant the two halves
+    of the same decision lived a menu apart.
+*@
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else if (_user is not null)
+{
+    <FormSection Title="Password" Icon="@Icons.Material.Outlined.Password"
+                 Hint="Changing it signs out anything else already signed in as you.">
+        <MudButton Variant="Variant.Outlined" Href="/change-password"
+                   StartIcon="@Icons.Material.Outlined.Key">
+            Change password
+        </MudButton>
+    </FormSection>
+
+    <FormSection Title="Two-factor authentication" Icon="@Icons.Material.Outlined.Security"
+                 Hint="An authenticator app works without mobile signal, which a texted code does not.">
+        @if (_user.TwoFactorEnabled)
+        {
+            <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Class="mb-3">
+                Two-factor authentication is enabled.
+            </MudAlert>
+
+            <div class="app-form-grid">
+                <MudTextField @bind-Value="_password" Label="Current password"
+                              InputType="InputType.Password" Variant="Variant.Outlined" />
+            </div>
+            <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="DisableAsync" Class="mt-2">
+                Disable and reset authenticator
+            </MudButton>
+        }
+        else
+        {
+            <MudText Typo="Typo.body2">
+                1. Scan this QR code with Microsoft Authenticator, Google Authenticator,
+                1Password, or another TOTP app.
+            </MudText>
+
+            @if (_qr is not null)
+            {
+                <img src="@_qr" alt="Authenticator setup QR code"
+                     style="width:200px;height:200px;margin:16px 0" />
+            }
+
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">Manual key</MudText>
+            <MudText Style="font-family:monospace;word-break:break-all">@_sharedKey</MudText>
+
+            <MudText Typo="Typo.body2" Class="mt-3">
+                2. Enter the current six-digit code to verify setup.
+            </MudText>
+
+            <div class="app-form-grid mt-2">
+                <MudTextField @bind-Value="_code" Label="Authenticator code" Variant="Variant.Outlined"
+                              InputMode="InputMode.numeric" />
+            </div>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="EnableAsync" Class="mt-2">
+                Verify and enable
+            </MudButton>
+        }
+
+        @if (_recoveryCodes.Count > 0)
+        {
+            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mt-4">
+                Save these recovery codes now. Each works once; they will not be shown again.
+            </MudAlert>
+            <div class="mt-3"
+                 style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;font-family:monospace">
+                @foreach (var recovery in _recoveryCodes)
+                {
+                    <div>@recovery</div>
+                }
+            </div>
+        }
+    </FormSection>
+}
+
+@code {
+    private ApplicationUser? _user;
+    private bool _loading = true;
+    private string? _sharedKey, _qr, _code, _password;
+    private IReadOnlyList<string> _recoveryCodes = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _user = await Users.GetUserAsync((await Authentication.GetAuthenticationStateAsync()).User);
+        if (_user is not null && !_user.TwoFactorEnabled) await PrepareAsync();
+        _loading = false;
+    }
+
+    private async Task PrepareAsync()
+    {
+        if (_user is null) return;
+
+        _sharedKey = await Users.GetAuthenticatorKeyAsync(_user);
+        if (string.IsNullOrWhiteSpace(_sharedKey))
+        {
+            await Users.ResetAuthenticatorKeyAsync(_user);
+            _sharedKey = await Users.GetAuthenticatorKeyAsync(_user);
+        }
+
+        var issuer = Uri.EscapeDataString("MEI ERP");
+        var account = Uri.EscapeDataString(_user.Email ?? _user.UserName ?? _user.Id);
+        var uri = $"otpauth://totp/{issuer}:{account}?secret={_sharedKey}&issuer={issuer}&digits=6";
+        _qr = $"data:image/png;base64,{Convert.ToBase64String(Symbology.QrCode(uri, 240))}";
+    }
+
+    private async Task EnableAsync()
+    {
+        if (_user is null || string.IsNullOrWhiteSpace(_code)) return;
+
+        var valid = await Users.VerifyTwoFactorTokenAsync(_user, Users.Options.Tokens.AuthenticatorTokenProvider,
+            _code.Replace(" ", "").Replace("-", ""));
+
+        if (!valid) { Snackbar.Add("That authenticator code is not valid.", Severity.Error); return; }
+
+        await Users.SetTwoFactorEnabledAsync(_user, true);
+        _recoveryCodes = (await Users.GenerateNewTwoFactorRecoveryCodesAsync(_user, 10))?.ToArray() ?? [];
+        await Users.UpdateSecurityStampAsync(_user);
+        Snackbar.Add("Two-factor authentication enabled.", Severity.Success);
+    }
+
+    private async Task DisableAsync()
+    {
+        if (_user is null || string.IsNullOrWhiteSpace(_password) || !await Users.CheckPasswordAsync(_user, _password))
+        {
+            Snackbar.Add("Enter your current password to disable two-factor authentication.", Severity.Error);
+            return;
+        }
+
+        await Users.SetTwoFactorEnabledAsync(_user, false);
+        await Users.ResetAuthenticatorKeyAsync(_user);
+        await Users.UpdateSecurityStampAsync(_user);
+
+        _password = null;
+        _recoveryCodes = [];
+        await PrepareAsync();
+
+        Snackbar.Add("Two-factor authentication disabled and its key reset.", Severity.Warning);
+    }
+}

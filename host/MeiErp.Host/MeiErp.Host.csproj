@@ -9,10 +9,12 @@
   <ItemGroup>
     <ProjectReference Include="..\..\platform\MeiErp.Platform.Kernel\MeiErp.Platform.Kernel.csproj" />
     <ProjectReference Include="..\..\platform\MeiErp.Platform.Identity\MeiErp.Platform.Identity.csproj" />
+    <ProjectReference Include="..\..\platform\MeiErp.Platform.Web\MeiErp.Platform.Web.csproj" />
     <ProjectReference Include="..\..\platform\MeiErp.Platform.Persistence\MeiErp.Platform.Persistence.csproj" />
     <ProjectReference Include="..\..\platform\MeiErp.Platform.Workflow\MeiErp.Platform.Workflow.csproj" />
     <ProjectReference Include="..\..\platform\MeiErp.Platform.Printing\MeiErp.Platform.Printing.csproj" />
     <ProjectReference Include="..\..\platform\MeiErp.Platform.Reporting\MeiErp.Platform.Reporting.csproj" />
+    <ProjectReference Include="..\..\platform\MeiErp.Platform.Messaging\MeiErp.Platform.Messaging.csproj" />
     <ProjectReference Include="..\..\modules\Hr\MeiErp.Modules.Hr\MeiErp.Modules.Hr.csproj" />
     <ProjectReference Include="..\..\modules\Finance\MeiErp.Modules.Finance\MeiErp.Modules.Finance.csproj" />
     <ProjectReference Include="..\..\modules\Inventory\MeiErp.Modules.Inventory\MeiErp.Modules.Inventory.csproj" />
@@ -20,6 +22,8 @@
     <ProjectReference Include="..\..\modules\GatePass\MeiErp.Modules.GatePass\MeiErp.Modules.GatePass.csproj" />
     <ProjectReference Include="..\..\modules\Repair\MeiErp.Modules.Repair\MeiErp.Modules.Repair.csproj" />
     <ProjectReference Include="..\..\modules\Tender\MeiErp.Modules.Tender\MeiErp.Modules.Tender.csproj" />
+    <ProjectReference Include="..\..\modules\Ledger\MeiErp.Modules.Ledger\MeiErp.Modules.Ledger.csproj" />
+    <ProjectReference Include="..\..\modules\Trade\MeiErp.Modules.Trade\MeiErp.Modules.Trade.csproj" />
   </ItemGroup>
 
   <ItemGroup>

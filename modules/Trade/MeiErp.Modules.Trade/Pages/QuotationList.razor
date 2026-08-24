@@ -1,0 +1,208 @@
+@inject ITradeDocumentService Documents
+@inject IClock Clock
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+@*
+    Quotations, one side of the business at a time.
+
+    New and edit open in a dialog from here, so the person keeps their place in
+    the list; the same editor is reachable as a full page at
+    /{module}/quotations/{id} for a link or a fresh tab.
+*@
+
+<ListShell Title="@Title"
+           Subtitle="@Subtitle"
+           Icon="@Icons.Material.Outlined.RequestQuote"
+           Loading="_loading"
+           IsEmpty="@(_rows.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.RequestQuote"
+           EmptyTitle="No quotations yet"
+           EmptyHint="@EmptyHint">
+    <Actions>
+        @if (CanManage)
+        {
+            @* Both routes into the same editor: a dialog to keep your place in
+               the list, a page for a link or a fresh tab. Neither is forced. *@
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Open(null))">
+                New quotation
+            </MudButton>
+            <MudTooltip Text="Open as a full page instead">
+                <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew"
+                               Href="@($"{BasePath}/quotations/new")" />
+            </MudTooltip>
+        }
+    </Actions>
+
+    <Stats>
+        @if (_rows.Count > 0)
+        {
+            <StatTile Label="Quotations" Value="@_rows.Count.ToString()" />
+            <StatTile Label="Value" Value="@_rows.Sum(x => x.Total).ToString("N2")" />
+            @if (_awaiting > 0)
+            {
+                <StatTile Label="Awaiting approval" Value="@_awaiting.ToString()" Colour="Color.Warning" />
+            }
+            @if (_expired > 0)
+            {
+                <StatTile Label="Expired" Value="@_expired.ToString()" Colour="Color.Warning"
+                          Caption="Prices no longer stood behind" />
+            }
+        }
+    </Stats>
+
+    <EmptyAction>
+        @if (CanManage)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Open(null))">
+                New quotation
+            </MudButton>
+        }
+    </EmptyAction>
+
+    <Toolbar>
+        <MudSelect T="DocumentStatus?" Value="_status" ValueChanged="ChooseStatusAsync"
+                   Label="Status" Dense="true" Margin="Margin.Dense"
+                   Variant="Variant.Outlined" Clearable="true" Style="max-width:220px" Class="mt-0">
+            @foreach (var s in Enum.GetValues<DocumentStatus>())
+            {
+                <MudSelectItem T="DocumentStatus?" Value="@((DocumentStatus?)s)">@s</MudSelectItem>
+            }
+        </MudSelect>
+    </Toolbar>
+
+    <ChildContent>
+    <MudDataGrid T="Quotation" Items="_rows" Dense="true" Hover="true" Elevation="0"
+                 Filterable="false" RowsPerPage="25">
+        <Columns>
+            <PropertyColumn Property="@(x => x.Number)" Title="Number" />
+            <TemplateColumn Title="Date" SortBy="@(x => x.Date)">
+                <CellTemplate>@context.Item.Date.ToString("d MMM yyyy")</CellTemplate>
+            </TemplateColumn>
+            <PropertyColumn Property="@(x => x.PartyName)" Title="@PartyHeading" />
+            <TemplateColumn Title="Valid until">
+                <CellTemplate>
+                    @if (context.Item.ValidUntil is { } v)
+                    {
+                        <span>@v.ToString("d MMM yyyy")</span>
+                        @if (context.Item.IsExpiredOn(Clock.Today))
+                        {
+                            @* Worth flagging: the prices are no longer being stood behind. *@
+                            <MudChip T="string" Size="Size.Small" Color="Color.Warning"
+                                     Variant="Variant.Text" Class="ml-1">Expired</MudChip>
+                        }
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Status">
+                <CellTemplate>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+                             Color="@Colour(context.Item.Status)">@context.Item.Status</MudChip>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Total" HeaderClass="text-right" CellClass="text-right">
+                <CellTemplate>
+                    <span style="font-variant-numeric:tabular-nums">@context.Item.Total.ToString("N2")</span>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="" Sortable="false">
+                <CellTemplate>
+                    <div class="d-flex justify-end gap-1">
+                        @if (context.Item.Status is DocumentStatus.Approved or DocumentStatus.Sent && CanManage)
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Success"
+                                       OnClick="@(() => OutcomeAsync(context.Item, true))">Accepted</MudButton>
+                            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error"
+                                       OnClick="@(() => OutcomeAsync(context.Item, false))">Declined</MudButton>
+                        }
+                        <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small"
+                                       Href="@($"{BasePath}/quotations/{context.Item.Id}")"
+                                       title="Open as a page" />
+                        <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small"
+                                       OnClick="@(() => Open(context.Item.Id))" />
+                    </div>
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+    </MudDataGrid>
+    </ChildContent>
+</ListShell>
+
+@if (_editing)
+{
+    <QuotationEditor AsDialog="true" IsPurchase="IsPurchase" QuotationId="_editingId"
+                     Saved="LoadAsync" Closed="@(() => { _editing = false; return Task.CompletedTask; })" />
+}
+
+@code {
+    [Parameter] public bool IsPurchase { get; set; }
+    [Parameter] public bool CanManage { get; set; }
+
+    private TradeDirection Direction => IsPurchase ? TradeDirection.Purchase : TradeDirection.Sales;
+    private string BasePath => IsPurchase ? "/purchase" : "/sales";
+    private string PartyHeading => IsPurchase ? "Supplier" : "Customer";
+
+    private string Title => IsPurchase ? "Supplier quotations" : "Customer quotations";
+
+    private string Subtitle => IsPurchase
+        ? "Prices suppliers have quoted the business. Approved ones become purchase orders."
+        : "Prices quoted to customers. Accepted ones become sales orders.";
+
+    private string EmptyHint => IsPurchase
+        ? "Record what a supplier has quoted so it can be compared and turned into an order."
+        : "Quote a customer here, or raise one straight off a workshop job from the job screen.";
+
+    private IReadOnlyList<Quotation> _rows = [];
+    private int _awaiting, _expired;
+    private DocumentStatus? _status;
+    private bool _loading = true, _editing;
+    private int? _editingId;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _rows = await Documents.QuotationsAsync(Direction, _status);
+
+        _awaiting = _rows.Count(x => x.Status == DocumentStatus.PendingApproval);
+        _expired = _rows.Count(x => x.IsExpiredOn(Clock.Today)
+                                 && x.Status is not (DocumentStatus.Accepted or DocumentStatus.Rejected
+                                                     or DocumentStatus.Cancelled));
+        _loading = false;
+    }
+
+    private async Task ChooseStatusAsync(DocumentStatus? status)
+    {
+        _status = status;
+        await LoadAsync();
+    }
+
+    private void Open(int? id)
+    {
+        _editingId = id;
+        _editing = true;
+    }
+
+    private async Task OutcomeAsync(Quotation row, bool accepted)
+    {
+        var result = await Documents.SetQuotationOutcomeAsync(row.Id, accepted, null);
+
+        Snackbar.Add(
+            result.Ok ? $"{row.Number} marked {(accepted ? "accepted" : "declined")}." : result.Error!,
+            result.Ok ? Severity.Success : Severity.Error);
+
+        if (result.Ok) await LoadAsync();
+    }
+
+    private static Color Colour(DocumentStatus s) => s switch
+    {
+        DocumentStatus.Draft => Color.Default,
+        DocumentStatus.PendingApproval or DocumentStatus.Returned => Color.Warning,
+        DocumentStatus.Approved or DocumentStatus.Accepted => Color.Success,
+        DocumentStatus.Rejected or DocumentStatus.Cancelled => Color.Error,
+        _ => Color.Info
+    };
+}

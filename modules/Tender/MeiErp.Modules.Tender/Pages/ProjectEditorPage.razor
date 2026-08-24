@@ -1,0 +1,11 @@
+@page "/tender/projects/new"
+@page "/tender/projects/{Id:int}"
+@attribute [Authorize(Policy = TenderModule.ProjectsManage)]
+@rendermode InteractiveServer
+
+@* The dialog and this page render the same editor; only the frame differs. *@
+<ProjectEditor AsDialog="false" ProjectId="Id" />
+
+@code {
+    [Parameter] public int? Id { get; set; }
+}

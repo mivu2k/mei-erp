@@ -1,8 +1,9 @@
 @inject IFleetService Fleet
 @inject ISnackbar Snackbar
+@inject NavigationManager Nav
 
-<MudDialog>
-    <DialogContent>
+<DocumentShell @ref="_shell" AsDialog="AsDialog" Title="@Title" Error="@_error" OnClose="DismissedAsync">
+    <Body>
         <MudForm @ref="_form">
             <div class="d-flex gap-3 mb-4">
                 <MudTextField @bind-Value="_model.Registration" Label="Registration" Required="true"
@@ -19,7 +20,8 @@
             <div class="d-flex gap-3 mb-4">
                 <MudTextField @bind-Value="_model.Make" Label="Make" Required="true"
                               RequiredError="Enter the make." Variant="Variant.Outlined" />
-                <MudTextField @bind-Value="_model.Model" Label="Model" Variant="Variant.Outlined" />
+                <MudTextField @bind-Value="_model.Model" Label="Model" Required="true"
+                              RequiredError="Enter the model." Variant="Variant.Outlined" />
                 <MudNumericField T="int?" @bind-Value="_model.Year" Label="Year"
                                  Variant="Variant.Outlined" HideSpinButtons="true" />
             </div>
@@ -29,10 +31,26 @@
                           HelperText="Whoever normally drives it." />
 
             <div class="d-flex gap-3 mb-4">
+                <MudTextField @bind-Value="_model.Color" Label="Color" Variant="Variant.Outlined" />
+                <MudTextField @bind-Value="_model.ChassisNumber" Label="Chassis / VIN" Variant="Variant.Outlined" />
+                <MudTextField @bind-Value="_model.EngineNumber" Label="Engine number" Variant="Variant.Outlined" />
+            </div>
+
+            <MudTextField @bind-Value="_model.Notes" Label="Notes" Variant="Variant.Outlined"
+                          Lines="3" Class="mb-4" />
+
+            <div class="d-flex gap-3 mb-4">
                 <MudDatePicker Label="Registration expires" Variant="Variant.Outlined"
                                Date="_registrationExpiry" DateChanged="@(d => _registrationExpiry = d)" />
                 <MudDatePicker Label="Insurance expires" Variant="Variant.Outlined"
                                Date="_insuranceExpiry" DateChanged="@(d => _insuranceExpiry = d)" />
+            </div>
+
+            <div class="d-flex gap-3 mb-4">
+                <MudDatePicker Label="Purchase date" Variant="Variant.Outlined"
+                               Date="_purchasedOn" DateChanged="@(d => _purchasedOn = d)" />
+                <MudNumericField T="decimal?" @bind-Value="_model.PurchaseCost" Label="Purchase cost"
+                                 Variant="Variant.Outlined" HideSpinButtons="true" />
             </div>
 
             @if (_model.Id != 0 && _model.CurrentOdometer is not null)
@@ -43,28 +61,27 @@
                 </MudAlert>
             }
         </MudForm>
+    </Body>
 
-        @if (_error is not null)
-        {
-            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
-        }
-    </DialogContent>
-
-    <DialogActions>
-        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+    <Buttons>
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
                    OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
-    </DialogActions>
-</MudDialog>
+    </Buttons>
+</DocumentShell>
 
 @code {
-    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public bool AsDialog { get; set; }
     [Parameter] public int? VehicleId { get; set; }
+    [Parameter] public EventCallback Saved { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
+
+    private string Title => VehicleId is null ? "New vehicle" : "Edit vehicle";
 
     private MudForm? _form;
     private Vehicle _model = new();
     private DateTime? _registrationExpiry;
     private DateTime? _insuranceExpiry;
+    private DateTime? _purchasedOn;
     private string? _error;
     private bool _busy;
 
@@ -76,6 +93,7 @@
 
         _registrationExpiry = _model.RegistrationExpiry?.ToDateTime(TimeOnly.MinValue);
         _insuranceExpiry = _model.InsuranceExpiry?.ToDateTime(TimeOnly.MinValue);
+        _purchasedOn = _model.PurchasedOn?.ToDateTime(TimeOnly.MinValue);
     }
 
     private async Task SaveAsync()
@@ -94,13 +112,26 @@
                 ? null : DateOnly.FromDateTime(_registrationExpiry.Value);
             _model.InsuranceExpiry = _insuranceExpiry is null
                 ? null : DateOnly.FromDateTime(_insuranceExpiry.Value);
+            _model.PurchasedOn = _purchasedOn is null
+                ? null : DateOnly.FromDateTime(_purchasedOn.Value);
 
             var result = await Fleet.SaveAsync(_model);
             if (result.Failed) { _error = result.Error; return; }
 
             Snackbar.Add("Saved.", Severity.Success);
-            Dialog.Close(DialogResult.Ok(true));
+            VehicleId = _model.Id;
+            await Saved.InvokeAsync();
+            if (AsDialog && _shell is not null) await _shell.CloseAsync();
         }
         finally { _busy = false; }
+    }
+
+    private DocumentShell? _shell;
+    
+    /// <summary>The shell has already closed itself; just react to it.</summary>
+    private async Task DismissedAsync()
+    {
+        if (Closed.HasDelegate) { await Closed.InvokeAsync(); return; }
+        Nav.NavigateTo("/auto/vehicles");
     }
 }

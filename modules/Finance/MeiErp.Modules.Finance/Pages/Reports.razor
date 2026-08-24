@@ -295,15 +295,15 @@
     }
 
     private async Task LoadTrialBalanceAsync() =>
-        _trial = await Statements.TrialBalanceAsync(DateOnly.FromDateTime(_asAt ?? DateTime.Today));
+        _trial = await Statements.TrialBalanceAsync(DateOnly.FromDateTime(_asAt ?? Clock.Today.ToDateTime(TimeOnly.MinValue)));
 
     private async Task LoadIncomeAsync() =>
         _income = await Statements.IncomeStatementAsync(
-            DateOnly.FromDateTime(_from ?? DateTime.Today),
-            DateOnly.FromDateTime(_to ?? DateTime.Today));
+            DateOnly.FromDateTime(_from ?? Clock.Today.ToDateTime(TimeOnly.MinValue)),
+            DateOnly.FromDateTime(_to ?? Clock.Today.ToDateTime(TimeOnly.MinValue)));
 
     private async Task LoadBalanceSheetAsync() =>
-        _sheet = await Statements.BalanceSheetAsync(DateOnly.FromDateTime(_asAt ?? DateTime.Today));
+        _sheet = await Statements.BalanceSheetAsync(DateOnly.FromDateTime(_asAt ?? Clock.Today.ToDateTime(TimeOnly.MinValue)));
 
     private async Task LoadLedgerAsync()
     {
@@ -311,7 +311,7 @@
 
         _ledger = await Statements.LedgerAsync(
             _ledgerAccountId.Value,
-            DateOnly.FromDateTime(_from ?? DateTime.Today),
-            DateOnly.FromDateTime(_to ?? DateTime.Today));
+            DateOnly.FromDateTime(_from ?? Clock.Today.ToDateTime(TimeOnly.MinValue)),
+            DateOnly.FromDateTime(_to ?? Clock.Today.ToDateTime(TimeOnly.MinValue)));
     }
 }

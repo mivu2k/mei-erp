@@ -7,75 +7,76 @@
 @inject ISnackbar Snackbar
 @inject IDialogService Dialogs
 
-<PageTitle>Petty cash</PageTitle>
+<ListShell Title="Petty cash"
+           Subtitle="A fixed float per box. Spending draws it down; a top-up restores it."
+           Icon="@Icons.Material.Outlined.Payments"
+           Loading="_loading"
+           IsEmpty="@(_boxes.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.Payments"
+           EmptyTitle="No petty cash boxes yet"
+           EmptyHint="Create one and give it a float to start recording spend.">
+    <Actions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="NewBox">New box</MudButton>
+        <MudTooltip Text="Open as a full page instead">
+            <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Href="/finance/petty-cash/boxes/new" />
+        </MudTooltip>
+    </Actions>
 
-<div class="d-flex align-center mb-1">
-    <div>
-        <MudText Typo="Typo.h5">Petty cash</MudText>
-        <MudText Typo="Typo.body2" Class="mud-text-secondary">
-            A fixed float per box. Spending draws it down; a top-up restores it.
-        </MudText>
-    </div>
-    <MudSpacer />
-    <MudButton Variant="Variant.Filled" Color="Color.Primary"
-               StartIcon="@Icons.Material.Filled.Add" OnClick="NewBox">New box</MudButton>
-</div>
+    <EmptyAction>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="NewBox">New box</MudButton>
+    </EmptyAction>
 
-<MudGrid Class="mt-2">
-    @foreach (var box in _boxes)
-    {
-        var balance = _balances.GetValueOrDefault(box.Id);
-        var used = box.FloatAmount == 0 ? 0 : (double)((box.FloatAmount - balance) / box.FloatAmount * 100);
+    <ChildContent>
+    <MudGrid Class="pa-4">
+        @foreach (var box in _boxes)
+        {
+            var balance = _balances.GetValueOrDefault(box.Id);
+            var used = box.FloatAmount == 0 ? 0 : (double)((box.FloatAmount - balance) / box.FloatAmount * 100);
 
-        <MudItem xs="12" sm="6" md="4">
-            <MudPaper Outlined="true" Elevation="0" Class="pa-4">
-                <div class="d-flex align-center">
-                    <div>
-                        <MudText Typo="Typo.subtitle1"><b>@box.Name</b></MudText>
-                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                            @box.CustodianName
+            <MudItem xs="12" sm="6" md="4">
+                <MudPaper Outlined="true" Elevation="0" Class="pa-4">
+                    <div class="d-flex align-center">
+                        <div>
+                            <MudText Typo="Typo.subtitle1"><b>@box.Name</b></MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                @box.CustodianName
+                            </MudText>
+                        </div>
+                        <MudSpacer />
+                        <MudText Typo="Typo.h6" Style="font-variant-numeric:tabular-nums">
+                            @balance.ToString("N2")
                         </MudText>
                     </div>
-                    <MudSpacer />
-                    <MudText Typo="Typo.h6" Style="font-variant-numeric:tabular-nums">
-                        @balance.ToString("N2")
+
+                    <MudProgressLinear Color="@(used > 80 ? Color.Warning : Color.Primary)"
+                                       Value="@used" Class="mt-3" Rounded="true" />
+
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        @((box.FloatAmount - balance).ToString("N2")) spent of a
+                        @box.FloatAmount.ToString("N2") float
                     </MudText>
-                </div>
 
-                <MudProgressLinear Color="@(used > 80 ? Color.Warning : Color.Primary)"
-                                   Value="@used" Class="mt-3" Rounded="true" />
-
-                <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                    @((box.FloatAmount - balance).ToString("N2")) spent of a
-                    @box.FloatAmount.ToString("N2") float
-                </MudText>
-
-                <div class="d-flex gap-2 mt-3">
-                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
-                               OnClick="@(() => Spend(box))">Record spend</MudButton>
-                    <MudButton Size="Size.Small" Variant="Variant.Text"
-                               OnClick="@(() => TopUp(box))">Top up</MudButton>
-                    <MudSpacer />
-                    <MudButton Size="Size.Small" Variant="Variant.Text"
-                               OnClick="@(() => Select(box))">Entries</MudButton>
-                </div>
-            </MudPaper>
-        </MudItem>
-    }
-</MudGrid>
-
-@if (_boxes.Count == 0 && !_loading)
-{
-    <MudPaper Outlined="true" Elevation="0" Class="pa-12 text-center mt-4">
-        <MudText Class="mud-text-secondary">
-            No petty cash boxes yet. Create one and give it a float.
-        </MudText>
-    </MudPaper>
-}
+                    <div class="d-flex gap-2 mt-3">
+                        <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                                   OnClick="@(() => Spend(box))">Record spend</MudButton>
+                        <MudButton Size="Size.Small" Variant="Variant.Text"
+                                   OnClick="@(() => TopUp(box))">Top up</MudButton>
+                        <MudSpacer />
+                        <MudButton Size="Size.Small" Variant="Variant.Text"
+                                   OnClick="@(() => Select(box))">Entries</MudButton>
+                    </div>
+                </MudPaper>
+            </MudItem>
+        }
+    </MudGrid>
+    </ChildContent>
+</ListShell>
 
 @if (_selected is not null)
 {
-    <MudPaper Outlined="true" Elevation="0" Class="mt-6">
+    <MudPaper Outlined="true" Elevation="0" Class="mt-4">
         <MudToolBar Dense="true">
             <MudText Typo="Typo.subtitle1"><b>@_selected.Name</b> — entries</MudText>
             <MudSpacer />
@@ -116,6 +117,12 @@
     </MudPaper>
 }
 
+@if (_addingBox)
+{
+    <PettyBoxEditor AsDialog="true"
+                     Saved="LoadAsync" Closed="@(() => { _addingBox = false; return Task.CompletedTask; })" />
+}
+
 @code {
     private IReadOnlyList<PettyCashBox> _boxes = [];
     private Dictionary<int, decimal> _balances = [];
@@ -144,13 +151,9 @@
         _entries = await Petty.EntriesAsync(box.Id, null, null);
     }
 
-    private async Task NewBox()
-    {
-        var dialog = await Dialogs.ShowAsync<PettyBoxEditor>("New petty cash box",
-            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+    private bool _addingBox;
 
-        if (!(await dialog.Result)!.Canceled) await LoadAsync();
-    }
+    private void NewBox() => _addingBox = true;
 
     private async Task Spend(PettyCashBox box)
     {

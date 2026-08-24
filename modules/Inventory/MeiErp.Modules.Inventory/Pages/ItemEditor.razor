@@ -1,17 +1,22 @@
 @inject ICatalogService Catalog
+@inject IProductHierarchyService Hierarchy
 @inject ISnackbar Snackbar
+@inject NavigationManager Nav
 
-<MudDialog>
-    <DialogContent>
+<DocumentShell @ref="_shell" AsDialog="AsDialog" Title="@Title" Error="@_error" OnClose="DismissedAsync">
+    <Body>
         <MudForm @ref="_form">
             <div class="d-flex gap-3 mb-4">
                 <MudTextField @bind-Value="_model.Code" Label="Code" Required="true"
                               RequiredError="Give it a code." Variant="Variant.Outlined" />
                 <MudTextField @bind-Value="_model.Unit" Label="Unit" Variant="Variant.Outlined" />
             </div>
+            <div class="d-flex gap-3 mb-4"><MudTextField @bind-Value="_model.Barcode" Label="Barcode" Variant="Variant.Outlined"/><MudNumericField T="decimal" @bind-Value="_model.ReorderQuantity" Label="Reorder quantity" Variant="Variant.Outlined" HideSpinButtons/></div>
+            <div class="d-flex gap-4 mb-4"><MudSwitch T="bool" @bind-Value="_model.IsSerialized" Label="Track individual serial numbers" Color="Color.Info"/><MudSwitch T="bool" @bind-Value="_model.IsBatchTracked" Label="Track batches / expiry" Color="Color.Info"/></div>
 
             <MudTextField @bind-Value="_model.Name" Label="Name" Required="true"
                           RequiredError="Give it a name." Variant="Variant.Outlined" Class="mb-4" />
+            <div class="d-flex gap-3 mb-4"><MudSelect T="int?" @bind-Value="_model.ProductFamilyId" Label="Product family" Clearable Variant="Variant.Outlined"><MudSelectItem T="int?" Value="@((int?)null)">Unclassified</MudSelectItem>@foreach(var family in _families){<MudSelectItem T="int?" Value="@((int?)family.Id)">@family.Name</MudSelectItem>}</MudSelect><MudSelect T="InventoryItemKind" @bind-Value="_model.Kind" Label="Kind" Variant="Variant.Outlined"><MudSelectItem Value="InventoryItemKind.Model">Model</MudSelectItem><MudSelectItem Value="InventoryItemKind.Accessory">Accessory</MudSelectItem></MudSelect>@if(_model.Kind==InventoryItemKind.Accessory){<MudSelect T="int?" @bind-Value="_model.ParentItemId" Label="Parent model" Variant="Variant.Outlined">@foreach(var model in _models){<MudSelectItem T="int?" Value="@((int?)model.Id)">@model.Name</MudSelectItem>}</MudSelect>}</div>
 
             <div class="d-flex gap-3 mb-4">
                 <MudNumericField T="decimal" @bind-Value="_model.SellingPrice" Label="Selling price"
@@ -35,33 +40,47 @@
 
             <MudSwitch T="bool" @bind-Value="_model.IsActive" Color="Color.Primary" Label="Active" />
         </MudForm>
+    </Body>
 
-        @if (_error is not null)
-        {
-            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
-        }
-    </DialogContent>
-
-    <DialogActions>
-        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+    <Buttons>
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
                    OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
-    </DialogActions>
-</MudDialog>
+    </Buttons>
+</DocumentShell>
 
 @code {
-    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public bool AsDialog { get; set; }
     [Parameter] public int? ItemId { get; set; }
+
+    /// <summary>
+    /// Which stock book a new item is filed in, passed from whichever screen
+    /// opened the editor so it lands in the book the person is already working
+    /// in. Ignored when editing: an item's book is fixed at creation, because
+    /// its stock history and balances cannot follow it across.
+    /// </summary>
+    [Parameter] public int? DomainId { get; set; }
+
+    /// <summary>Raised after a successful save, so a list can reload behind a dialog.</summary>
+    [Parameter] public EventCallback Saved { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
+
+    private string Title => ItemId is null ? "New item" : "Edit item";
 
     private MudForm? _form;
     private Item _model = new();
     private string? _error;
     private bool _busy;
+    private List<ProductFamily> _families=[];
+    private IReadOnlyList<Item> _models=[];
 
     protected override async Task OnInitializedAsync()
     {
+        _families=await Hierarchy.ListAsync();
+        // A parent model has to come from the same book - an accessory of a
+        // main-store model is not a workshop spare.
+        _models=(await Catalog.ItemsAsync(null,true,DomainId)).Where(x=>x.Kind==InventoryItemKind.Model).ToList();
         _model = ItemId is null
-            ? new Item { IsActive = true, Unit = "each" }
+            ? new Item { IsActive = true, Unit = "each", DomainId = DomainId ?? 0 }
             : await Catalog.GetItemAsync(ItemId.Value) ?? new Item();
     }
 
@@ -81,8 +100,19 @@
             if (result.Failed) { _error = result.Error; return; }
 
             Snackbar.Add("Saved.", Severity.Success);
-            Dialog.Close(DialogResult.Ok(true));
+            ItemId = _model.Id;
+            await Saved.InvokeAsync();
+            if (AsDialog && _shell is not null) await _shell.CloseAsync();
         }
         finally { _busy = false; }
+    }
+
+    private DocumentShell? _shell;
+    
+    /// <summary>The shell has already closed itself; just react to it.</summary>
+    private async Task DismissedAsync()
+    {
+        if (Closed.HasDelegate) { await Closed.InvokeAsync(); return; }
+        Nav.NavigateTo("/inventory/items");
     }
 }

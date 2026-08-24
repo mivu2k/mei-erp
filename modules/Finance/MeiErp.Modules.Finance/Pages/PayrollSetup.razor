@@ -5,7 +5,6 @@
 @inject IAccountService Chart
 @inject IClock Clock
 @inject ISnackbar Snackbar
-@inject IDialogService Dialogs
 
 <PageTitle>Salaries &amp; components</PageTitle>
 
@@ -28,6 +27,9 @@
             <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
                        StartIcon="@Icons.Material.Filled.PersonAdd"
                        OnClick="@(() => EditEmployee(null))">Add somebody</MudButton>
+            <MudTooltip Text="Open as a full page instead">
+                <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Href="/finance/payroll/employees/new" />
+            </MudTooltip>
         </div>
 
         <MudSimpleTable Dense="true" Hover="true">
@@ -68,6 +70,8 @@
                         <td style="text-align:right">
                             <MudButton Size="Size.Small" Variant="Variant.Text"
                                        OnClick="@(() => EditSalary(employee))">Set salary</MudButton>
+                            <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small"
+                                           Href="@($"/finance/payroll/employees/{employee.Id}")" />
                             <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small"
                                            OnClick="@(() => EditEmployee(employee))" />
                         </td>
@@ -93,6 +97,9 @@
             <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
                        StartIcon="@Icons.Material.Filled.Add"
                        OnClick="@(() => EditComponent(null))">Add component</MudButton>
+            <MudTooltip Text="Open as a full page instead">
+                <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Href="/finance/payroll/components/new" />
+            </MudTooltip>
         </div>
 
         <MudSimpleTable Dense="true" Hover="true">
@@ -118,6 +125,8 @@
                             }
                         </td>
                         <td style="text-align:right">
+                            <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small"
+                                           Href="@($"/finance/payroll/components/{component.Id}")" />
                             <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small"
                                            OnClick="@(() => EditComponent(component))" />
                         </td>
@@ -135,6 +144,24 @@
     </MudTabPanel>
 
 </MudTabs>
+
+@if (_editingEmployee)
+{
+    <PayrollEmployeeEditor AsDialog="true" Existing="_editingEmployeeRow"
+                            Saved="LoadAsync" Closed="@(() => { _editingEmployee = false; return Task.CompletedTask; })" />
+}
+
+@if (_editingComponent)
+{
+    <PayComponentEditor AsDialog="true" Existing="_editingComponentRow"
+                         Saved="LoadAsync" Closed="@(() => { _editingComponent = false; return Task.CompletedTask; })" />
+}
+
+@if (_editingSalary && _salaryEmployee is not null)
+{
+    <SalaryEditor AsDialog="true" EmployeeId="_salaryEmployee.Id" EmployeeName="_salaryEmployee.FullName"
+                  Saved="LoadAsync" Closed="@(() => { _editingSalary = false; return Task.CompletedTask; })" />
+}
 
 @code {
     private IReadOnlyList<PayrollEmployee> _employees = [];
@@ -156,36 +183,30 @@
         }
     }
 
-    private async Task EditEmployee(PayrollEmployee? row)
-    {
-        var parameters = new DialogParameters<PayrollEmployeeEditor> { { x => x.Existing, row } };
-        var dialog = await Dialogs.ShowAsync<PayrollEmployeeEditor>(
-            row is null ? "Add to payroll" : "Edit", parameters,
-            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+    private bool _editingEmployee;
+    private PayrollEmployee? _editingEmployeeRow;
 
-        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    private void EditEmployee(PayrollEmployee? row)
+    {
+        _editingEmployeeRow = row;
+        _editingEmployee = true;
     }
 
-    private async Task EditComponent(PayComponent? row)
-    {
-        var parameters = new DialogParameters<PayComponentEditor> { { x => x.Existing, row } };
-        var dialog = await Dialogs.ShowAsync<PayComponentEditor>(
-            row is null ? "New component" : "Edit component", parameters,
-            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+    private bool _editingComponent;
+    private PayComponent? _editingComponentRow;
 
-        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    private void EditComponent(PayComponent? row)
+    {
+        _editingComponentRow = row;
+        _editingComponent = true;
     }
 
-    private async Task EditSalary(PayrollEmployee employee)
-    {
-        var parameters = new DialogParameters<SalaryEditor>
-        {
-            { x => x.EmployeeId, employee.Id },
-            { x => x.EmployeeName, employee.FullName }
-        };
-        var dialog = await Dialogs.ShowAsync<SalaryEditor>("Set salary", parameters,
-            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+    private bool _editingSalary;
+    private PayrollEmployee? _salaryEmployee;
 
-        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    private void EditSalary(PayrollEmployee employee)
+    {
+        _salaryEmployee = employee;
+        _editingSalary = true;
     }
 }

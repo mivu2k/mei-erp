@@ -1,0 +1,11 @@
+@page "/purchase/suppliers"
+@attribute [Authorize(Policy = PurchaseModule.SuppliersView)]
+@rendermode InteractiveServer
+
+<PageTitle>Suppliers</PageTitle>
+
+@* Same master, same component, filtered to the side Purchase cares about. *@
+<AuthorizeView Policy="@PurchaseModule.SuppliersManage" Context="manage">
+    <Authorized><PartyList Suppliers="true" CanManage="true" /></Authorized>
+    <NotAuthorized><PartyList Suppliers="true" CanManage="false" /></NotAuthorized>
+</AuthorizeView>

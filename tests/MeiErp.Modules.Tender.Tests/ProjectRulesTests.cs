@@ -207,4 +207,38 @@ public class ProjectRulesTests
         Assert.False(returned.IsExpiredUnreleased(Today));
         Assert.False(returned.IsOutstanding);
     }
+
+    [Fact]
+    public void A_file_cannot_be_issued_to_two_people()
+    {
+        var file = new PhysicalFile { Status = PhysicalFileStatus.Issued, HolderName = "Ali" };
+        var result = FileRegistryRules.Validate(file, FileMovementAction.Issued, new(HolderName: "Sara"));
+        Assert.True(result.Failed);
+        Assert.Equal("file.already-out", result.Code);
+    }
+
+    [Fact]
+    public void A_file_can_only_be_transferred_while_out()
+    {
+        var result = FileRegistryRules.Validate(new PhysicalFile { Status = PhysicalFileStatus.InRegistry }, FileMovementAction.Transferred, new(HolderName: "Sara"));
+        Assert.Equal("file.not-out", result.Code);
+    }
+
+    [Fact]
+    public void Days_out_uses_the_latest_issue_or_transfer()
+    {
+        var file = new PhysicalFile { Status = PhysicalFileStatus.Issued, Movements = [new() { Action = FileMovementAction.Issued, MovedOn = Today.AddDays(-10) }, new() { Action = FileMovementAction.Transferred, MovedOn = Today.AddDays(-3) }] };
+        Assert.Equal(3, file.DaysOutOn(Today));
+    }
+
+    [Fact]
+    public void Achieving_and_reopening_a_milestone_reconciles_its_date()
+    {
+        var row = new ProjectMilestone { Name = "Handover", DueDate = Today, Status = MilestoneStatus.Achieved };
+        Assert.True(MilestoneRules.Reconcile(row, Today).Ok);
+        Assert.Equal(Today, row.AchievedDate);
+        row.Status = MilestoneStatus.Pending;
+        MilestoneRules.Reconcile(row, Today);
+        Assert.Null(row.AchievedDate);
+    }
 }

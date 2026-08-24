@@ -1,0 +1,34 @@
+@inject IGatePassService Gate
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-3">The reason is retained separately in the audit record.</MudText>
+        <MudTextField @bind-Value="_reason" Label="Cancellation reason" Required="true"
+                      Lines="3" Variant="Variant.Outlined" AutoFocus="true" />
+        @if (_error is not null) { <MudAlert Severity="Severity.Error" Class="mt-3">@_error</MudAlert> }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Keep pass</MudButton>
+        <MudButton Color="Color.Error" Variant="Variant.Filled" OnClick="CancelAsync" Disabled="_busy">Cancel pass</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public int PassId { get; set; }
+    private string _reason = "";
+    private string? _error;
+    private bool _busy;
+    private async Task CancelAsync()
+    {
+        _busy=true;_error=null;
+        try
+        {
+            var result=await Gate.CancelAsync(PassId,_reason);
+            if(result.Failed){_error=result.Error;return;}
+            Snackbar.Add("Gate pass cancelled.",Severity.Success);Dialog.Close(DialogResult.Ok(true));
+        }
+        finally{_busy=false;}
+    }
+}

@@ -1,0 +1,17 @@
+[Unit]
+Description=MEI ERP
+After=network-online.target postgresql.service
+[Service]
+User=meierp
+Group=meierp
+WorkingDirectory=/opt/mei-erp/current
+EnvironmentFile=/etc/mei-erp.env
+ExecStart=/usr/bin/dotnet /opt/mei-erp/current/MeiErp.Host.dll --urls http://127.0.0.1:5090
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/mei-erp/current/logs
+[Install]
+WantedBy=multi-user.target

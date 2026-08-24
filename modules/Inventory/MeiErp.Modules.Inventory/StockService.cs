@@ -19,8 +19,20 @@ public interface IStockService
         StockMovementType type, string? reference, string? documentType, int? documentId,
         CancellationToken ct = default);
 
+    /// <summary>Stages a receipt in the current unit of work; the caller owns the final atomic save.</summary>
+    Task<Result<StockMovement>> StageReceiptAsync(
+        int itemId, decimal quantity, decimal unitCost, DateOnly date,
+        StockMovementType type, string? reference, string? documentType, int? documentId,
+        CancellationToken ct = default);
+
     /// <summary>Takes stock out at the current weighted average.</summary>
     Task<Result<StockMovement>> IssueAsync(
+        int itemId, decimal quantity, DateOnly date,
+        StockMovementType type, string? reference, string? documentType, int? documentId,
+        CancellationToken ct = default);
+
+    /// <summary>Stages an issue; the caller owns the atomic save.</summary>
+    Task<Result<StockMovement>> StageIssueAsync(
         int itemId, decimal quantity, DateOnly date,
         StockMovementType type, string? reference, string? documentType, int? documentId,
         CancellationToken ct = default);
@@ -29,8 +41,12 @@ public interface IStockService
     Task<Result<StockMovement>> AdjustToAsync(
         int itemId, decimal countedQuantity, DateOnly date, string reason, CancellationToken ct = default);
 
+    /// <param name="domainId">
+    /// Read one stock book's ledger. Null spans both, which only a group-wide
+    /// valuation should want.
+    /// </param>
     Task<IReadOnlyList<StockMovement>> MovementsAsync(
-        int? itemId, DateOnly? from, DateOnly? to, CancellationToken ct = default);
+        int? itemId, DateOnly? from, DateOnly? to, int? domainId = null, CancellationToken ct = default);
 
     /// <summary>
     /// Recomputes every item's quantity from its movements.
@@ -45,6 +61,17 @@ public interface IStockService
 public sealed class StockService(InventoryDbContext db) : IStockService
 {
     public async Task<Result<StockMovement>> ReceiveAsync(
+        int itemId, decimal quantity, decimal unitCost, DateOnly date,
+        StockMovementType type, string? reference, string? documentType, int? documentId,
+        CancellationToken ct = default)
+    {
+        var result = await StageReceiptAsync(itemId, quantity, unitCost, date, type,
+            reference, documentType, documentId, ct);
+        if (result.Ok) await db.SaveChangesAsync(ct);
+        return result;
+    }
+
+    public async Task<Result<StockMovement>> StageReceiptAsync(
         int itemId, decimal quantity, decimal unitCost, DateOnly date,
         StockMovementType type, string? reference, string? documentType, int? documentId,
         CancellationToken ct = default)
@@ -71,12 +98,14 @@ public sealed class StockService(InventoryDbContext db) : IStockService
         // Last cost only moves forward in time. An older invoice entered late
         // should update the average but must not overwrite a newer price.
         item.LastCost = unitCost;
+        var warehouse = await ChangeDefaultBalanceAsync(item.Id, item.DomainId, quantity, ct);
 
         var movement = new StockMovement
         {
             ItemId = item.Id,
             ItemCode = item.Code,
             ItemName = item.Name,
+            DomainId = item.DomainId,
             Date = date,
             Type = type,
             Quantity = quantity,
@@ -85,15 +114,24 @@ public sealed class StockService(InventoryDbContext db) : IStockService
             Reference = reference,
             SourceDocumentType = documentType,
             SourceDocumentId = documentId
+            ,Warehouse = warehouse
         };
 
         db.StockMovements.Add(movement);
-        await db.SaveChangesAsync(ct);
-
         return Result.Success(movement);
     }
 
     public async Task<Result<StockMovement>> IssueAsync(
+        int itemId, decimal quantity, DateOnly date,
+        StockMovementType type, string? reference, string? documentType, int? documentId,
+        CancellationToken ct = default)
+    {
+        var result=await StageIssueAsync(itemId,quantity,date,type,reference,documentType,documentId,ct);
+        if(result.Ok)await db.SaveChangesAsync(ct);
+        return result;
+    }
+
+    public async Task<Result<StockMovement>> StageIssueAsync(
         int itemId, decimal quantity, DateOnly date,
         StockMovementType type, string? reference, string? documentType, int? documentId,
         CancellationToken ct = default)
@@ -117,6 +155,7 @@ public sealed class StockService(InventoryDbContext db) : IStockService
         // Issued at the current average. The average itself does not move on a
         // sale - only purchases change what stock is carried at.
         var cost = item.AverageCost;
+        var warehouse = await ChangeDefaultBalanceAsync(item.Id, item.DomainId, -quantity, ct);
         item.QuantityOnHand -= quantity;
 
         var movement = new StockMovement
@@ -124,6 +163,7 @@ public sealed class StockService(InventoryDbContext db) : IStockService
             ItemId = item.Id,
             ItemCode = item.Code,
             ItemName = item.Name,
+            DomainId = item.DomainId,
             Date = date,
             Type = type,
             Quantity = -quantity,
@@ -132,10 +172,10 @@ public sealed class StockService(InventoryDbContext db) : IStockService
             Reference = reference,
             SourceDocumentType = documentType,
             SourceDocumentId = documentId
+            ,Warehouse = warehouse
         };
 
         db.StockMovements.Add(movement);
-        await db.SaveChangesAsync(ct);
 
         return Result.Success(movement);
     }
@@ -161,18 +201,21 @@ public sealed class StockService(InventoryDbContext db) : IStockService
             return Result.Fail<StockMovement>("The count already matches what the system says.", "stock.no-change");
 
         item.QuantityOnHand = countedQuantity;
+        var warehouse = await ChangeDefaultBalanceAsync(item.Id, item.DomainId, difference, ct);
 
         var movement = new StockMovement
         {
             ItemId = item.Id,
             ItemCode = item.Code,
             ItemName = item.Name,
+            DomainId = item.DomainId,
             Date = date,
             Type = StockMovementType.Adjustment,
             Quantity = difference,
             UnitCost = item.AverageCost,
             BalanceAfter = countedQuantity,
             Narration = reason
+            ,Warehouse = warehouse
         };
 
         db.StockMovements.Add(movement);
@@ -182,10 +225,11 @@ public sealed class StockService(InventoryDbContext db) : IStockService
     }
 
     public async Task<IReadOnlyList<StockMovement>> MovementsAsync(
-        int? itemId, DateOnly? from, DateOnly? to, CancellationToken ct = default)
+        int? itemId, DateOnly? from, DateOnly? to, int? domainId = null, CancellationToken ct = default)
     {
         var query = db.StockMovements.AsNoTracking().AsQueryable();
 
+        if (domainId is not null) query = query.Where(m => m.DomainId == domainId);
         if (itemId is not null) query = query.Where(m => m.ItemId == itemId);
         if (from is not null) query = query.Where(m => m.Date >= from);
         if (to is not null) query = query.Where(m => m.Date <= to);
@@ -218,5 +262,23 @@ public sealed class StockService(InventoryDbContext db) : IStockService
 
         if (corrected > 0) await db.SaveChangesAsync(ct);
         return corrected;
+    }
+
+    /// <summary>
+    /// The default warehouse *within the item's own stock book*.
+    ///
+    /// Scoping this is what keeps the two books apart at the point it matters:
+    /// unscoped, a workshop spare would land on the main store's default shelf
+    /// and both valuations would be wrong.
+    /// </summary>
+    private async Task<Warehouse> ChangeDefaultBalanceAsync(int itemId,int domainId,decimal difference,CancellationToken ct)
+    {
+        var warehouse=db.Warehouses.Local.FirstOrDefault(x=>x.IsDefault&&x.DomainId==domainId)
+            ?? await db.Warehouses.Where(x=>x.DomainId==domainId).OrderByDescending(x=>x.IsDefault).ThenBy(x=>x.Id).FirstOrDefaultAsync(ct);
+        if(warehouse is null){warehouse=new Warehouse{Name="Main warehouse",Code="WH-"+domainId,IsDefault=true,DomainId=domainId};db.Warehouses.Add(warehouse);}
+        var balance=await db.WarehouseBalances.FirstOrDefaultAsync(x=>x.WarehouseId==warehouse.Id&&x.ItemId==itemId,ct);
+        if(balance is null){balance=new WarehouseBalance{Warehouse=warehouse,ItemId=itemId};db.WarehouseBalances.Add(balance);}
+        if(balance.Quantity+difference<0)throw new InvalidOperationException("The default warehouse does not hold enough stock.");
+        balance.Quantity+=difference;return warehouse;
     }
 }

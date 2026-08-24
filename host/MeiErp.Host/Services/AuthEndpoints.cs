@@ -3,6 +3,8 @@ using MeiErp.Platform.Identity;
 using MeiErp.Platform.Kernel;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.WebUtilities;
+using System.Text;
 
 namespace MeiErp.Host.Services;
 
@@ -46,6 +48,12 @@ public static class AuthEndpoints
             if (result.IsLockedOut)
                 return Redirect("/sign-in?error=locked");
 
+            if (result.RequiresTwoFactor)
+                return Redirect($"/two-factor?rememberMe={(rememberMe ?? false).ToString().ToLowerInvariant()}&returnUrl={Uri.EscapeDataString(SafeReturn(returnUrl))}");
+
+            if (result.IsNotAllowed)
+                return Redirect("/sign-in?error=confirm");
+
             if (!result.Succeeded)
                 return Redirect($"/sign-in?error=1&returnUrl={Uri.EscapeDataString(returnUrl ?? "/")}");
 
@@ -56,6 +64,78 @@ public static class AuthEndpoints
                 return Redirect("/change-password");
 
             return Redirect(SafeReturn(returnUrl));
+        }).DisableAntiforgery().RequireRateLimiting("sign-in");
+
+        group.MapPost("/two-factor", async ([FromForm] string code, [FromForm] bool? rememberMe,
+            [FromForm] bool? rememberMachine, [FromForm] string? returnUrl,
+            SignInManager<ApplicationUser> signIn) =>
+        {
+            code = code.Replace(" ", "").Replace("-", "");
+            var result = await signIn.TwoFactorAuthenticatorSignInAsync(code, rememberMe ?? false, rememberMachine ?? false);
+            if (result.IsLockedOut) return Redirect("/sign-in?error=locked");
+            return result.Succeeded ? Redirect(SafeReturn(returnUrl))
+                : Redirect($"/two-factor?error=1&rememberMe={(rememberMe ?? false).ToString().ToLowerInvariant()}&returnUrl={Uri.EscapeDataString(SafeReturn(returnUrl))}");
+        }).DisableAntiforgery().RequireRateLimiting("sign-in");
+
+        group.MapPost("/recovery-code", async ([FromForm] string code, [FromForm] string? returnUrl,
+            SignInManager<ApplicationUser> signIn) =>
+        {
+            var result = await signIn.TwoFactorRecoveryCodeSignInAsync(code.Replace(" ", ""));
+            if (result.IsLockedOut) return Redirect("/sign-in?error=locked");
+            return result.Succeeded ? Redirect(SafeReturn(returnUrl))
+                : Redirect($"/recovery-code?error=1&returnUrl={Uri.EscapeDataString(SafeReturn(returnUrl))}");
+        }).DisableAntiforgery().RequireRateLimiting("sign-in");
+
+        group.MapPost("/forgot-password", async ([FromForm] string email, UserManager<ApplicationUser> users,
+            IAccountEmailSender sender, CancellationToken ct) =>
+        {
+            var user = await users.FindByEmailAsync(email);
+            if (user is not null && user.IsActive && user.EmailConfirmed)
+            {
+                var token = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(await users.GeneratePasswordResetTokenAsync(user)));
+                var path = $"/reset-password?email={Uri.EscapeDataString(email)}&token={Uri.EscapeDataString(token)}";
+                await sender.SendAsync(email, "Reset your MEI ERP password",
+                    "A password reset was requested for your account. If this was not you, ignore this message.", path, ct);
+            }
+            return Redirect("/forgot-password?sent=1");
+        }).DisableAntiforgery().RequireRateLimiting("sign-in");
+
+        group.MapPost("/reset-password", async ([FromForm] string email, [FromForm] string token,
+            [FromForm] string password, UserManager<ApplicationUser> users) =>
+        {
+            var user = await users.FindByEmailAsync(email);
+            if (user is null) return Redirect("/reset-password?error=1");
+            try { token = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(token)); }
+            catch (FormatException) { return Redirect("/reset-password?error=1"); }
+            var result = await users.ResetPasswordAsync(user, token, password);
+            if (!result.Succeeded) return Redirect("/reset-password?error=1");
+            user.MustChangePassword = false;
+            await users.UpdateSecurityStampAsync(user);
+            return Redirect("/sign-in?reset=1");
+        }).DisableAntiforgery().RequireRateLimiting("sign-in");
+
+        group.MapGet("/confirm-email", async (string userId, string token, UserManager<ApplicationUser> users) =>
+        {
+            var user = await users.FindByIdAsync(userId);
+            if (user is null) return Redirect("/sign-in?error=confirm-invalid");
+            try { token = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(token)); }
+            catch (FormatException) { return Redirect("/sign-in?error=confirm-invalid"); }
+            var result = await users.ConfirmEmailAsync(user, token);
+            return Redirect(result.Succeeded ? "/sign-in?confirmed=1" : "/sign-in?error=confirm-invalid");
+        }).RequireRateLimiting("sign-in");
+
+        group.MapPost("/send-confirmation", async ([FromForm] string email, UserManager<ApplicationUser> users,
+            IAccountEmailSender sender, CancellationToken ct) =>
+        {
+            var user = await users.FindByEmailAsync(email);
+            if (user is not null && user.IsActive && !user.EmailConfirmed)
+            {
+                var token = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(await users.GenerateEmailConfirmationTokenAsync(user)));
+                var path = $"/auth/confirm-email?userId={Uri.EscapeDataString(user.Id)}&token={Uri.EscapeDataString(token)}";
+                await sender.SendAsync(email, "Confirm your MEI ERP email",
+                    "Confirm this address to activate your MEI ERP account.", path, ct);
+            }
+            return Redirect("/forgot-password?confirmationSent=1");
         }).DisableAntiforgery().RequireRateLimiting("sign-in");
 
         group.MapPost("/sign-out", async (SignInManager<ApplicationUser> signIn) =>

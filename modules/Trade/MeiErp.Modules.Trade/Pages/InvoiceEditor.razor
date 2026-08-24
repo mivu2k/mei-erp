@@ -1,0 +1,329 @@
+@inject ITradeDocumentService Documents
+@inject IPartyService PartyMaster
+@inject ITradeStockPort Stock
+@inject IClock Clock
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+@*
+    Raising or entering an invoice, either side of the business.
+
+    A sales invoice is money owed to the business; a purchase invoice is money
+    it owes and carries the supplier's own reference so the two can be matched.
+*@
+
+<DocumentShell @ref="_shell" CancelText="Close" AsDialog="AsDialog"
+               Title="@Title"
+               Subtitle="@(_editable ? "Save a draft while you check it; post when it should enter the books." : null)"
+               StatusLabel="@_status.ToString()"
+               StatusColour="@Colour(_status)"
+               Error="@_error"
+               ReadOnlyReason="@(_editable ? null : "This invoice has been posted. Correcting it needs a credit note, not an edit.")"
+               OnClose="DismissedAsync">
+    <Body>
+        <div class="d-flex flex-wrap gap-3 mb-4">
+            <MudSelect T="int" @bind-Value="_partyId" Disabled="@(!_editable)"
+                       Label="@(IsPurchase ? "Supplier" : "Customer")"
+                       Variant="Variant.Outlined" Style="min-width:240px">
+                @foreach (var p in _parties)
+                {
+                    <MudSelectItem T="int" Value="@p.Id">@p.Name</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudDatePicker Label="Date" Variant="Variant.Outlined" Disabled="@(!_editable)"
+                           Date="_date" DateChanged="@(d => _date = d)" Style="min-width:160px" />
+
+            <MudDatePicker Label="Due" Variant="Variant.Outlined" Disabled="@(!_editable)"
+                           Date="_dueDate" DateChanged="@(d => _dueDate = d)" Clearable="true"
+                           HelperText="Left empty, the party's payment terms decide it."
+                           Style="min-width:180px" />
+
+            @if (IsPurchase)
+            {
+                <MudTextField @bind-Value="_theirReference" Label="Their invoice number"
+                              Variant="Variant.Outlined" Disabled="@(!_editable)"
+                              Style="min-width:200px" />
+            }
+        </div>
+
+        <MudTable T="Row" Items="_lines" Dense="true" Elevation="0" Bordered="true">
+            <HeaderContent>
+                <MudTh Style="width:220px">Item</MudTh>
+                <MudTh>Description</MudTh>
+                <MudTh Style="width:110px">Qty</MudTh>
+                <MudTh Style="width:140px">Unit price</MudTh>
+                <MudTh Style="width:120px;text-align:right">Amount</MudTh>
+                <MudTh Style="width:48px" />
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>
+                    <MudSelect T="int?" Value="context.ItemId" ValueChanged="@(v => PickItem(context, v))"
+                               Dense="true" Margin="Margin.Dense" Clearable="true"
+                               Disabled="@(!_editable)" Placeholder="Free text">
+                        @foreach (var i in _items)
+                        {
+                            <MudSelectItem T="int?" Value="@((int?)i.Id)">@i.Code — @i.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudTd>
+                <MudTd>
+                    <MudTextField @bind-Value="context.Description" Margin="Margin.Dense"
+                                  Disabled="@(!_editable)" Placeholder="What is being billed" />
+                </MudTd>
+                <MudTd>
+                    <MudNumericField T="decimal" @bind-Value="context.Quantity"
+                                     @bind-Value:after="Recalculate" Min="0"
+                                     Margin="Margin.Dense" Disabled="@(!_editable)" />
+                </MudTd>
+                <MudTd>
+                    <MudNumericField T="decimal" @bind-Value="context.UnitPrice"
+                                     @bind-Value:after="Recalculate" Min="0"
+                                     Margin="Margin.Dense" Disabled="@(!_editable)" />
+                </MudTd>
+                <MudTd Style="text-align:right">
+                    <span style="font-variant-numeric:tabular-nums">
+                        @((context.Quantity * context.UnitPrice).ToString("N2"))
+                    </span>
+                </MudTd>
+                <MudTd>
+                    @if (_editable)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small"
+                                       OnClick="@(() => Remove(context))" />
+                    }
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+
+        @if (_editable)
+        {
+            <MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="@(() => _lines.Add(new Row()))" Class="mt-2">Add line</MudButton>
+        }
+
+        <div class="d-flex flex-wrap gap-4 mt-4">
+            <div style="flex:1 1 320px">
+                <MudTextField @bind-Value="_notes" Label="Notes" Lines="3"
+                              Variant="Variant.Outlined" Disabled="@(!_editable)" />
+            </div>
+
+            <div style="flex:0 0 280px">
+                <div class="d-flex gap-2 mb-2">
+                    <MudNumericField T="decimal" @bind-Value="_discount" @bind-Value:after="Recalculate"
+                                     Label="Discount" Min="0" Variant="Variant.Outlined"
+                                     Margin="Margin.Dense" Disabled="@(!_editable)" />
+                    <MudNumericField T="decimal" @bind-Value="_taxPercent" @bind-Value:after="Recalculate"
+                                     Label="Tax %" Min="0" Variant="Variant.Outlined"
+                                     Margin="Margin.Dense" Disabled="@(!_editable)" />
+                </div>
+
+                <MudPaper Outlined="true" Elevation="0" Class="pa-3">
+                    @foreach (var (label, value, strong) in Totals)
+                    {
+                        <div class="d-flex justify-space-between py-1">
+                            <MudText Typo="Typo.body2" Class="@(strong ? "" : "mud-text-secondary")">
+                                @(strong ? new MarkupString($"<b>{label}</b>") : new MarkupString(label))
+                            </MudText>
+                            <MudText Typo="Typo.body2" Style="font-variant-numeric:tabular-nums">
+                                @(strong ? new MarkupString($"<b>{value:N2}</b>") : new MarkupString(value.ToString("N2")))
+                            </MudText>
+                        </div>
+                    }
+                </MudPaper>
+            </div>
+        </div>
+    </Body>
+
+    <Buttons>
+
+        @if (_editable)
+        {
+            <MudButton Variant="Variant.Outlined" OnClick="@(() => SaveAsync(post: false))"
+                       Disabled="_busy" StartIcon="@Icons.Material.Outlined.Save">
+                Save draft
+            </MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       OnClick="@(() => SaveAsync(post: true))" Disabled="_busy"
+                       StartIcon="@Icons.Material.Outlined.Send">
+                Post
+            </MudButton>
+        }
+    </Buttons>
+</DocumentShell>
+
+@code {
+    [Parameter] public bool AsDialog { get; set; }
+    [Parameter] public bool IsPurchase { get; set; }
+    [Parameter] public int? InvoiceId { get; set; }
+
+    [Parameter] public EventCallback Saved { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
+
+    private TradeDirection Direction => IsPurchase ? TradeDirection.Purchase : TradeDirection.Sales;
+
+    private IReadOnlyList<Party> _parties = [];
+    private IReadOnlyList<TradeItem> _items = [];
+    private List<Row> _lines = [];
+
+    private int _partyId, _bookId;
+    private DateTime? _date, _dueDate;
+    private decimal _taxPercent, _discount, _subtotal, _tax, _total;
+    private string? _notes, _theirReference, _error;
+    private bool _busy, _editable = true;
+    private DocumentStatus _status = DocumentStatus.Draft;
+
+    private string Title => InvoiceId is null
+        ? (IsPurchase ? "New supplier invoice" : "New customer invoice")
+        : (IsPurchase ? "Supplier invoice" : "Customer invoice");
+
+    private IEnumerable<(string, decimal, bool)> Totals =>
+    [
+        ("Subtotal", _subtotal, false),
+        ("Discount", _discount, false),
+        ($"Tax ({_taxPercent:0.##}%)", _tax, false),
+        ("Total", _total, true)
+    ];
+
+    /// <summary>One sequential load: everything here shares the circuit's DbContext.</summary>
+    protected override async Task OnInitializedAsync()
+    {
+        _bookId = (await Stock.DefaultBookAsync())?.Id ?? 0;
+        _items = _bookId == 0 ? [] : await Stock.ItemsAsync(_bookId);
+
+        _parties = await PartyMaster.ListAsync(
+            customers: IsPurchase ? null : true,
+            suppliers: IsPurchase ? true : null);
+
+        _date = Clock.Today.ToDateTime(TimeOnly.MinValue);
+
+        if (InvoiceId is { } id && await Documents.InvoiceAsync(id) is { } existing)
+        {
+            _status = existing.Status;
+            _editable = existing.Status.IsEditable();
+            _partyId = existing.PartyId;
+            _bookId = existing.DomainId;
+            _date = existing.Date.ToDateTime(TimeOnly.MinValue);
+            _dueDate = existing.DueDate?.ToDateTime(TimeOnly.MinValue);
+            _taxPercent = existing.TaxPercent;
+            _discount = existing.Discount;
+            _notes = existing.Notes;
+            _theirReference = existing.TheirReference;
+
+            _lines = [.. existing.Lines.Select(l => new Row
+            {
+                ItemId = l.ItemId, ItemCode = l.ItemCode,
+                Description = l.Description, Quantity = l.Quantity, UnitPrice = l.UnitPrice
+            })];
+        }
+
+        if (_lines.Count == 0) _lines.Add(new Row());
+        if (_partyId == 0 && _parties.Count > 0) _partyId = _parties[0].Id;
+
+        Recalculate();
+    }
+
+    private void PickItem(Row row, int? itemId)
+    {
+        row.ItemId = itemId;
+
+        if (_items.FirstOrDefault(i => i.Id == itemId) is { } item)
+        {
+            row.ItemCode = item.Code;
+            if (string.IsNullOrWhiteSpace(row.Description)) row.Description = item.Name;
+            if (row.UnitPrice == 0)
+                row.UnitPrice = IsPurchase ? item.AverageCost : item.SellingPrice;
+        }
+        else
+        {
+            row.ItemCode = null;
+        }
+
+        Recalculate();
+    }
+
+    private void Remove(Row row)
+    {
+        _lines.Remove(row);
+        if (_lines.Count == 0) _lines.Add(new Row());
+        Recalculate();
+    }
+
+    private void Recalculate()
+    {
+        _subtotal = _lines.Sum(l => Math.Round(l.Quantity * l.UnitPrice, 2));
+        var taxable = Math.Max(0, _subtotal - _discount);
+        _tax = Math.Round(taxable * _taxPercent / 100m, 2);
+        _total = taxable + _tax;
+    }
+
+    private async Task SaveAsync(bool post)
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var lines = _lines
+                .Where(l => !string.IsNullOrWhiteSpace(l.Description) && l.Quantity > 0)
+                .Select(l => new DocumentLineInput(l.ItemId, l.ItemCode, l.Description, l.Quantity, l.UnitPrice))
+                .ToList();
+
+            if (lines.Count == 0) { _error = "Add at least one line with a description and a quantity."; return; }
+
+            var saved = await Documents.SaveInvoiceAsync(new InvoiceInput(
+                InvoiceId, Direction, _partyId, _bookId,
+                DateOnly.FromDateTime(_date ?? Clock.Today.ToDateTime(TimeOnly.MinValue)),
+                _dueDate is { } d ? DateOnly.FromDateTime(d) : null,
+                _taxPercent, _discount, _theirReference, _notes, null, null, lines));
+
+            if (saved.Failed) { _error = saved.Error; return; }
+
+            if (!post)
+            {
+                InvoiceId = saved.Value.Id;
+                _status = saved.Value.Status;
+                Snackbar.Add($"{saved.Value.Number} saved as a draft.", Severity.Success);
+                await Saved.InvokeAsync();
+                return;
+            }
+
+            var posted = await Documents.PostInvoiceAsync(saved.Value.Id);
+            if (posted.Failed) { _error = posted.Error; return; }
+
+            _status = posted.Value.Status;
+            _editable = false;
+            Snackbar.Add($"{posted.Value.Number} sent for approval.", Severity.Success);
+
+            await Saved.InvokeAsync();
+            if (AsDialog && _shell is not null) await _shell.CloseAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private DocumentShell? _shell;
+    
+    /// <summary>The shell has already closed itself; just react to it.</summary>
+    private async Task DismissedAsync()
+    {
+        if (Closed.HasDelegate) { await Closed.InvokeAsync(); return; }
+        Nav.NavigateTo(IsPurchase ? "/purchase/invoices" : "/sales/invoices");
+    }
+
+    private static Color Colour(DocumentStatus s) => s switch
+    {
+        DocumentStatus.Draft => Color.Default,
+        DocumentStatus.PendingApproval or DocumentStatus.Returned => Color.Warning,
+        DocumentStatus.Posted => Color.Success,
+        DocumentStatus.Rejected or DocumentStatus.Cancelled => Color.Error,
+        _ => Color.Info
+    };
+
+    private sealed class Row
+    {
+        public int? ItemId { get; set; }
+        public string? ItemCode { get; set; }
+        public string Description { get; set; } = "";
+        public decimal Quantity { get; set; } = 1;
+        public decimal UnitPrice { get; set; }
+    }
+}

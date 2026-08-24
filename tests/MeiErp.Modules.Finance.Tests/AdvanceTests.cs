@@ -27,7 +27,7 @@ public sealed class AdvanceTests : IAsyncLifetime
     private readonly TestUser _user = new("user-1", "Rafiq");
 
     private bool _available;
-    private int _cash, _advanceHead, _travel;
+    private int _cash, _advanceHead, _directorCapital, _travel;
 
     private string Connection => BaseConnection + $"Database={_database};";
 
@@ -43,17 +43,19 @@ public sealed class AdvanceTests : IAsyncLifetime
 
             await using var db = NewDb();
             await db.Database.EnsureCreatedAsync();
+            await db.EnsureAuditTableForTestsAsync();
 
             var cash = new Account { Code = "1100", Name = "Cash", Type = AccountType.Asset, IsPostable = true };
 
             // Where money held by staff sits until it is accounted for.
             var advances = new Account { Code = "1700", Name = "Employee advances", Type = AccountType.Asset, IsPostable = true };
+            var directorCapital = new Account { Code = "3210", Name = "Director capital", Type = AccountType.Equity, IsPostable = true };
             var travel = new Account { Code = "5220", Name = "Staff travel", Type = AccountType.Expense, IsPostable = true };
 
-            db.Accounts.AddRange(cash, advances, travel);
+            db.Accounts.AddRange(cash, advances, directorCapital, travel);
             await db.SaveChangesAsync();
 
-            _cash = cash.Id; _advanceHead = advances.Id; _travel = travel.Id;
+            _cash = cash.Id; _advanceHead = advances.Id; _directorCapital = directorCapital.Id; _travel = travel.Id;
             _available = true;
         }
         catch (NpgsqlException) { _available = false; }
@@ -100,6 +102,32 @@ public sealed class AdvanceTests : IAsyncLifetime
     }
 
     // ---------- disbursement ----------
+
+    [SkippableFact]
+    public async Task Director_funds_clear_against_director_capital_and_use_dfr_numbering()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+
+        await using var db = NewDb();
+        var service = NewService(db);
+        var draft = await service.SaveDraftAsync(new AdvanceInput(
+            null, "Director travel", 5_000, _clock.Today, null, null, null,
+            IsDirectorRequest: true));
+        Assert.True(draft.Ok, draft.Error);
+        Assert.StartsWith("DFR-", draft.Value.Reference);
+
+        await service.SubmitAsync(draft.Value.Id);
+        var live = await db.Advances.FirstAsync(a => a.Id == draft.Value.Id);
+        live.Status = AdvanceStatus.Approved;
+        await db.SaveChangesAsync();
+
+        var paid = await service.DisburseAsync(draft.Value.Id, 5_000, _cash, _clock.Today);
+        Assert.True(paid.Ok, paid.Error);
+        var accounts = new AccountService(db);
+        Assert.Equal(5_000, await accounts.BalanceAsync(_directorCapital));
+        Assert.Equal(-5_000, await accounts.BalanceAsync(_cash));
+        Assert.Equal(0, await accounts.BalanceAsync(_advanceHead));
+    }
 
     [SkippableFact]
     public async Task Paying_out_moves_money_without_making_it_an_expense_yet()

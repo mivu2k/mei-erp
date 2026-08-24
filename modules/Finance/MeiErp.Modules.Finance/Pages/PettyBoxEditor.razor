@@ -1,37 +1,42 @@
 @inject IPettyCashService Petty
 @inject ISnackbar Snackbar
+@inject NavigationManager Nav
 
-<MudDialog>
-    <DialogContent>
+<DocumentShell @ref="_shell" AsDialog="AsDialog" Title="New petty cash box" Error="@_error" OnClose="DismissedAsync">
+    <Body>
         <MudForm @ref="_form">
-            <MudTextField @bind-Value="_model.Name" Label="Box name" Required="true"
-                          RequiredError="Give the box a name." Variant="Variant.Outlined" Class="mb-4" />
+            <FormSection Title="The box" Icon="@Icons.Material.Outlined.Savings"
+                         Hint="Creating a box creates its own cash account, so its balance stands on the ledger.">
+                <div class="app-form-grid">
+                    <MudTextField @bind-Value="_model.Name" Label="Box name" Required="true"
+                                  RequiredError="Give the box a name." Variant="Variant.Outlined" />
+                    <MudTextField @bind-Value="_model.CustodianName" Label="Held by" Required="true"
+                                  RequiredError="Say who holds this float."
+                                  Variant="Variant.Outlined"
+                                  HelperText="An unattributed float is one nobody is answerable for." />
+                </div>
+            </FormSection>
 
-            <MudTextField @bind-Value="_model.CustodianName" Label="Held by" Required="true"
-                          RequiredError="Say who holds this float."
-                          Variant="Variant.Outlined" Class="mb-4"
-                          HelperText="An unattributed float is one nobody is answerable for." />
-
-            <MudNumericField T="decimal" @bind-Value="_model.FloatAmount" Label="Float"
-                             Variant="Variant.Outlined" HideSpinButtons="true"
-                             HelperText="The standing amount the box is topped up to." />
+            <FormSection Title="The float" Icon="@Icons.Material.Outlined.Payments">
+                <div class="app-form-grid">
+                    <MudNumericField T="decimal" @bind-Value="_model.FloatAmount" Label="Float"
+                                     Variant="Variant.Outlined" HideSpinButtons="true"
+                                     HelperText="The standing amount the box is topped up to." />
+                </div>
+            </FormSection>
         </MudForm>
+    </Body>
 
-        @if (_error is not null)
-        {
-            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
-        }
-    </DialogContent>
-
-    <DialogActions>
-        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+    <Buttons>
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
                    OnClick="SaveAsync" Disabled="_busy">Create box</MudButton>
-    </DialogActions>
-</MudDialog>
+    </Buttons>
+</DocumentShell>
 
 @code {
-    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public bool AsDialog { get; set; }
+    [Parameter] public EventCallback Saved { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
 
     private MudForm? _form;
     private PettyCashBox _model = new() { IsActive = true };
@@ -54,8 +59,18 @@
             if (result.Failed) { _error = result.Error; return; }
 
             Snackbar.Add("Box created with its own cash account.", Severity.Success);
-            Dialog.Close(DialogResult.Ok(true));
+            await Saved.InvokeAsync();
+            if (AsDialog && _shell is not null) await _shell.CloseAsync();
         }
         finally { _busy = false; }
+    }
+
+    private DocumentShell? _shell;
+    
+    /// <summary>The shell has already closed itself; just react to it.</summary>
+    private async Task DismissedAsync()
+    {
+        if (Closed.HasDelegate) { await Closed.InvokeAsync(); return; }
+        Nav.NavigateTo("/finance/petty-cash");
     }
 }

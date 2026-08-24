@@ -9,6 +9,9 @@
 
         <MudTextField @bind-Value="_collectedBy" Label="Collected by" Immediate="true"
                       Variant="Variant.Outlined" AutoFocus="true" />
+        <MudTextField @bind-Value="_phone" Label="Collector phone" Variant="Variant.Outlined" Class="mt-3" />
+        <MudTextField @bind-Value="_cnic" Label="Collector CNIC" Variant="Variant.Outlined" Class="mt-3" />
+        <MudTextField @bind-Value="_note" Label="Delivery note" Lines="2" Variant="Variant.Outlined" Class="mt-3" />
 
         @if (_error is not null)
         {
@@ -30,6 +33,7 @@
     [Parameter] public string JobNumber { get; set; } = "";
 
     private string _collectedBy = "";
+    private string? _phone,_cnic,_note;
     private string? _error;
     private bool _busy;
 
@@ -39,7 +43,7 @@
         _busy = true;
         try
         {
-            var result = await Workshop.DeliverAsync(JobId, _collectedBy);
+            var result = await Workshop.DeliverAsync(JobId, new(_collectedBy,_phone,_cnic,_note));
             if (result.Failed) { _error = result.Error; return; }
 
             Snackbar.Add("Delivered.", Severity.Success);

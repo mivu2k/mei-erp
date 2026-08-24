@@ -1,65 +1,125 @@
 @page "/"
 @attribute [Authorize]
+@using MeiErp.Host.Services
+@inject IDashboardService Insights
+@inject IModuleCatalog Catalog
+@inject ICurrentUser User
+@inject IClock Clock
 
 <PageTitle>Dashboard</PageTitle>
 
-<MudText Typo="Typo.h5" Class="mb-1">@Greeting</MudText>
-<MudText Typo="Typo.body2" Class="mud-text-secondary mb-6">
-    @DateTime.Now.ToString("dddd, d MMMM yyyy")
-</MudText>
+<section class="dashboard-hero">
+    <div>
+        <div class="dashboard-eyebrow">
+            <MudIcon Icon="@Icons.Material.Outlined.CalendarToday" Size="Size.Small" />
+            @Clock.Today.ToString("dddd, d MMMM yyyy")
+        </div>
+        <MudText Typo="Typo.h3">@Greeting</MudText>
+        <MudText Typo="Typo.body1">Here is what needs attention across your workspace today.</MudText>
+    </div>
+    <MudButton Href="/reports" Variant="Variant.Outlined" Color="Color.Inherit"
+               StartIcon="@Icons.Material.Outlined.Assessment">Open reports</MudButton>
+</section>
 
-<MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-6">
-    <MudText Typo="Typo.subtitle2">Foundation stage</MudText>
-    <MudText Typo="Typo.body2">
-        The platform spine is running: identity, permissions, departments and the approval
-        engine. Business modules are ported next and will appear in the nav as they land.
-    </MudText>
-</MudAlert>
+@if (_data is null)
+{
+    <MudGrid Class="mt-2">
+        @for (var i = 0; i < 4; i++)
+        {
+            <MudItem xs="12" sm="6" lg="3"><MudSkeleton Height="152px" /></MudItem>
+        }
+    </MudGrid>
+}
+else
+{
+    <div class="dashboard-kpis">
+        <a class="dashboard-kpi kpi-primary" href="/approvals">
+            <span class="dashboard-kpi-icon"><MudIcon Icon="@Icons.Material.Outlined.FactCheck" /></span>
+            <span class="dashboard-kpi-label">Awaiting your decision</span><strong>@_data.AwaitingMe</strong>
+            <span class="dashboard-kpi-note">@CountLabel(_data.OverdueApprovals, "overdue")</span>
+            <MudIcon Class="dashboard-kpi-arrow" Icon="@Icons.Material.Outlined.ArrowForward" Size="Size.Small" />
+        </a>
+        <a class="dashboard-kpi kpi-warning" href="/finance/requests">
+            <span class="dashboard-kpi-icon"><MudIcon Icon="@Icons.Material.Outlined.Payments" /></span>
+            <span class="dashboard-kpi-label">Pending payments</span><strong>@_data.PendingPayments</strong>
+            <span class="dashboard-kpi-note">Pending or approved requests</span>
+            <MudIcon Class="dashboard-kpi-arrow" Icon="@Icons.Material.Outlined.ArrowForward" Size="Size.Small" />
+        </a>
+        <a class="dashboard-kpi kpi-info" href="/repair/jobs">
+            <span class="dashboard-kpi-icon"><MudIcon Icon="@Icons.Material.Outlined.BuildCircle" /></span>
+            <span class="dashboard-kpi-label">Open workshop jobs</span><strong>@_data.OpenRepairs</strong>
+            <span class="dashboard-kpi-note">In progress and not delivered</span>
+            <MudIcon Class="dashboard-kpi-arrow" Icon="@Icons.Material.Outlined.ArrowForward" Size="Size.Small" />
+        </a>
+        <a class="dashboard-kpi kpi-error" href="/inventory/items">
+            <span class="dashboard-kpi-icon"><MudIcon Icon="@Icons.Material.Outlined.Inventory2" /></span>
+            <span class="dashboard-kpi-label">Low-stock items</span><strong>@_data.LowStock</strong>
+            <span class="dashboard-kpi-note">At or below reorder level</span>
+            <MudIcon Class="dashboard-kpi-arrow" Icon="@Icons.Material.Outlined.ArrowForward" Size="Size.Small" />
+        </a>
+    </div>
 
-<MudGrid>
-    <MudItem xs="12" sm="6" md="3">
-        <MudPaper Class="pa-4" Outlined="true" Elevation="0">
-            <MudText Typo="Typo.overline" Class="mud-text-secondary">Awaiting you</MudText>
-            <MudText Typo="Typo.h4">0</MudText>
-            <MudText Typo="Typo.caption" Class="mud-text-secondary">approvals</MudText>
-        </MudPaper>
-    </MudItem>
-    <MudItem xs="12" sm="6" md="3">
-        <MudPaper Class="pa-4" Outlined="true" Elevation="0">
-            <MudText Typo="Typo.overline" Class="mud-text-secondary">Raised by you</MudText>
-            <MudText Typo="Typo.h4">0</MudText>
-            <MudText Typo="Typo.caption" Class="mud-text-secondary">in progress</MudText>
-        </MudPaper>
-    </MudItem>
-    <MudItem xs="12" sm="6" md="3">
-        <MudPaper Class="pa-4" Outlined="true" Elevation="0">
-            <MudText Typo="Typo.overline" Class="mud-text-secondary">Modules</MudText>
-            <MudText Typo="Typo.h4">@Catalog.All.Count</MudText>
-            <MudText Typo="Typo.caption" Class="mud-text-secondary">installed</MudText>
-        </MudPaper>
-    </MudItem>
-    <MudItem xs="12" sm="6" md="3">
-        <MudPaper Class="pa-4" Outlined="true" Elevation="0">
-            <MudText Typo="Typo.overline" Class="mud-text-secondary">Overdue</MudText>
-            <MudText Typo="Typo.h4">0</MudText>
-            <MudText Typo="Typo.caption" Class="mud-text-secondary">past their SLA</MudText>
-        </MudPaper>
-    </MudItem>
-</MudGrid>
+    <div class="dashboard-columns">
+        <section class="dashboard-panel">
+            <header class="dashboard-panel-header">
+                <div><MudText Typo="Typo.h6">Attention needed</MudText><MudText Typo="Typo.body2">Exceptions worth handling first</MudText></div>
+                <span class="dashboard-panel-count">@AttentionTotal</span>
+            </header>
+            <div class="attention-list">
+                @AttentionRow("/approvals", Icons.Material.Outlined.Schedule, "error", "Overdue approvals", "Waiting beyond their expected time", _data.OverdueApprovals)
+                @AttentionRow("/gatepass/passes/outstanding", Icons.Material.Outlined.AssignmentReturn, "warning", "Overdue goods", "Returnable items still outside", _data.OverdueReturns)
+                @AttentionRow("/tender/files", Icons.Material.Outlined.FolderOff, "warning", "Overdue physical files", "Issued files past their due date", _data.OverdueFiles)
+                @AttentionRow("/tender/tenders", Icons.Material.Outlined.Gavel, "info", "Active tenders", "Live bids requiring follow-through", _data.ActiveTenders)
+            </div>
+        </section>
+
+        <section class="dashboard-panel">
+            <header class="dashboard-panel-header">
+                <div><MudText Typo="Typo.h6">Your workspace</MudText><MudText Typo="Typo.body2">Jump directly into a business area</MudText></div>
+            </header>
+            <div class="module-launcher">
+                @foreach (var module in Catalog.All)
+                {
+                    <AuthorizeView Policy="@($"module:{module.Key}")" Context="moduleAccess">
+                        <Authorized>
+                            <a href="@module.BasePath" class="module-launcher-item">
+                                <span class="module-launcher-icon" style="--module-colour:@module.Color"><MudIcon Icon="@ResolveIcon(module.Icon)" /></span>
+                                <span><b>@module.Name</b><small>@module.Description</small></span>
+                                <MudIcon Icon="@Icons.Material.Outlined.ChevronRight" Size="Size.Small" />
+                            </a>
+                        </Authorized>
+                    </AuthorizeView>
+                }
+            </div>
+        </section>
+    </div>
+}
 
 @code {
-    [Inject] private IModuleCatalog Catalog { get; set; } = default!;
-    [Inject] private ICurrentUser User { get; set; } = default!;
-    [Inject] private IClock Clock { get; set; } = default!;
+    private DashboardSnapshot? _data;
+    protected override async Task OnInitializedAsync() => _data = await Insights.GetAsync();
+    private int AttentionTotal => _data is null ? 0 : _data.OverdueApprovals + _data.OverdueReturns + _data.OverdueFiles;
 
     private string Greeting
     {
         get
         {
             var name = User.Name?.Split(' ').FirstOrDefault() ?? "there";
-            var hour = Clock.Now.Hour;
-            var part = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+            var part = Clock.Now.Hour < 12 ? "Good morning" : Clock.Now.Hour < 17 ? "Good afternoon" : "Good evening";
             return $"{part}, {name}";
         }
+    }
+
+    private static string CountLabel(int count, string label) => count == 0 ? $"None {label}" : $"{count} {label}";
+
+    private static RenderFragment AttentionRow(string href, string icon, string tone, string title, string hint, int count) => @<a href="@href" class="attention-row">
+        <span class="attention-icon attention-@tone"><MudIcon Icon="@icon" /></span>
+        <span><b>@title</b><small>@hint</small></span><strong>@count</strong>
+    </a>;
+
+    private static string ResolveIcon(string name)
+    {
+        var field = typeof(Icons.Material.Outlined).GetField(name);
+        return field?.GetValue(null) as string ?? Icons.Material.Outlined.Apps;
     }
 }

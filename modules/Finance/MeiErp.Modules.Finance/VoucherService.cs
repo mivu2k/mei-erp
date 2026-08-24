@@ -60,7 +60,8 @@ public sealed record VoucherLineInput(
 public sealed record SystemVoucher(
     VoucherType Type, DateOnly Date, string Narration,
     IReadOnlyList<VoucherLineInput> Lines,
-    string Module, string DocumentType, int DocumentId, string DocumentReference);
+    string Module, string DocumentType, int DocumentId, string DocumentReference,
+    string? IdempotencyKey = null);
 
 public sealed class VoucherService(
     FinanceDbContext db, IClock clock, ICurrentUser currentUser) : IVoucherService
@@ -185,6 +186,15 @@ public sealed class VoucherService(
     public async Task<Result<Voucher>> PostSystemVoucherAsync(
         SystemVoucher voucher, CancellationToken ct = default)
     {
+        if (!string.IsNullOrWhiteSpace(voucher.IdempotencyKey))
+        {
+            var alreadyPosted = await db.Vouchers.Include(v => v.Lines).FirstOrDefaultAsync(v =>
+                v.SourceModule == voucher.Module &&
+                v.SourceDocumentType == voucher.DocumentType &&
+                v.SourceIdempotencyKey == voucher.IdempotencyKey, ct);
+            if (alreadyPosted is not null) return Result.Success(alreadyPosted);
+        }
+
         var validated = await ValidateLinesAsync(voucher.Date, voucher.Lines, ct);
         if (validated.Failed) return Result.Fail<Voucher>(validated.Error!, validated.Code);
 
@@ -218,6 +228,7 @@ public sealed class VoucherService(
             SourceDocumentType = voucher.DocumentType,
             SourceDocumentId = voucher.DocumentId,
             SourceReference = voucher.DocumentReference,
+            SourceIdempotencyKey = voucher.IdempotencyKey,
 
             // System vouchers post immediately: there is no human to review a
             // draft, and a draft nobody posts is money missing from the books.

@@ -93,19 +93,22 @@ public sealed record UserSummary(
 /// <inheritdoc />
 public sealed class UserDirectory(PlatformDbContext db) : IUserDirectory
 {
-    private static readonly Func<ApplicationUser, string?, UserSummary> ToSummary =
-        (u, deptName) => new UserSummary(
-            u.Id, u.FullName, u.Email, u.Designation, u.DepartmentId, deptName, u.IsActive);
-
-    private IQueryable<UserSummary> Query =>
-        from u in db.Users
+    /// <summary>
+    /// Narrow the users first, then project. Filtering the other way round -
+    /// projecting into <see cref="UserSummary"/> and then testing a property of
+    /// the record - leaves EF trying to translate a predicate over a constructed
+    /// object across the department outer join, which it cannot do: the query
+    /// throws at run time while still compiling and passing every test.
+    /// </summary>
+    private IQueryable<UserSummary> Project(IQueryable<ApplicationUser> users) =>
+        from u in users
         join d in db.Departments on u.DepartmentId equals d.Id into dd
         from d in dd.DefaultIfEmpty()
         select new UserSummary(
             u.Id, u.FullName, u.Email, u.Designation, u.DepartmentId, d.Name, u.IsActive);
 
     public Task<UserSummary?> FindAsync(string userId, CancellationToken ct = default) =>
-        Query.FirstOrDefaultAsync(u => u.Id == userId, ct);
+        Project(db.Users.Where(u => u.Id == userId)).FirstOrDefaultAsync(ct);
 
     public async Task<UserSummary?> LineManagerOfAsync(string userId, CancellationToken ct = default)
     {
@@ -136,7 +139,7 @@ public sealed class UserDirectory(PlatformDbContext db) : IUserDirectory
             where role.Name == roleName
             select userRole.UserId).ToListAsync(ct);
 
-        return await Query.Where(u => ids.Contains(u.Id) && u.IsActive).ToListAsync(ct);
+        return await Project(db.Users.Where(u => ids.Contains(u.Id) && u.IsActive)).ToListAsync(ct);
     }
 
     public async Task<IReadOnlyList<UserSummary>> WithPermissionAsync(
@@ -158,23 +161,26 @@ public sealed class UserDirectory(PlatformDbContext db) : IUserDirectory
 
         var all = ids.Union(admins).ToList();
 
-        return await Query.Where(u => all.Contains(u.Id) && u.IsActive).ToListAsync(ct);
+        return await Project(db.Users.Where(u => all.Contains(u.Id) && u.IsActive)).ToListAsync(ct);
     }
 
     public async Task<IReadOnlyList<UserSummary>> SearchAsync(
         string? term, int take = 25, CancellationToken ct = default)
     {
-        var q = Query.Where(u => u.IsActive);
+        var users = db.Users.Where(u => u.IsActive);
 
         if (!string.IsNullOrWhiteSpace(term))
         {
             var pattern = $"%{term.Trim()}%";
-            q = q.Where(u =>
+            users = users.Where(u =>
                 EF.Functions.ILike(u.FullName, pattern) ||
                 (u.Email != null && EF.Functions.ILike(u.Email, pattern)));
         }
 
-        return await q.OrderBy(u => u.FullName).Take(take).ToListAsync(ct);
+        // Ordered before Take so it is the first N by name, and again after the
+        // join so the outer join cannot hand them back in another order.
+        var page = await Project(users.OrderBy(u => u.FullName).Take(take)).ToListAsync(ct);
+        return [.. page.OrderBy(u => u.FullName)];
     }
 }
 
@@ -200,7 +206,7 @@ public sealed class CompanyProfileService(PlatformDbContext db) : ICompanyProfil
         await Gate.WaitAsync(ct);
         try
         {
-            _cached ??= await db.CompanyProfiles.AsNoTracking().FirstOrDefaultAsync(ct)
+            _cached ??= await db.CompanyProfiles.AsNoTracking().OrderBy(x => x.Id).FirstOrDefaultAsync(ct)
                         ?? new CompanyProfile { Name = "MEI" };
             return _cached;
         }
@@ -209,7 +215,7 @@ public sealed class CompanyProfileService(PlatformDbContext db) : ICompanyProfil
 
     public async Task SaveAsync(CompanyProfile profile, CancellationToken ct = default)
     {
-        var existing = await db.CompanyProfiles.FirstOrDefaultAsync(ct);
+        var existing = await db.CompanyProfiles.OrderBy(x => x.Id).FirstOrDefaultAsync(ct);
         if (existing is null)
         {
             // GetAsync hands back an unsaved stand-in when the table is empty, so

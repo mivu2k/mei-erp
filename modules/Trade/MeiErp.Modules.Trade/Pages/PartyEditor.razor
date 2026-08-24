@@ -1,0 +1,119 @@
+@inject IPartyService PartyMaster
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<DocumentShell @ref="_shell" AsDialog="AsDialog" Title="@Title" Error="@_error" OnClose="DismissedAsync">
+    <Body>
+        <MudForm @ref="_form">
+            <MudTextField @bind-Value="_model.Name" Label="Name" Required="true"
+                          RequiredError="Give them a name." Variant="Variant.Outlined" Class="mb-4" />
+
+            <MudTextField @bind-Value="_model.Code" Label="Code" Variant="Variant.Outlined"
+                          Class="mb-4" HelperText="Left blank, one is made from the name." />
+
+            <div class="mb-4">
+                <MudSwitch T="bool" @bind-Value="_model.IsCustomer" Color="Color.Primary"
+                           Label="We sell to them" />
+                <MudSwitch T="bool" @bind-Value="_model.IsSupplier" Color="Color.Primary"
+                           Label="We buy from them" />
+            </div>
+
+            <div class="d-flex gap-3 mb-4">
+                <MudTextField @bind-Value="_model.Phone" Label="Phone" Variant="Variant.Outlined" />
+                <MudTextField @bind-Value="_model.Email" Label="Email" Variant="Variant.Outlined" />
+            </div>
+
+            <MudTextField @bind-Value="_model.TaxNumber" Label="Tax number"
+                          Variant="Variant.Outlined" Class="mb-4" />
+
+            <MudTextField @bind-Value="_model.Address" Label="Address" Lines="2"
+                          Variant="Variant.Outlined" />
+
+            <div class="d-flex gap-3 mt-4">
+                <MudNumericField T="int?" @bind-Value="_model.PaymentTermDays" Label="Payment terms (days)"
+                                 Variant="Variant.Outlined" HideSpinButtons="true" />
+                <MudTextField @bind-Value="_model.Notes" Label="Notes" Lines="2"
+                              Variant="Variant.Outlined" />
+            </div>
+        </MudForm>
+    </Body>
+
+    <Buttons>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
+    </Buttons>
+</DocumentShell>
+
+@code {
+    [Parameter] public bool AsDialog { get; set; }
+    [Parameter] public int? PartyId { get; set; }
+
+    /// <summary>
+    /// Which side a brand-new record starts on - set by whichever list opened
+    /// the editor, so adding from Suppliers does not silently create a customer.
+    /// Both switches remain editable; a company that is both is ticked as both.
+    /// Also which list to return to on close, since a party is reachable from
+    /// either side.
+    /// </summary>
+    [Parameter] public bool DefaultSupplier { get; set; }
+
+    /// <summary>Raised after a successful save, so a list can reload behind a dialog.</summary>
+    [Parameter] public EventCallback Saved { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
+
+    private MudForm? _form;
+    private Party _model = new();
+    private string? _error;
+    private bool _busy;
+
+    private string Title => PartyId is null
+        ? (DefaultSupplier ? "New supplier" : "New customer")
+        : (DefaultSupplier ? "Edit supplier" : "Edit customer");
+
+    protected override async Task OnInitializedAsync()
+    {
+        _model = PartyId is { } id && await PartyMaster.GetAsync(id) is { } existing
+            ? new Party
+            {
+                Id = existing.Id, Code = existing.Code, Name = existing.Name,
+                IsCustomer = existing.IsCustomer, IsSupplier = existing.IsSupplier,
+                Phone = existing.Phone, Email = existing.Email,
+                Address = existing.Address, TaxNumber = existing.TaxNumber,
+                PaymentTermDays = existing.PaymentTermDays, Notes = existing.Notes,
+                IsActive = existing.IsActive
+            }
+            : new Party { IsActive = true, IsCustomer = !DefaultSupplier, IsSupplier = DefaultSupplier };
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        if (_form is not null)
+        {
+            await _form.Validate();
+            if (!_form.IsValid) return;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await PartyMaster.SaveAsync(_model);
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Saved.", Severity.Success);
+            PartyId = _model.Id;
+            await Saved.InvokeAsync();
+            if (AsDialog && _shell is not null) await _shell.CloseAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private DocumentShell? _shell;
+    
+    /// <summary>The shell has already closed itself; just react to it.</summary>
+    private async Task DismissedAsync()
+    {
+        if (Closed.HasDelegate) { await Closed.InvokeAsync(); return; }
+        Nav.NavigateTo(DefaultSupplier ? "/purchase/suppliers" : "/sales/customers");
+    }
+}

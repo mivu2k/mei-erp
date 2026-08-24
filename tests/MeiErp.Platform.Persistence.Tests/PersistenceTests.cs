@@ -20,6 +20,7 @@ public sealed class Widget : AuditableEntity, IConcurrencyChecked
     public uint Version { get; set; }
     public string Name { get; set; } = "";
     public decimal Price { get; set; }
+    public string? ApiToken { get; set; }
 }
 
 /// <summary>
@@ -59,6 +60,7 @@ public sealed class PersistenceTests : IAsyncLifetime
 
             await using var db = NewContext();
             await db.Database.EnsureCreatedAsync();
+            await db.EnsureAuditTableForTestsAsync();
             _available = true;
         }
         catch (Exception)
@@ -199,6 +201,37 @@ public sealed class PersistenceTests : IAsyncLifetime
         // The value that comes back is exactly the one that went in - the whole
         // reason money is numeric and never floating point.
         Assert.Equal(0.3m, saved.Price);
+    }
+
+    [SkippableFact]
+    public async Task Business_change_and_audit_row_commit_together_with_real_entity_id()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db = NewContext();
+        var widget = new Widget { Name = "Bolt", Price = 12.5m, ApiToken = "must-not-leak" };
+        db.Add(widget);
+        await db.SaveChangesAsync();
+        var audit = await db.AuditLogs.SingleAsync();
+        Assert.Equal("test_module", audit.ModuleKey);
+        Assert.Equal("Widget", audit.EntityName);
+        Assert.Equal(widget.Id.ToString(), audit.EntityId);
+        Assert.Equal("Created", audit.Action);
+        Assert.Equal("user-42", audit.UserId);
+        Assert.Contains("Bolt", audit.NewValues);
+        Assert.DoesNotContain("must-not-leak", audit.NewValues);
+    }
+
+    [SkippableFact]
+    public async Task Update_and_soft_delete_leave_an_append_only_story()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db = NewContext();
+        var widget = new Widget { Name = "Bolt", Price = 10m };db.Add(widget);await db.SaveChangesAsync();
+        widget.Price = 20m;await db.SaveChangesAsync();
+        db.Remove(widget);await db.SaveChangesAsync();
+        var actions = await db.AuditLogs.OrderBy(x=>x.Id).Select(x=>x.Action).ToListAsync();
+        Assert.Equal(["Created","Modified","SoftDeleted"], actions);
+        Assert.Contains("10", (await db.AuditLogs.OrderBy(x=>x.Id).Skip(1).FirstAsync()).OldValues);
     }
 
     private sealed class TestUser(string id, string name) : ICurrentUser

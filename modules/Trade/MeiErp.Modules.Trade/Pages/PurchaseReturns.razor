@@ -1,0 +1,12 @@
+@page "/purchase/returns"
+@attribute [Authorize(Policy = PurchaseModule.OrdersView)]
+@rendermode InteractiveServer
+
+<PageTitle>Supplier returns</PageTitle>
+
+@* Goods going back to a supplier. Posting one takes stock off the shelf, so it
+   is gated on the same permission as receiving goods in. *@
+<AuthorizeView Policy="@PurchaseModule.ReceiptPost" Context="post">
+    <Authorized><ReturnList SupplierReturns="true" CanPost="true" /></Authorized>
+    <NotAuthorized><ReturnList SupplierReturns="true" CanPost="false" /></NotAuthorized>
+</AuthorizeView>

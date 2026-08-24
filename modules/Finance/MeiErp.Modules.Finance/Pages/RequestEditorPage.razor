@@ -1,0 +1,11 @@
+@page "/finance/requests/new"
+@page "/finance/requests/{Id:int}"
+@attribute [Authorize(Policy = FinanceModule.RequestsRaise)]
+@rendermode InteractiveServer
+
+@* The dialog and this page render the same editor; only the frame differs. *@
+<RequestEditor AsDialog="false" RequestId="Id" />
+
+@code {
+    [Parameter] public int? Id { get; set; }
+}

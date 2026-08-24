@@ -10,6 +10,8 @@
     <ProjectReference Include="..\..\..\platform\MeiErp.Platform.Kernel\MeiErp.Platform.Kernel.csproj" />
     <ProjectReference Include="..\..\..\platform\MeiErp.Platform.Persistence\MeiErp.Platform.Persistence.csproj" />
     <ProjectReference Include="..\..\..\platform\MeiErp.Platform.Workflow\MeiErp.Platform.Workflow.csproj" />
+    <ProjectReference Include="..\..\..\platform\MeiErp.Platform.Reporting\MeiErp.Platform.Reporting.csproj" />
+    <ProjectReference Include="..\..\..\platform\MeiErp.Platform.Web\MeiErp.Platform.Web.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore" />

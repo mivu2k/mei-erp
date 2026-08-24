@@ -58,6 +58,18 @@ public enum AccountType
     Expense = 4
 }
 
+/// <summary>Maps one integration event to the two Finance accounts it affects.</summary>
+public class PostingRule : AuditableEntity
+{
+    public string EventType { get; set; } = "";
+    public string Name { get; set; } = "";
+    public int DebitAccountId { get; set; }
+    public Account? DebitAccount { get; set; }
+    public int CreditAccountId { get; set; }
+    public Account? CreditAccount { get; set; }
+    public bool IsActive { get; set; } = true;
+}
+
 /// <summary>
 /// One accounting entry: a balanced set of debits and credits.
 ///
@@ -88,6 +100,8 @@ public class Voucher : AuditableEntity, IConcurrencyChecked
     public string? SourceDocumentType { get; set; }
     public int? SourceDocumentId { get; set; }
     public string? SourceReference { get; set; }
+    /// <summary>Stable machine key used only for replay protection; unlike the printed reference it must be unique.</summary>
+    public string? SourceIdempotencyKey { get; set; }
 
     public DateTime? PostedUtc { get; set; }
     public string? PostedBy { get; set; }
@@ -190,6 +204,9 @@ public class PaymentRequest : AuditableEntity, IConcurrencyChecked
     public string RequestedByName { get; set; } = "";
     public string? DepartmentId { get; set; }
 
+    /// <summary>True for a director fund request, kept separate from ordinary staff payment requests.</summary>
+    public bool IsDirectorRequest { get; set; }
+
     /// <summary>Who is being paid - a supplier, a member of staff, a landlord.</summary>
     public string? PayeeName { get; set; }
 
@@ -212,6 +229,21 @@ public class PaymentRequest : AuditableEntity, IConcurrencyChecked
                or PaymentRequestStatus.Pending
                or PaymentRequestStatus.Returned
                or PaymentRequestStatus.Approved;
+
+    public List<PaymentRequestLine> Lines { get; set; } = [];
+}
+
+/// <summary>An itemized reimbursement line; ordinary advances remain lump-sum Advance records.</summary>
+public class PaymentRequestLine : AuditableEntity
+{
+    public int PaymentRequestId { get; set; }
+    public PaymentRequest? PaymentRequest { get; set; }
+    public string? Category { get; set; }
+    public decimal Amount { get; set; }
+    public string? Reason { get; set; }
+    public string? Description { get; set; }
+    public int? ExpenseAccountId { get; set; }
+    public Account? ExpenseAccount { get; set; }
 }
 
 public enum PaymentRequestStatus

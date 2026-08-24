@@ -1,0 +1,420 @@
+@inject ITradeDocumentService Documents
+@inject IPartyService PartyMaster
+@inject ITradeStockPort Stock
+@inject IServiceProvider Services
+@inject IClock Clock
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+@*
+    Raising or editing a quotation, either side of the business.
+
+    Lines can be a stock item or free text: a repair quote is mostly labour, and
+    forcing every line to be an item would mean inventing catalogue rows for
+    things nobody stocks.
+*@
+
+<DocumentShell @ref="_shell" CancelText="Close" AsDialog="AsDialog"
+               Title="@Title"
+               Subtitle="@(_editable ? "Save a draft while you work it out; submit when it is ready for sign-off." : null)"
+               StatusLabel="@_status.ToString()"
+               StatusColour="@Colour(_status)"
+               Error="@_error"
+               ReadOnlyReason="@(_editable ? null : "This quotation has been issued, so it can no longer be edited.")"
+               OnClose="DismissedAsync">
+    <Body>
+        @if (_jobReference is not null)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mb-3"
+                      Icon="@Icons.Material.Outlined.Build">
+                Quoting workshop job <b>@_jobReference</b>. The billable work recorded against it
+                has been priced in below; anything marked warranty or goodwill has not.
+            </MudAlert>
+        }
+
+        <div class="d-flex flex-wrap gap-3 mb-4">
+            <MudSelect T="int" @bind-Value="_partyId" Disabled="@(!_editable)"
+                       Label="@(IsPurchase ? "Supplier" : "Customer")"
+                       Variant="Variant.Outlined" Style="min-width:240px">
+                @foreach (var p in _parties)
+                {
+                    <MudSelectItem T="int" Value="@p.Id">@p.Name</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudDatePicker Label="Date" Variant="Variant.Outlined" Disabled="@(!_editable)"
+                           Date="_date" DateChanged="@(d => _date = d)" Style="min-width:160px" />
+
+            <MudDatePicker Label="Valid until" Variant="Variant.Outlined" Disabled="@(!_editable)"
+                           Date="_validUntil" DateChanged="@(d => _validUntil = d)"
+                           Clearable="true" Style="min-width:160px" />
+
+            @if (_books.Count > 1)
+            {
+                <MudSelect T="int" Value="_bookId" ValueChanged="ChooseBookAsync" Disabled="@(!_editable)"
+                           Label="Stock book" Variant="Variant.Outlined" Style="min-width:180px">
+                    @foreach (var b in _books)
+                    {
+                        <MudSelectItem T="int" Value="@b.Id">@b.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            }
+        </div>
+
+        <MudTable T="Row" Items="_lines" Dense="true" Elevation="0" Bordered="true">
+            <HeaderContent>
+                <MudTh Style="width:220px">Item</MudTh>
+                <MudTh>Description</MudTh>
+                <MudTh Style="width:110px">Qty</MudTh>
+                <MudTh Style="width:140px">Unit price</MudTh>
+                <MudTh Style="width:120px;text-align:right">Amount</MudTh>
+                <MudTh Style="width:48px" />
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>
+                    <MudSelect T="int?" Value="context.ItemId" ValueChanged="@(v => PickItem(context, v))"
+                               Dense="true" Margin="Margin.Dense" Clearable="true" Disabled="@(!_editable)"
+                               Placeholder="Free text">
+                        @foreach (var i in _items)
+                        {
+                            <MudSelectItem T="int?" Value="@((int?)i.Id)">@i.Code — @i.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudTd>
+                <MudTd>
+                    <MudTextField @bind-Value="context.Description" Margin="Margin.Dense"
+                                  Disabled="@(!_editable)" Placeholder="What is being charged for" />
+                </MudTd>
+                <MudTd>
+                    <MudNumericField T="decimal" @bind-Value="context.Quantity"
+                                     @bind-Value:after="Recalculate" Min="0"
+                                     Margin="Margin.Dense" Disabled="@(!_editable)" />
+                </MudTd>
+                <MudTd>
+                    <MudNumericField T="decimal" @bind-Value="context.UnitPrice"
+                                     @bind-Value:after="Recalculate" Min="0"
+                                     Margin="Margin.Dense" Disabled="@(!_editable)" />
+                </MudTd>
+                <MudTd Style="text-align:right">
+                    <span style="font-variant-numeric:tabular-nums">
+                        @((context.Quantity * context.UnitPrice).ToString("N2"))
+                    </span>
+                </MudTd>
+                <MudTd>
+                    @if (_editable)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small"
+                                       OnClick="@(() => Remove(context))" />
+                    }
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+
+        @if (_editable)
+        {
+            <MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="AddLine" Class="mt-2">Add line</MudButton>
+        }
+
+        <div class="d-flex flex-wrap gap-4 mt-4">
+            <div style="flex:1 1 320px">
+                <MudTextField @bind-Value="_notes" Label="Notes" Lines="3"
+                              Variant="Variant.Outlined" Disabled="@(!_editable)" Class="mb-3" />
+                <MudTextField @bind-Value="_terms" Label="Terms" Lines="2"
+                              Variant="Variant.Outlined" Disabled="@(!_editable)" />
+            </div>
+
+            <div style="flex:0 0 280px">
+                <div class="d-flex gap-2 mb-2">
+                    <MudNumericField T="decimal" @bind-Value="_discount" @bind-Value:after="Recalculate"
+                                     Label="Discount" Min="0"
+                                     Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(!_editable)" />
+                    <MudNumericField T="decimal" @bind-Value="_taxPercent" @bind-Value:after="Recalculate"
+                                     Label="Tax %" Min="0"
+                                     Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(!_editable)" />
+                </div>
+
+                <MudPaper Outlined="true" Elevation="0" Class="pa-3">
+                    @foreach (var (label, value, strong) in Totals)
+                    {
+                        <div class="d-flex justify-space-between py-1">
+                            <MudText Typo="Typo.body2" Class="@(strong ? "" : "mud-text-secondary")">
+                                @(strong ? new MarkupString($"<b>{label}</b>") : new MarkupString(label))
+                            </MudText>
+                            <MudText Typo="Typo.body2" Style="font-variant-numeric:tabular-nums">
+                                @(strong ? new MarkupString($"<b>{value:N2}</b>") : new MarkupString(value.ToString("N2")))
+                            </MudText>
+                        </div>
+                    }
+                </MudPaper>
+            </div>
+        </div>
+    </Body>
+
+    <Buttons>
+
+        @if (_editable)
+        {
+            @* Two distinct actions on purpose: a draft binds nobody, submitting
+               freezes the document and puts it in front of an approver. *@
+            <MudButton Variant="Variant.Outlined" OnClick="@(() => SaveAsync(submit: false))"
+                       Disabled="_busy" StartIcon="@Icons.Material.Outlined.Save">
+                Save draft
+            </MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       OnClick="@(() => SaveAsync(submit: true))" Disabled="_busy"
+                       StartIcon="@Icons.Material.Outlined.Send">
+                Submit for approval
+            </MudButton>
+        }
+    </Buttons>
+</DocumentShell>
+
+@code {
+    [Parameter] public bool AsDialog { get; set; }
+    [Parameter] public bool IsPurchase { get; set; }
+    [Parameter] public int? QuotationId { get; set; }
+
+    /// <summary>Quote a workshop job: the billable work is pulled in as lines.</summary>
+    [Parameter] public int? JobId { get; set; }
+
+    /// <summary>Quote a whole intake - every device on it, in one quotation.</summary>
+    [Parameter] public int? IntakeId { get; set; }
+
+    /// <summary>Raised after a successful save, so a list can reload behind a dialog.</summary>
+    [Parameter] public EventCallback Saved { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
+
+    private TradeDirection Direction => IsPurchase ? TradeDirection.Purchase : TradeDirection.Sales;
+
+    private IReadOnlyList<Party> _parties = [];
+    private IReadOnlyList<TradeItem> _items = [];
+    private IReadOnlyList<StockBook> _books = [];
+    private List<Row> _lines = [];
+
+    private int _partyId, _bookId;
+    private DateTime? _date, _validUntil;
+    private decimal _taxPercent, _discount, _subtotal, _tax, _total;
+    private string? _notes, _terms, _error, _jobReference;
+    private int? _jobId;
+    private bool _busy, _editable = true;
+    private DocumentStatus _status = DocumentStatus.Draft;
+
+    private string Title => QuotationId is null
+        ? (IsPurchase ? "New supplier quotation" : "New customer quotation")
+        : (IsPurchase ? "Supplier quotation" : "Customer quotation");
+
+    private IEnumerable<(string, decimal, bool)> Totals =>
+    [
+        ("Subtotal", _subtotal, false),
+        ("Discount", _discount, false),
+        ($"Tax ({_taxPercent:0.##}%)", _tax, false),
+        ("Total", _total, true)
+    ];
+
+    /// <summary>
+    /// One sequential load. Everything here shares the circuit's DbContext, so
+    /// nothing that touches it may run in parallel.
+    /// </summary>
+    protected override async Task OnInitializedAsync()
+    {
+        _books = await Stock.BooksAsync();
+        _bookId = (await Stock.DefaultBookAsync())?.Id ?? 0;
+        _items = _bookId == 0 ? [] : await Stock.ItemsAsync(_bookId);
+
+        _parties = await PartyMaster.ListAsync(
+            customers: IsPurchase ? null : true,
+            suppliers: IsPurchase ? true : null);
+
+        _date = Clock.Today.ToDateTime(TimeOnly.MinValue);
+
+        // Quoting a job or an intake: pull the billable work straight off it,
+        // rather than making somebody re-type what the workshop already
+        // recorded. Optional service - a business without the workshop module
+        // never sees this path.
+        if (QuotationId is null && (JobId is not null || IntakeId is not null)
+            && Services.GetService(typeof(ITradeJobSource)) is ITradeJobSource jobs)
+        {
+            var source = JobId is { } j
+                ? await jobs.JobAsync(j)
+                : await jobs.IntakeAsync(IntakeId!.Value);
+
+            if (source is null)
+            {
+                _error = "That job no longer exists.";
+            }
+            else
+            {
+                _jobReference = source.Reference;
+                _jobId = JobId;
+                _partyId = source.PartyId;
+
+                if (source.PartyId == 0)
+                {
+                    // Repair still keeps its own customer list, so the person on
+                    // the job may not exist as a party yet. Say so plainly
+                    // instead of quoting whoever happens to be first in the list.
+                    _error = $"{source.PartyName} is not in the customer list yet. " +
+                             "Add them under Sales → Customers, then quote this job.";
+                }
+
+                _lines = [.. source.Lines.Select(l => new Row
+                {
+                    Description = l.Description, Quantity = l.Quantity, UnitPrice = l.UnitPrice
+                })];
+
+                if (source.Lines.Count == 0)
+                    _error = "This job has no billable work recorded yet.";
+            }
+        }
+
+        if (QuotationId is { } id && await Documents.QuotationAsync(id) is { } existing)
+        {
+            _status = existing.Status;
+            _editable = existing.Status.IsEditable();
+            _partyId = existing.PartyId;
+            _bookId = existing.DomainId;
+            _date = existing.Date.ToDateTime(TimeOnly.MinValue);
+            _validUntil = existing.ValidUntil?.ToDateTime(TimeOnly.MinValue);
+            _taxPercent = existing.TaxPercent;
+            _discount = existing.Discount;
+            _notes = existing.Notes;
+            _terms = existing.Terms;
+            _jobId = existing.JobId;
+            _jobReference = existing.JobReference;
+
+            _items = await Stock.ItemsAsync(_bookId);
+            _lines = [.. existing.Lines.Select(l => new Row
+            {
+                ItemId = l.ItemId, ItemCode = l.ItemCode,
+                Description = l.Description, Quantity = l.Quantity, UnitPrice = l.UnitPrice
+            })];
+        }
+
+        if (_lines.Count == 0) _lines.Add(new Row());
+        if (_partyId == 0 && _parties.Count > 0) _partyId = _parties[0].Id;
+
+        Recalculate();
+    }
+
+    private async Task ChooseBookAsync(int bookId)
+    {
+        if (bookId == _bookId) return;
+
+        // A quotation prices goods from one book, so switching it clears lines
+        // that came from the other rather than leaving them pointing nowhere.
+        _bookId = bookId;
+        _items = await Stock.ItemsAsync(_bookId);
+        _lines = [new Row()];
+        Recalculate();
+    }
+
+    private void PickItem(Row row, int? itemId)
+    {
+        row.ItemId = itemId;
+
+        // Choosing an item fills the description and price, so the common case
+        // needs no typing; both stay editable for the case that is not common.
+        if (_items.FirstOrDefault(i => i.Id == itemId) is { } item)
+        {
+            row.ItemCode = item.Code;
+            if (string.IsNullOrWhiteSpace(row.Description)) row.Description = item.Name;
+            if (row.UnitPrice == 0)
+                row.UnitPrice = IsPurchase ? item.AverageCost : item.SellingPrice;
+        }
+        else
+        {
+            row.ItemCode = null;
+        }
+
+        Recalculate();
+    }
+
+    private void AddLine() => _lines.Add(new Row());
+
+    private void Remove(Row row)
+    {
+        _lines.Remove(row);
+        if (_lines.Count == 0) _lines.Add(new Row());
+        Recalculate();
+    }
+
+    private void Recalculate()
+    {
+        _subtotal = _lines.Sum(l => Math.Round(l.Quantity * l.UnitPrice, 2));
+        var taxable = Math.Max(0, _subtotal - _discount);
+        _tax = Math.Round(taxable * _taxPercent / 100m, 2);
+        _total = taxable + _tax;
+    }
+
+    private async Task SaveAsync(bool submit)
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var lines = _lines
+                .Where(l => !string.IsNullOrWhiteSpace(l.Description) && l.Quantity > 0)
+                .Select(l => new DocumentLineInput(l.ItemId, l.ItemCode, l.Description, l.Quantity, l.UnitPrice))
+                .ToList();
+
+            if (lines.Count == 0) { _error = "Add at least one line with a description and a quantity."; return; }
+
+            var saved = await Documents.SaveQuotationAsync(new QuotationInput(
+                QuotationId, Direction, _partyId, _bookId,
+                DateOnly.FromDateTime(_date ?? Clock.Today.ToDateTime(TimeOnly.MinValue)),
+                _validUntil is { } v ? DateOnly.FromDateTime(v) : null,
+                _taxPercent, _discount, _notes, _terms, _jobId, _jobReference, lines));
+
+            if (saved.Failed) { _error = saved.Error; return; }
+
+            if (!submit)
+            {
+                QuotationId = saved.Value.Id;
+                _status = saved.Value.Status;
+                Snackbar.Add($"{saved.Value.Number} saved as a draft.", Severity.Success);
+                await Saved.InvokeAsync();
+                return;
+            }
+
+            var submitted = await Documents.SubmitQuotationAsync(saved.Value.Id);
+            if (submitted.Failed) { _error = submitted.Error; return; }
+
+            _status = submitted.Value.Status;
+            _editable = false;
+            Snackbar.Add($"{submitted.Value.Number} submitted for approval.", Severity.Success);
+
+            await Saved.InvokeAsync();
+            if (AsDialog && _shell is not null) await _shell.CloseAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private DocumentShell? _shell;
+    
+    /// <summary>The shell has already closed itself; just react to it.</summary>
+    private async Task DismissedAsync()
+    {
+        if (Closed.HasDelegate) { await Closed.InvokeAsync(); return; }
+        Nav.NavigateTo(IsPurchase ? "/purchase/quotations" : "/sales/quotations");
+    }
+
+    private static Color Colour(DocumentStatus s) => s switch
+    {
+        DocumentStatus.Draft => Color.Default,
+        DocumentStatus.PendingApproval => Color.Warning,
+        DocumentStatus.Approved or DocumentStatus.Accepted => Color.Success,
+        DocumentStatus.Rejected or DocumentStatus.Cancelled => Color.Error,
+        DocumentStatus.Returned => Color.Warning,
+        _ => Color.Info
+    };
+
+    private sealed class Row
+    {
+        public int? ItemId { get; set; }
+        public string? ItemCode { get; set; }
+        public string Description { get; set; } = "";
+        public decimal Quantity { get; set; } = 1;
+        public decimal UnitPrice { get; set; }
+    }
+}

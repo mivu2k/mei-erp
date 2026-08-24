@@ -3,32 +3,40 @@
 @rendermode InteractiveServer
 @inject IAdvanceService Loans
 @inject ISnackbar Snackbar
-@inject IDialogService Dialogs
 
-<PageTitle>Advances</PageTitle>
+<ListShell Title="@Title"
+           Subtitle="Money given before it is spent. Paid out, accounted for with receipts, then settled."
+           Icon="@Icons.Material.Outlined.AccountBalanceWallet"
+           Loading="_loading"
+           IsEmpty="@(_rows.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.AccountBalanceWallet"
+           EmptyTitle="@($"No {(_directorOnly ? "director funds" : "advances")} yet")"
+           EmptyHint="Raise one here to get money out before it needs to be spent.">
+    <Actions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+            @(_directorOnly ? "Request director funds" : "Request an advance")
+        </MudButton>
+        <MudTooltip Text="Open as a full page instead">
+            <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Href="/finance/advances/new" />
+        </MudTooltip>
+    </Actions>
 
-<div class="d-flex align-center mb-1">
-    <div>
-        <MudText Typo="Typo.h5">Advances</MudText>
-        <MudText Typo="Typo.body2" Class="mud-text-secondary">
-            Money given before it is spent. Paid out, accounted for with receipts, then settled.
-        </MudText>
-    </div>
-    <MudSpacer />
-    <MudButton Variant="Variant.Filled" Color="Color.Primary"
-               StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
-        Request an advance
-    </MudButton>
-</div>
+    <EmptyAction>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
+            @(_directorOnly ? "Request director funds" : "Request an advance")
+        </MudButton>
+    </EmptyAction>
 
-<MudPaper Outlined="true" Elevation="0" Class="mt-4">
-    <MudToolBar Dense="true">
+    <Toolbar>
         <MudSwitch T="bool" @bind-Value="_mineOnly" @bind-Value:after="LoadAsync"
                    Color="Color.Primary" Label="Only mine" />
-    </MudToolBar>
+    </Toolbar>
 
+    <ChildContent>
     <MudDataGrid T="Advance" Items="_rows" Dense="true" Hover="true" Elevation="0"
-                 Loading="_loading" Filterable="false" RowsPerPage="25">
+                 Filterable="false" RowsPerPage="25">
         <Columns>
             <PropertyColumn Property="@(a => a.Reference)" Title="Reference" />
             <TemplateColumn Title="For">
@@ -83,6 +91,9 @@
                     <div class="d-flex justify-end gap-1">
                         @if (context.Item.Status is AdvanceStatus.Draft or AdvanceStatus.Returned)
                         {
+                            <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small"
+                                           Href="@($"/finance/advances/{context.Item.Id}/edit")"
+                                           title="Open as a page" />
                             <MudButton Size="Size.Small" Variant="Variant.Text"
                                        OnClick="@(() => Edit(context.Item))">Edit</MudButton>
                             <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
@@ -97,23 +108,31 @@
                 </CellTemplate>
             </TemplateColumn>
         </Columns>
-        <NoRecordsContent>
-            <MudText Class="pa-8 text-center mud-text-secondary">No advances yet.</MudText>
-        </NoRecordsContent>
     </MudDataGrid>
-</MudPaper>
+    </ChildContent>
+</ListShell>
+
+@if (_editing)
+{
+    <AdvanceEditor AsDialog="true" AdvanceId="_editingId" DirectorMode="_directorOnly"
+                    Saved="LoadAsync" Closed="@(() => { _editing = false; return Task.CompletedTask; })" />
+}
 
 @code {
     private IReadOnlyList<Advance> _rows = [];
     private bool _mineOnly;
     private bool _loading = true;
+    [SupplyParameterFromQuery(Name = "director")]
+    public bool _directorOnly { get; set; }
+
+    private string Title => _directorOnly ? "Director funds" : "Advances";
 
     protected override Task OnInitializedAsync() => LoadAsync();
 
     private async Task LoadAsync()
     {
         _loading = true;
-        _rows = await Loans.ListAsync(null, _mineOnly);
+        _rows = await Loans.ListAsync(null, _mineOnly, _directorOnly);
         _loading = false;
     }
 
@@ -128,14 +147,13 @@
         _ => Color.Default
     };
 
-    private async Task Edit(Advance? row)
-    {
-        var parameters = new DialogParameters<AdvanceEditor> { { x => x.AdvanceId, row?.Id } };
-        var dialog = await Dialogs.ShowAsync<AdvanceEditor>(
-            row is null ? "Request an advance" : "Edit request", parameters,
-            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+    private bool _editing;
+    private int? _editingId;
 
-        if (!(await dialog.Result)!.Canceled) await LoadAsync();
+    private void Edit(Advance? row)
+    {
+        _editingId = row?.Id;
+        _editing = true;
     }
 
     private async Task Submit(Advance row)

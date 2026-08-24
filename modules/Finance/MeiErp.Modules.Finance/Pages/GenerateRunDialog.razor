@@ -46,7 +46,7 @@
         try
         {
             var result = await Payroll.GenerateAsync(
-                DateOnly.FromDateTime(_month ?? DateTime.Today));
+                DateOnly.FromDateTime(_month ?? Clock.Today.ToDateTime(TimeOnly.MinValue)));
 
             if (result.Failed) { _error = result.Error; return; }
 

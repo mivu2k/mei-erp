@@ -1,0 +1,59 @@
+@page "/hr/attendance/setup"
+@attribute [Authorize(Policy = HrModule.AttendanceSetup)]
+@rendermode InteractiveServer
+@inject IAttendanceAdminService Admin
+@inject IEmployeeService Employees
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>Attendance setup</PageTitle>
+<MudText Typo="Typo.h5">Attendance setup</MudText>
+<MudTabs Class="mt-3" Border="true">
+ <MudTabPanel Text="Shifts">
+  <MudButton Class="my-3" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => EditShift(null))">New shift</MudButton>
+  <MudTable Items="@_shifts" Dense="true" Hover="true"><HeaderContent><MudTh>Name</MudTh><MudTh>Hours</MudTh><MudTh>Grace</MudTh><MudTh>Break</MudTh><MudTh>Default</MudTh><MudTh></MudTh></HeaderContent>
+   <RowTemplate><MudTd>@context.Name</MudTd><MudTd>@context.StartsAt.ToString("HH:mm")–@context.EndsAt.ToString("HH:mm")</MudTd><MudTd>@context.GraceMinutes min</MudTd><MudTd>@context.BreakMinutes min</MudTd><MudTd>@context.IsDefault</MudTd><MudTd><MudIconButton Icon="@Icons.Material.Outlined.Edit" OnClick="@(() => EditShift(context))" /></MudTd></RowTemplate>
+  </MudTable>
+  @if (_editShift is not null) { <MudPaper Class="pa-4 mt-3" Outlined="true"><MudText Typo="Typo.subtitle1">Shift</MudText><MudGrid>
+   <MudItem xs="12" md="4"><MudTextField @bind-Value="_editShift.Name" Label="Name" /></MudItem><MudItem xs="6" md="2"><MudTimePicker Time="_shiftStart" TimeChanged="@(v => _shiftStart = v)" Label="Starts" /></MudItem><MudItem xs="6" md="2"><MudTimePicker Time="_shiftEnd" TimeChanged="@(v => _shiftEnd = v)" Label="Ends" /></MudItem>
+   <MudItem xs="6" md="2"><MudNumericField T="int" @bind-Value="_editShift.GraceMinutes" Label="Grace min" /></MudItem><MudItem xs="6" md="2"><MudNumericField T="int" @bind-Value="_editShift.BreakMinutes" Label="Break min" /></MudItem>
+   <MudItem xs="6" md="3"><MudNumericField T="int" @bind-Value="_editShift.MinimumMinutes" Label="Minimum min" /></MudItem><MudItem xs="6" md="3"><MudNumericField T="int" @bind-Value="_editShift.HalfDayMinutes" Label="Half-day min" /></MudItem><MudItem xs="6" md="3"><MudNumericField T="int" @bind-Value="_editShift.OvertimeAfterMinutes" Label="OT threshold" /></MudItem><MudItem xs="6" md="3"><MudCheckBox T="bool" @bind-Value="_editShift.IsDefault" Label="Default" /></MudItem>
+   <MudItem xs="12"><MudText Typo="Typo.caption">Weekly offs</MudText><div class="d-flex flex-wrap gap-2">@foreach(var day in Enum.GetValues<DayOfWeek>()){var d=day;<MudCheckBox T="bool" Value="@IsOff(d)" ValueChanged="@(v=>SetOff(d,v))" Label="@d.ToString()[..3]"/>}</div></MudItem>
+  </MudGrid><MudButton Variant="Variant.Filled" OnClick="SaveShiftAsync">Save shift</MudButton></MudPaper> }
+ </MudTabPanel>
+ <MudTabPanel Text="Holidays">
+  <MudButton Class="my-3" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => EditHoliday(null))">New holiday</MudButton>
+  <MudTable Items="@_holidays" Dense="true" Hover="true"><HeaderContent><MudTh>Date</MudTh><MudTh>Name</MudTh><MudTh>Annual</MudTh><MudTh>Paid</MudTh><MudTh></MudTh></HeaderContent>
+   <RowTemplate><MudTd>@context.Date.ToString("d MMM yyyy")</MudTd><MudTd>@context.Name</MudTd><MudTd>@context.IsAnnual</MudTd><MudTd>@context.IsPaid</MudTd><MudTd><MudIconButton Icon="@Icons.Material.Outlined.Edit" OnClick="@(() => EditHoliday(context))"/><MudIconButton Color="Color.Error" Icon="@Icons.Material.Outlined.Delete" OnClick="@(() => DeleteHolidayAsync(context))"/></MudTd></RowTemplate>
+  </MudTable>
+  @if(_editHoliday is not null){<MudPaper Class="pa-4 mt-3" Outlined="true"><div class="d-flex gap-3"><MudDatePicker Date="_holidayDate" DateChanged="@(v=>_holidayDate=v)" Label="Date"/><MudTextField @bind-Value="_editHoliday.Name" Label="Name"/><MudCheckBox T="bool" @bind-Value="_editHoliday.IsAnnual" Label="Annual"/><MudCheckBox T="bool" @bind-Value="_editHoliday.IsPaid" Label="Paid"/></div><MudButton Variant="Variant.Filled" OnClick="SaveHolidayAsync">Save holiday</MudButton></MudPaper>}
+ </MudTabPanel>
+ <MudTabPanel Text="Stations">
+  <MudButton Class="my-3" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => EditStation(null))">New station</MudButton>
+  <MudTable Items="@_stations" Dense="true" Hover="true"><HeaderContent><MudTh>Name</MudTh><MudTh>Location</MudTh><MudTh>Enabled</MudTh><MudTh>Last punch</MudTh><MudTh>Link</MudTh><MudTh></MudTh></HeaderContent>
+   <RowTemplate><MudTd>@context.Name</MudTd><MudTd>@context.Location</MudTd><MudTd>@context.IsEnabled</MudTd><MudTd>@context.LastPunchDescription</MudTd><MudTd><MudLink Href="@KioskUrl(context)" Target="_blank">Open kiosk</MudLink></MudTd><MudTd><MudIconButton Icon="@Icons.Material.Outlined.Edit" OnClick="@(() => EditStation(context))"/><MudIconButton Icon="@Icons.Material.Outlined.Key" OnClick="@(() => ReissueAsync(context))"/></MudTd></RowTemplate>
+  </MudTable>
+  @if (_editStation is not null) { <MudPaper Class="pa-4 mt-3" Outlined="true"><div class="d-flex gap-3"><MudTextField @bind-Value="_editStation.Name" Label="Name"/><MudTextField @bind-Value="_editStation.Location" Label="Location"/><MudCheckBox T="bool" @bind-Value="_editStation.IsEnabled" Label="Enabled"/></div><MudButton Variant="Variant.Filled" OnClick="SaveStationAsync">Save station</MudButton></MudPaper> }
+ </MudTabPanel>
+ <MudTabPanel Text="Employee cards">
+  <div class="d-flex gap-3 my-3"><MudSelect T="int?" @bind-Value="_employeeId" Label="Employee" Variant="Variant.Outlined">@foreach (var e in _employees) { <MudSelectItem T="int?" Value="@e.Id">@e.Code — @e.FullName</MudSelectItem> }</MudSelect><MudTextField @bind-Value="_card" Label="Scan or enter card UID" Variant="Variant.Outlined"/><MudButton Variant="Variant.Filled" OnClick="SaveCardAsync">Assign</MudButton></div>
+ </MudTabPanel>
+</MudTabs>
+@code {
+ private List<Shift> _shifts=[]; private List<Holiday> _holidays=[]; private List<AttendanceStation> _stations=[]; private List<Employee> _employees=[]; private Shift? _editShift; private Holiday? _editHoliday; private DateTime? _holidayDate; private AttendanceStation? _editStation; private TimeSpan? _shiftStart; private TimeSpan? _shiftEnd; private int? _employeeId; private string? _card;
+ protected override async Task OnInitializedAsync(){ await ReloadAsync(); _employees=[.. await Employees.ListAsync(null,false)]; }
+ private async Task ReloadAsync(){_shifts=[.. await Admin.ShiftsAsync()];_holidays=[.. await Admin.HolidaysAsync()];_stations=[.. await Admin.StationsAsync()];}
+ private void EditShift(Shift? s){_editShift=s is null?new Shift{Name="",IsDefault=_shifts.Count==0}:Clone(s);_shiftStart=_editShift.StartsAt.ToTimeSpan();_shiftEnd=_editShift.EndsAt.ToTimeSpan();}
+ private static Shift Clone(Shift s)=>new(){Id=s.Id,Name=s.Name,StartsAt=s.StartsAt,EndsAt=s.EndsAt,GraceMinutes=s.GraceMinutes,HalfDayMinutes=s.HalfDayMinutes,MinimumMinutes=s.MinimumMinutes,OvertimeAfterMinutes=s.OvertimeAfterMinutes,BreakMinutes=s.BreakMinutes,WeeklyOffMask=s.WeeklyOffMask,IsDefault=s.IsDefault};
+ private async Task SaveShiftAsync(){if(_editShift is null)return;_editShift.StartsAt=TimeOnly.FromTimeSpan(_shiftStart??TimeSpan.Zero);_editShift.EndsAt=TimeOnly.FromTimeSpan(_shiftEnd??TimeSpan.Zero);var r=await Admin.SaveShiftAsync(_editShift);Snackbar.Add(r.Ok?"Shift saved.":r.Error!,r.Ok?Severity.Success:Severity.Error);if(r.Ok){_editShift=null;await ReloadAsync();}}
+ private bool IsOff(DayOfWeek day)=>_editShift is not null&&(_editShift.WeeklyOffMask&(1<<(int)day))!=0;
+ private void SetOff(DayOfWeek day,bool value){if(_editShift is null)return;if(value)_editShift.WeeklyOffMask|=1<<(int)day;else _editShift.WeeklyOffMask&=~(1<<(int)day);}
+ private void EditHoliday(Holiday? h){_editHoliday=h is null?new(){IsPaid=true}:new(){Id=h.Id,Date=h.Date,Name=h.Name,IsAnnual=h.IsAnnual,IsPaid=h.IsPaid};_holidayDate=_editHoliday.Date==default?Clock.Today.ToDateTime(TimeOnly.MinValue):_editHoliday.Date.ToDateTime(TimeOnly.MinValue);}
+ private async Task SaveHolidayAsync(){if(_editHoliday is null)return;_editHoliday.Date=DateOnly.FromDateTime(_holidayDate??Clock.Today.ToDateTime(TimeOnly.MinValue));var r=await Admin.SaveHolidayAsync(_editHoliday);Snackbar.Add(r.Ok?"Holiday saved.":r.Error!,r.Ok?Severity.Success:Severity.Error);if(r.Ok){_editHoliday=null;await ReloadAsync();}}
+ private async Task DeleteHolidayAsync(Holiday h){var r=await Admin.DeleteHolidayAsync(h.Id);Snackbar.Add(r.Ok?"Holiday removed.":r.Error!,r.Ok?Severity.Success:Severity.Error);await ReloadAsync();}
+ private void EditStation(AttendanceStation? s)=>_editStation=s is null?new(){IsEnabled=true}:new(){Id=s.Id,Name=s.Name,Location=s.Location,IsEnabled=s.IsEnabled,AccessToken=s.AccessToken};
+ private async Task SaveStationAsync(){if(_editStation is null)return;var r=await Admin.SaveStationAsync(_editStation);Snackbar.Add(r.Ok?"Station saved.":r.Error!,r.Ok?Severity.Success:Severity.Error);if(r.Ok){_editStation=null;await ReloadAsync();}}
+ private async Task ReissueAsync(AttendanceStation s){var r=await Admin.ReissueStationAsync(s.Id);Snackbar.Add(r.Ok?"Kiosk link re-issued; reopen it on the station PC.":r.Error!,r.Ok?Severity.Warning:Severity.Error);await ReloadAsync();}
+ private async Task SaveCardAsync(){if(_employeeId is null)return;var r=await Admin.EnrollCardAsync(_employeeId.Value,_card);Snackbar.Add(r.Ok?"Card assigned.":r.Error!,r.Ok?Severity.Success:Severity.Error);}
+ private string KioskUrl(AttendanceStation s)=>Nav.ToAbsoluteUri($"/hr/kiosk/{s.AccessToken}").ToString();
+}

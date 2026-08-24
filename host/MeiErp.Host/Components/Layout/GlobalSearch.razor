@@ -1,0 +1,5 @@
+@using MeiErp.Host.Services
+@inject IGlobalSearchService Search
+@inject NavigationManager Nav
+<div style="min-width:220px;max-width:360px" class="mx-3 d-none d-sm-block"><MudAutocomplete T="GlobalSearchHit" Value="null" ValueChanged="Open" SearchFunc="Find" Placeholder="Search everything…" Dense Margin="Margin.Dense" Variant="Variant.Outlined" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Clearable ResetValueOnEmptyText CoerceText="false" MinCharacters="2" ToStringFunc="@(x=>x?.Label??string.Empty)"><ItemTemplate Context="hit"><div><MudText Typo="Typo.body2">@hit.Label</MudText><MudText Typo="Typo.caption" Class="mud-text-secondary">@hit.Module · @hit.Kind</MudText></div></ItemTemplate></MudAutocomplete></div>
+@code{async Task<IEnumerable<GlobalSearchHit>> Find(string value,CancellationToken ct)=>await Search.SearchAsync(value,ct);void Open(GlobalSearchHit? hit){if(hit is not null)Nav.NavigateTo(hit.Url);}}

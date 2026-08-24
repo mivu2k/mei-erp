@@ -107,7 +107,7 @@
 
     private async Task Shift(int days)
     {
-        _date = (_date ?? DateTime.Today).AddDays(days);
+        _date = (_date ?? Clock.Today.ToDateTime(TimeOnly.MinValue)).AddDays(days);
         await LoadAsync();
     }
 
@@ -115,7 +115,7 @@
     {
         _loading = true;
 
-        var day = DateOnly.FromDateTime(_date ?? DateTime.Today);
+        var day = DateOnly.FromDateTime(_date ?? Clock.Today.ToDateTime(TimeOnly.MinValue));
 
         // Posted only. A draft is not in the books, and a day book that showed
         // drafts would not reconcile with the trial balance.

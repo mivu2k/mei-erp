@@ -121,7 +121,7 @@
                 Amount = _amount,
                 InstrumentNumber = _instrument,
                 BankName = _bank,
-                IssuedOn = DateOnly.FromDateTime(_issued ?? DateTime.Today),
+                IssuedOn = DateOnly.FromDateTime(_issued ?? Clock.Today.ToDateTime(TimeOnly.MinValue)),
                 ExpiresOn = _expires is null ? null : DateOnly.FromDateTime(_expires.Value)
             });
 

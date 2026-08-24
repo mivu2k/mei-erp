@@ -23,7 +23,7 @@ namespace MeiErp.Modules.Inventory.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
-            modelBuilder.Entity("MeiErp.Modules.Inventory.Delivery", b =>
+            modelBuilder.Entity("MeiErp.Modules.Inventory.InventoryCount", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -31,9 +31,9 @@ namespace MeiErp.Modules.Inventory.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("CollectedBy")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
+                    b.Property<string>("CountedByName")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.Property<string>("CreatedBy")
                         .HasColumnType("text");
@@ -67,15 +67,19 @@ namespace MeiErp.Modules.Inventory.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)");
 
-                    b.Property<int>("PartyId")
+                    b.Property<DateTime?>("PostedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Status")
                         .HasColumnType("integer");
 
-                    b.Property<string>("PartyName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
 
-                    b.Property<int>("SalesOrderId")
+                    b.Property<int>("WarehouseId")
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
@@ -86,12 +90,12 @@ namespace MeiErp.Modules.Inventory.Migrations
                         .IsUnique()
                         .HasFilter("\"IsDeleted\" = false");
 
-                    b.HasIndex("SalesOrderId");
+                    b.HasIndex("WarehouseId");
 
-                    b.ToTable("Deliveries", "inventory");
+                    b.ToTable("InventoryCounts", "inventory");
                 });
 
-            modelBuilder.Entity("MeiErp.Modules.Inventory.DeliveryLine", b =>
+            modelBuilder.Entity("MeiErp.Modules.Inventory.InventoryCountLine", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -99,7 +103,10 @@ namespace MeiErp.Modules.Inventory.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<int>("DeliveryId")
+                    b.Property<decimal?>("CountedQuantity")
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<int>("InventoryCountId")
                         .HasColumnType("integer");
 
                     b.Property<string>("ItemCode")
@@ -115,23 +122,22 @@ namespace MeiErp.Modules.Inventory.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
-                    b.Property<decimal>("Quantity")
-                        .HasColumnType("numeric(18,4)");
+                    b.Property<string>("Note")
+                        .HasColumnType("text");
 
-                    b.Property<decimal>("UnitCost")
-                        .HasColumnType("numeric(18,4)");
-
-                    b.Property<decimal>("UnitPrice")
+                    b.Property<decimal>("SystemQuantity")
                         .HasColumnType("numeric(18,4)");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("DeliveryId");
+                    b.HasIndex("InventoryCountId");
 
-                    b.ToTable("DeliveryLines", "inventory");
+                    b.HasIndex("ItemId");
+
+                    b.ToTable("InventoryCountLines", "inventory");
                 });
 
-            modelBuilder.Entity("MeiErp.Modules.Inventory.GoodsReceipt", b =>
+            modelBuilder.Entity("MeiErp.Modules.Inventory.InventoryReturn", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -157,6 +163,9 @@ namespace MeiErp.Modules.Inventory.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
                     b.Property<string>("ModifiedBy")
                         .HasColumnType("text");
 
@@ -176,11 +185,18 @@ namespace MeiErp.Modules.Inventory.Migrations
 
                     b.Property<string>("PartyName")
                         .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
+                        .HasColumnType("text");
 
-                    b.Property<int>("PurchaseOrderId")
-                        .HasColumnType("integer");
+                    b.Property<string>("PostedByName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("SourceReference")
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
@@ -190,12 +206,12 @@ namespace MeiErp.Modules.Inventory.Migrations
                         .IsUnique()
                         .HasFilter("\"IsDeleted\" = false");
 
-                    b.HasIndex("PurchaseOrderId");
+                    b.HasIndex("PartyId");
 
-                    b.ToTable("GoodsReceipts", "inventory");
+                    b.ToTable("InventoryReturns", "inventory");
                 });
 
-            modelBuilder.Entity("MeiErp.Modules.Inventory.GoodsReceiptLine", b =>
+            modelBuilder.Entity("MeiErp.Modules.Inventory.InventoryReturnLine", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -203,7 +219,10 @@ namespace MeiErp.Modules.Inventory.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<int>("GoodsReceiptId")
+                    b.Property<string>("BatchNumber")
+                        .HasColumnType("text");
+
+                    b.Property<int>("InventoryReturnId")
                         .HasColumnType("integer");
 
                     b.Property<string>("ItemCode")
@@ -222,14 +241,19 @@ namespace MeiErp.Modules.Inventory.Migrations
                     b.Property<decimal>("Quantity")
                         .HasColumnType("numeric(18,4)");
 
+                    b.Property<string>("SerialNumbers")
+                        .HasColumnType("text");
+
                     b.Property<decimal>("UnitCost")
                         .HasColumnType("numeric(18,4)");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("GoodsReceiptId");
+                    b.HasIndex("InventoryReturnId");
 
-                    b.ToTable("GoodsReceiptLine", "inventory");
+                    b.HasIndex("ItemId");
+
+                    b.ToTable("InventoryReturnLines", "inventory");
                 });
 
             modelBuilder.Entity("MeiErp.Modules.Inventory.Item", b =>
@@ -242,6 +266,10 @@ namespace MeiErp.Modules.Inventory.Migrations
 
                     b.Property<decimal>("AverageCost")
                         .HasColumnType("numeric(18,4)");
+
+                    b.Property<string>("Barcode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.Property<int?>("CategoryId")
                         .HasColumnType("integer");
@@ -266,11 +294,23 @@ namespace MeiErp.Modules.Inventory.Migrations
                     b.Property<string>("Description")
                         .HasColumnType("text");
 
+                    b.Property<int>("DomainId")
+                        .HasColumnType("integer");
+
                     b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsBatchTracked")
                         .HasColumnType("boolean");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
+
+                    b.Property<bool>("IsSerialized")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
 
                     b.Property<decimal?>("LastCost")
                         .HasColumnType("numeric(18,4)");
@@ -286,10 +326,19 @@ namespace MeiErp.Modules.Inventory.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<int?>("ParentItemId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ProductFamilyId")
+                        .HasColumnType("integer");
+
                     b.Property<decimal>("QuantityOnHand")
                         .HasColumnType("numeric(18,4)");
 
                     b.Property<decimal>("ReorderLevel")
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<decimal>("ReorderQuantity")
                         .HasColumnType("numeric(18,4)");
 
                     b.Property<decimal>("SellingPrice")
@@ -308,15 +357,23 @@ namespace MeiErp.Modules.Inventory.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CategoryId");
-
-                    b.HasIndex("Code")
+                    b.HasIndex("Barcode")
                         .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false");
+                        .HasFilter("\"Barcode\" IS NOT NULL AND \"IsDeleted\" = false");
+
+                    b.HasIndex("CategoryId");
 
                     b.HasIndex("IsDeleted");
 
                     b.HasIndex("Name");
+
+                    b.HasIndex("ParentItemId");
+
+                    b.HasIndex("ProductFamilyId");
+
+                    b.HasIndex("DomainId", "Code")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false");
 
                     b.ToTable("Items", "inventory");
                 });
@@ -368,7 +425,7 @@ namespace MeiErp.Modules.Inventory.Migrations
                     b.ToTable("Categories", "inventory");
                 });
 
-            modelBuilder.Entity("MeiErp.Modules.Inventory.Party", b =>
+            modelBuilder.Entity("MeiErp.Modules.Inventory.ProductFamily", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -376,13 +433,9 @@ namespace MeiErp.Modules.Inventory.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("Address")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
+                    b.Property<string>("Category")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.Property<string>("CreatedBy")
                         .HasColumnType("text");
@@ -396,19 +449,13 @@ namespace MeiErp.Modules.Inventory.Migrations
                     b.Property<DateTime?>("DeletedUtc")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("Email")
+                    b.Property<string>("Description")
                         .HasColumnType("text");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
-                    b.Property<bool>("IsCustomer")
-                        .HasColumnType("boolean");
-
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsSupplier")
                         .HasColumnType("boolean");
 
                     b.Property<string>("ModifiedBy")
@@ -422,17 +469,143 @@ namespace MeiErp.Modules.Inventory.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
-                    b.Property<string>("Phone")
+                    b.Property<string>("SkuPrefix")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false");
+
+                    b.ToTable("ProductFamilies", "inventory");
+                });
+
+            modelBuilder.Entity("MeiErp.Modules.Inventory.StockBatch", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("BatchNumber")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("CreatedBy")
                         .HasColumnType("text");
 
-                    b.Property<string>("TaxNumber")
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeletedBy")
                         .HasColumnType("text");
 
-                    b.Property<uint>("Version")
-                        .IsConcurrencyToken()
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("xid")
-                        .HasColumnName("xmin");
+                    b.Property<DateTime?>("DeletedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly?>("ExpiresOn")
+                        .HasColumnType("date");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("ItemId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("ModifiedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<decimal>("Quantity")
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<DateOnly>("ReceivedOn")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Reference")
+                        .HasColumnType("text");
+
+                    b.Property<decimal>("RemainingQuantity")
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<decimal?>("UnitCost")
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<int>("WarehouseId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("WarehouseId");
+
+                    b.HasIndex("ItemId", "BatchNumber")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false");
+
+                    b.ToTable("StockBatches", "inventory");
+                });
+
+            modelBuilder.Entity("MeiErp.Modules.Inventory.StockDomain", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("DeletedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("ModifiedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.HasKey("Id");
 
@@ -442,249 +615,7 @@ namespace MeiErp.Modules.Inventory.Migrations
 
                     b.HasIndex("IsDeleted");
 
-                    b.HasIndex("Name");
-
-                    b.ToTable("Parties", "inventory");
-                });
-
-            modelBuilder.Entity("MeiErp.Modules.Inventory.PurchaseOrder", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<int?>("ApprovalRequestId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("CreatedBy")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateOnly>("Date")
-                        .HasColumnType("date");
-
-                    b.Property<string>("DecisionComment")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
-                    b.Property<string>("DeletedBy")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("DeletedUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("ModifiedBy")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("ModifiedUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Notes")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<string>("Number")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<int>("PartyId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("PartyName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<uint>("Version")
-                        .IsConcurrencyToken()
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("xid")
-                        .HasColumnName("xmin");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("IsDeleted");
-
-                    b.HasIndex("Number")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false");
-
-                    b.HasIndex("PartyId");
-
-                    b.HasIndex("Status");
-
-                    b.ToTable("PurchaseOrders", "inventory");
-                });
-
-            modelBuilder.Entity("MeiErp.Modules.Inventory.PurchaseOrderLine", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("ItemCode")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<int>("ItemId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("ItemName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<int>("PurchaseOrderId")
-                        .HasColumnType("integer");
-
-                    b.Property<decimal>("Quantity")
-                        .HasColumnType("numeric(18,4)");
-
-                    b.Property<decimal>("Received")
-                        .HasColumnType("numeric(18,4)");
-
-                    b.Property<decimal>("UnitCost")
-                        .HasColumnType("numeric(18,4)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ItemId");
-
-                    b.HasIndex("PurchaseOrderId");
-
-                    b.ToTable("PurchaseOrderLines", "inventory");
-                });
-
-            modelBuilder.Entity("MeiErp.Modules.Inventory.SalesOrder", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("CreatedBy")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateOnly>("Date")
-                        .HasColumnType("date");
-
-                    b.Property<string>("DeletedBy")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("DeletedUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("ModifiedBy")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("ModifiedUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Notes")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<string>("Number")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<int>("PartyId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("PartyName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<uint>("Version")
-                        .IsConcurrencyToken()
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("xid")
-                        .HasColumnName("xmin");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("IsDeleted");
-
-                    b.HasIndex("Number")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false");
-
-                    b.HasIndex("PartyId");
-
-                    b.HasIndex("Status");
-
-                    b.ToTable("SalesOrders", "inventory");
-                });
-
-            modelBuilder.Entity("MeiErp.Modules.Inventory.SalesOrderLine", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<decimal>("Delivered")
-                        .HasColumnType("numeric(18,4)");
-
-                    b.Property<string>("ItemCode")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<int>("ItemId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("ItemName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<decimal>("Quantity")
-                        .HasColumnType("numeric(18,4)");
-
-                    b.Property<int>("SalesOrderId")
-                        .HasColumnType("integer");
-
-                    b.Property<decimal>("UnitCost")
-                        .HasColumnType("numeric(18,4)");
-
-                    b.Property<decimal>("UnitPrice")
-                        .HasColumnType("numeric(18,4)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ItemId");
-
-                    b.HasIndex("SalesOrderId");
-
-                    b.ToTable("SalesOrderLines", "inventory");
+                    b.ToTable("StockDomains", "inventory");
                 });
 
             modelBuilder.Entity("MeiErp.Modules.Inventory.StockMovement", b =>
@@ -712,6 +643,9 @@ namespace MeiErp.Modules.Inventory.Migrations
 
                     b.Property<DateTime?>("DeletedUtc")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("DomainId")
+                        .HasColumnType("integer");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
@@ -758,15 +692,378 @@ namespace MeiErp.Modules.Inventory.Migrations
                     b.Property<decimal>("UnitCost")
                         .HasColumnType("numeric(18,4)");
 
+                    b.Property<int?>("WarehouseId")
+                        .HasColumnType("integer");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Date");
 
                     b.HasIndex("IsDeleted");
 
+                    b.HasIndex("WarehouseId");
+
+                    b.HasIndex("DomainId", "Date");
+
                     b.HasIndex("ItemId", "Date");
 
                     b.ToTable("StockMovements", "inventory");
+                });
+
+            modelBuilder.Entity("MeiErp.Modules.Inventory.StockTransfer", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("DeletedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DispatchedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("DispatchedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("FromWarehouseId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("ModifiedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Number")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("RaisedByName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ReceivedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("ReceivedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Reference")
+                        .HasColumnType("text");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ToWarehouseId")
+                        .HasColumnType("integer");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FromWarehouseId");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("Number")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false");
+
+                    b.HasIndex("ToWarehouseId");
+
+                    b.ToTable("StockTransfers", "inventory");
+                });
+
+            modelBuilder.Entity("MeiErp.Modules.Inventory.StockTransferLine", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ItemCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<int>("ItemId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ItemName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("text");
+
+                    b.Property<decimal>("Quantity")
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<decimal?>("ReceivedQuantity")
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<int>("StockTransferId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ItemId");
+
+                    b.HasIndex("StockTransferId");
+
+                    b.ToTable("StockTransferLines", "inventory");
+                });
+
+            modelBuilder.Entity("MeiErp.Modules.Inventory.StockUnit", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("DeletedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateOnly?>("IssuedOn")
+                        .HasColumnType("date");
+
+                    b.Property<string>("IssuedTo")
+                        .HasColumnType("text");
+
+                    b.Property<int>("ItemId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("ModifiedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<DateOnly>("ReceivedOn")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Reference")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SerialNumber")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("StockBatchId")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal?>("UnitCost")
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<int?>("WarehouseId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("StockBatchId");
+
+                    b.HasIndex("WarehouseId");
+
+                    b.HasIndex("ItemId", "SerialNumber")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false");
+
+                    b.ToTable("StockUnits", "inventory");
+                });
+
+            modelBuilder.Entity("MeiErp.Modules.Inventory.Warehouse", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Address")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Code")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("DeletedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("DomainId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("ModifiedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique()
+                        .HasFilter("\"Code\" IS NOT NULL AND \"IsDeleted\" = false");
+
+                    b.HasIndex("DomainId");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.ToTable("Warehouses", "inventory");
+                });
+
+            modelBuilder.Entity("MeiErp.Modules.Inventory.WarehouseBalance", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ItemId")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("Quantity")
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<int>("WarehouseId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ItemId");
+
+                    b.HasIndex("WarehouseId", "ItemId")
+                        .IsUnique();
+
+                    b.ToTable("WarehouseBalances", "inventory");
+                });
+
+            modelBuilder.Entity("MeiErp.Platform.Persistence.AuditLogEntry", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("EntityId")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("EntityName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.Property<string>("ModuleKey")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("NewValues")
+                        .HasColumnType("text");
+
+                    b.Property<string>("OldValues")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("TimestampUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UserId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("UserName")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("AuditLogs", "platform", t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
                 });
 
             modelBuilder.Entity("MeiErp.Platform.Persistence.DocumentSequenceCounter", b =>
@@ -844,48 +1141,53 @@ namespace MeiErp.Modules.Inventory.Migrations
                     b.ToTable("outbox_messages", "inventory");
                 });
 
-            modelBuilder.Entity("MeiErp.Modules.Inventory.Delivery", b =>
+            modelBuilder.Entity("MeiErp.Modules.Inventory.InventoryCount", b =>
                 {
-                    b.HasOne("MeiErp.Modules.Inventory.SalesOrder", "Order")
+                    b.HasOne("MeiErp.Modules.Inventory.Warehouse", "Warehouse")
                         .WithMany()
-                        .HasForeignKey("SalesOrderId")
+                        .HasForeignKey("WarehouseId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.Navigation("Order");
+                    b.Navigation("Warehouse");
                 });
 
-            modelBuilder.Entity("MeiErp.Modules.Inventory.DeliveryLine", b =>
+            modelBuilder.Entity("MeiErp.Modules.Inventory.InventoryCountLine", b =>
                 {
-                    b.HasOne("MeiErp.Modules.Inventory.Delivery", "Delivery")
+                    b.HasOne("MeiErp.Modules.Inventory.InventoryCount", "Count")
                         .WithMany("Lines")
-                        .HasForeignKey("DeliveryId")
+                        .HasForeignKey("InventoryCountId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Delivery");
-                });
-
-            modelBuilder.Entity("MeiErp.Modules.Inventory.GoodsReceipt", b =>
-                {
-                    b.HasOne("MeiErp.Modules.Inventory.PurchaseOrder", "Order")
+                    b.HasOne("MeiErp.Modules.Inventory.Item", "Item")
                         .WithMany()
-                        .HasForeignKey("PurchaseOrderId")
+                        .HasForeignKey("ItemId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.Navigation("Order");
+                    b.Navigation("Count");
+
+                    b.Navigation("Item");
                 });
 
-            modelBuilder.Entity("MeiErp.Modules.Inventory.GoodsReceiptLine", b =>
+            modelBuilder.Entity("MeiErp.Modules.Inventory.InventoryReturnLine", b =>
                 {
-                    b.HasOne("MeiErp.Modules.Inventory.GoodsReceipt", "Receipt")
+                    b.HasOne("MeiErp.Modules.Inventory.InventoryReturn", "Return")
                         .WithMany("Lines")
-                        .HasForeignKey("GoodsReceiptId")
+                        .HasForeignKey("InventoryReturnId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Receipt");
+                    b.HasOne("MeiErp.Modules.Inventory.Item", "Item")
+                        .WithMany()
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Item");
+
+                    b.Navigation("Return");
                 });
 
             modelBuilder.Entity("MeiErp.Modules.Inventory.Item", b =>
@@ -895,21 +1197,32 @@ namespace MeiErp.Modules.Inventory.Migrations
                         .HasForeignKey("CategoryId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("MeiErp.Modules.Inventory.StockDomain", "Domain")
+                        .WithMany()
+                        .HasForeignKey("DomainId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("MeiErp.Modules.Inventory.Item", "ParentItem")
+                        .WithMany()
+                        .HasForeignKey("ParentItemId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("MeiErp.Modules.Inventory.ProductFamily", "ProductFamily")
+                        .WithMany("Items")
+                        .HasForeignKey("ProductFamilyId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("Category");
+
+                    b.Navigation("Domain");
+
+                    b.Navigation("ParentItem");
+
+                    b.Navigation("ProductFamily");
                 });
 
-            modelBuilder.Entity("MeiErp.Modules.Inventory.PurchaseOrder", b =>
-                {
-                    b.HasOne("MeiErp.Modules.Inventory.Party", "Party")
-                        .WithMany()
-                        .HasForeignKey("PartyId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Party");
-                });
-
-            modelBuilder.Entity("MeiErp.Modules.Inventory.PurchaseOrderLine", b =>
+            modelBuilder.Entity("MeiErp.Modules.Inventory.StockBatch", b =>
                 {
                     b.HasOne("MeiErp.Modules.Inventory.Item", "Item")
                         .WithMany()
@@ -917,45 +1230,15 @@ namespace MeiErp.Modules.Inventory.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("MeiErp.Modules.Inventory.PurchaseOrder", "Order")
-                        .WithMany("Lines")
-                        .HasForeignKey("PurchaseOrderId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                    b.HasOne("MeiErp.Modules.Inventory.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Item");
 
-                    b.Navigation("Order");
-                });
-
-            modelBuilder.Entity("MeiErp.Modules.Inventory.SalesOrder", b =>
-                {
-                    b.HasOne("MeiErp.Modules.Inventory.Party", "Party")
-                        .WithMany()
-                        .HasForeignKey("PartyId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Party");
-                });
-
-            modelBuilder.Entity("MeiErp.Modules.Inventory.SalesOrderLine", b =>
-                {
-                    b.HasOne("MeiErp.Modules.Inventory.Item", "Item")
-                        .WithMany()
-                        .HasForeignKey("ItemId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("MeiErp.Modules.Inventory.SalesOrder", "Order")
-                        .WithMany("Lines")
-                        .HasForeignKey("SalesOrderId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Item");
-
-                    b.Navigation("Order");
+                    b.Navigation("Warehouse");
                 });
 
             modelBuilder.Entity("MeiErp.Modules.Inventory.StockMovement", b =>
@@ -966,25 +1249,125 @@ namespace MeiErp.Modules.Inventory.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("MeiErp.Modules.Inventory.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Item");
+
+                    b.Navigation("Warehouse");
                 });
 
-            modelBuilder.Entity("MeiErp.Modules.Inventory.Delivery", b =>
+            modelBuilder.Entity("MeiErp.Modules.Inventory.StockTransfer", b =>
+                {
+                    b.HasOne("MeiErp.Modules.Inventory.Warehouse", "FromWarehouse")
+                        .WithMany()
+                        .HasForeignKey("FromWarehouseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("MeiErp.Modules.Inventory.Warehouse", "ToWarehouse")
+                        .WithMany()
+                        .HasForeignKey("ToWarehouseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("FromWarehouse");
+
+                    b.Navigation("ToWarehouse");
+                });
+
+            modelBuilder.Entity("MeiErp.Modules.Inventory.StockTransferLine", b =>
+                {
+                    b.HasOne("MeiErp.Modules.Inventory.Item", "Item")
+                        .WithMany()
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("MeiErp.Modules.Inventory.StockTransfer", "Transfer")
+                        .WithMany("Lines")
+                        .HasForeignKey("StockTransferId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Item");
+
+                    b.Navigation("Transfer");
+                });
+
+            modelBuilder.Entity("MeiErp.Modules.Inventory.StockUnit", b =>
+                {
+                    b.HasOne("MeiErp.Modules.Inventory.Item", "Item")
+                        .WithMany()
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("MeiErp.Modules.Inventory.StockBatch", "Batch")
+                        .WithMany()
+                        .HasForeignKey("StockBatchId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("MeiErp.Modules.Inventory.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Batch");
+
+                    b.Navigation("Item");
+
+                    b.Navigation("Warehouse");
+                });
+
+            modelBuilder.Entity("MeiErp.Modules.Inventory.Warehouse", b =>
+                {
+                    b.HasOne("MeiErp.Modules.Inventory.StockDomain", "Domain")
+                        .WithMany()
+                        .HasForeignKey("DomainId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Domain");
+                });
+
+            modelBuilder.Entity("MeiErp.Modules.Inventory.WarehouseBalance", b =>
+                {
+                    b.HasOne("MeiErp.Modules.Inventory.Item", "Item")
+                        .WithMany()
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("MeiErp.Modules.Inventory.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Item");
+
+                    b.Navigation("Warehouse");
+                });
+
+            modelBuilder.Entity("MeiErp.Modules.Inventory.InventoryCount", b =>
                 {
                     b.Navigation("Lines");
                 });
 
-            modelBuilder.Entity("MeiErp.Modules.Inventory.GoodsReceipt", b =>
+            modelBuilder.Entity("MeiErp.Modules.Inventory.InventoryReturn", b =>
                 {
                     b.Navigation("Lines");
                 });
 
-            modelBuilder.Entity("MeiErp.Modules.Inventory.PurchaseOrder", b =>
+            modelBuilder.Entity("MeiErp.Modules.Inventory.ProductFamily", b =>
                 {
-                    b.Navigation("Lines");
+                    b.Navigation("Items");
                 });
 
-            modelBuilder.Entity("MeiErp.Modules.Inventory.SalesOrder", b =>
+            modelBuilder.Entity("MeiErp.Modules.Inventory.StockTransfer", b =>
                 {
                     b.Navigation("Lines");
                 });
