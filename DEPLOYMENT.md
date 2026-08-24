@@ -147,7 +147,7 @@ sudo chmod 750 /srv/backup/mei-erp
 ## 5. Get the source
 
 ```bash
-sudo -u meierp git clone https://github.com/<owner>/<repo>.git /opt/mei-erp/src
+sudo -u meierp git clone https://github.com/mivu2k/mei-erp.git /opt/mei-erp/src
 cd /opt/mei-erp/src
 ```
 
