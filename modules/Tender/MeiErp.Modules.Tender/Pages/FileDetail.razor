@@ -2,11 +2,259 @@
 @attribute [Authorize(Policy=TenderModule.FilesView)]
 @rendermode InteractiveServer
 @inject IFileRegistryService Files
+@inject IDialogService Dialogs
+@inject IClock Clock
 @inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
 <PageTitle>File @_row?.FileNumber</PageTitle>
-@if(_row is null){<MudProgressCircular Indeterminate/>}else{<div class="d-flex align-center"><div><MudText Typo="Typo.h5">@_row.FileNumber</MudText><MudText>@_row.OwnerReference — @_row.OwnerTitle</MudText></div><MudSpacer/><MudButton Href="@($"/print/tender/file-sticker/{Id}")" Target="_blank">Sticker</MudButton><MudButton Href="@($"/print/tender/file-movements/{Id}")" Target="_blank">Movement register</MudButton></div><MudGrid Class="mt-4"><MudItem xs="12" md="4"><MudPaper Class="pa-4"><MudText><b>Status:</b> @_row.Status</MudText><MudText><b>Holder:</b> @(_row.HolderName??"—")</MudText><MudText><b>Location:</b> @(_row.Location??"—")</MudText><MudText><b>Volume:</b> @(_row.VolumeNumber??"—")</MudText></MudPaper><AuthorizeView Policy="@TenderModule.FilesManage"><Authorized><MudPaper Class="pa-4 mt-3"><MudSelect T="FileMovementAction" @bind-Value="_action" Label="Movement">@foreach(var a in Actions()){<MudSelectItem Value="@a">@a</MudSelectItem>}</MudSelect>@if(_action is FileMovementAction.Issued or FileMovementAction.Transferred){<MudTextField @bind-Value="_holder" Label="New holder"/><MudTextField @bind-Value="_purpose" Label="Purpose"/><MudDatePicker @bind-Date="_due" Label="Due back"/>}@if(_action is FileMovementAction.Returned or FileMovementAction.Archived or FileMovementAction.Found){<MudTextField @bind-Value="_location" Label="Location"/>}<MudTextField @bind-Value="_remarks" Label="Remarks"/><MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-3" OnClick="Move">Record movement</MudButton></MudPaper></Authorized></AuthorizeView></MudItem><MudItem xs="12" md="8"><MudPaper Class="pa-4"><MudText Typo="Typo.h6">Movement history</MudText><MudTable Items="_row.Movements" Dense><HeaderContent><MudTh>Date</MudTh><MudTh>Action</MudTh><MudTh>From</MudTh><MudTh>To</MudTh><MudTh>Due</MudTh><MudTh>Recorded by</MudTh></HeaderContent><RowTemplate><MudTd>@context.MovedOn.ToString("d MMM yyyy")</MudTd><MudTd>@context.Action</MudTd><MudTd>@(context.FromHolderName??context.FromLocation??"—")</MudTd><MudTd>@(context.ToHolderName??context.ToLocation??"—")</MudTd><MudTd>@context.DueBack?.ToString("d MMM yyyy")</MudTd><MudTd>@context.RecordedByName</MudTd></RowTemplate></MudTable></MudPaper></MudItem></MudGrid>}
-@code{[Parameter]public int Id{get;set;}PhysicalFile? _row;FileMovementAction _action=FileMovementAction.Issued;string? _holder,_purpose,_location,_remarks;DateTime? _due;protected override Task OnParametersSetAsync()=>Load();async Task Load(){_row=await Files.GetAsync(Id);
-    // The action list depends on the file's status, so a value carried over
-    // from before - or the Issued default on an archived file - leaves the
-    // select blank and submits something the status does not allow.
-    var allowed=Actions().ToList();if(allowed.Count>0&&!allowed.Contains(_action))_action=allowed[0];}IEnumerable<FileMovementAction> Actions(){if(_row is null)return[];return _row.Status switch{PhysicalFileStatus.Issued=>[FileMovementAction.Returned,FileMovementAction.Transferred,FileMovementAction.MarkedLost],PhysicalFileStatus.Archived=>[FileMovementAction.Reopened,FileMovementAction.MarkedLost],PhysicalFileStatus.Lost=>[FileMovementAction.Found],_=>[FileMovementAction.Issued,FileMovementAction.Archived,FileMovementAction.MarkedLost]};}async Task Move(){var result=await Files.MoveAsync(Id,_action,new(HolderName:_holder,Location:_location,Purpose:_purpose,DueBack:_due is null?null:DateOnly.FromDateTime(_due.Value),Remarks:_remarks));if(result.Failed){Snackbar.Add(result.Error!,Severity.Error);return;}Snackbar.Add("Movement recorded.",Severity.Success);_holder=_purpose=_remarks=null;await Load();}}
+
+@if (_row is null)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <div class="d-flex align-center flex-wrap gap-2">
+        <MudIconButton Icon="@Icons.Material.Outlined.ArrowBack"
+                       Href="/tender/files" Title="Back to the register" />
+
+        <MudText Typo="Typo.h5">@_row.FileNumber</MudText>
+        <MudChip T="string" Size="Size.Small" Color="@Colour(_row.Status)">@_row.Status</MudChip>
+
+        @if (_row.DaysOutOn(Clock.Today) is { } days)
+        {
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                     Color="@(days > 30 ? Color.Error : Color.Default)">
+                @days day@(days == 1 ? "" : "s") out
+            </MudChip>
+        }
+
+        <MudSpacer />
+
+        <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                   StartIcon="@Icons.Material.Outlined.QrCode2"
+                   Href="@($"/print/tender/file-sticker/{Id}")" Target="_blank">Sticker</MudButton>
+
+        <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                   StartIcon="@Icons.Material.Outlined.Print"
+                   Href="@($"/print/tender/file-movements/{Id}")" Target="_blank">Movement register</MudButton>
+
+        @* Back to the thing the file is about, which is usually where somebody
+           is heading next. *@
+        <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                   StartIcon="@Icons.Material.Outlined.OpenInNew"
+                   Href="@OwnerUrl">
+            Open @(_row.OwnerType is FileOwnerType.Tender ? "tender" : "project")
+        </MudButton>
+    </div>
+
+    <MudGrid Class="mt-2">
+        <MudItem xs="12" md="6">
+            <MudText Typo="Typo.body2"><b>Kind:</b> @_row.OwnerType</MudText>
+            <MudText Typo="Typo.body2"><b>Reference:</b> @_row.OwnerReference</MudText>
+            <MudText Typo="Typo.body2"><b>Title:</b> @_row.OwnerTitle</MudText>
+            <MudText Typo="Typo.body2"><b>Opened:</b> @_row.OpenedOn.ToString("d MMM yyyy")</MudText>
+            @if (_row.ClosedOn is { } closed)
+            {
+                <MudText Typo="Typo.body2"><b>Closed:</b> @closed.ToString("d MMM yyyy")</MudText>
+            }
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudText Typo="Typo.body2"><b>Held by:</b> @(_row.HolderName ?? "— in registry —")</MudText>
+            <MudText Typo="Typo.body2"><b>Location:</b> @(_row.Location ?? "—")</MudText>
+            <MudText Typo="Typo.body2"><b>Volume:</b> @(_row.VolumeNumber ?? "—")</MudText>
+            @if (!string.IsNullOrWhiteSpace(_row.Remarks))
+            {
+                <MudText Typo="Typo.body2"><b>Remarks:</b> @_row.Remarks</MudText>
+            }
+        </MudItem>
+    </MudGrid>
+
+    <AuthorizeView Policy="@TenderModule.FilesManage">
+        <Authorized>
+            @* One button per thing the file's current state allows, in a single
+               bar. The select this replaced offered actions the status forbade
+               and kept its own value after the status moved on. *@
+            <MudPaper Outlined="true" Class="pa-3 mt-4">
+                <div class="d-flex align-center flex-wrap gap-2">
+                    @foreach (var action in Available())
+                    {
+                        <MudButton Variant="@(action == Primary() ? Variant.Filled : Variant.Outlined)"
+                                   Color="@(action is FileMovementAction.MarkedLost ? Color.Error : Color.Default)"
+                                   StartIcon="@Icon(action)" Size="Size.Small"
+                                   Disabled="_busy"
+                                   OnClick="@(() => MoveAsync(action))">
+                            @Label(action)
+                        </MudButton>
+                    }
+
+                    @if (Available().Count == 0)
+                    {
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                            Nothing can be recorded against this file.
+                        </MudText>
+                    }
+
+                    <MudSpacer />
+
+                    <MudButton Variant="Variant.Text" Size="Size.Small"
+                               StartIcon="@Icons.Material.Outlined.Edit"
+                               OnClick="ShelfAsync">
+                        Shelf details
+                    </MudButton>
+                </div>
+            </MudPaper>
+        </Authorized>
+    </AuthorizeView>
+
+    <MudText Typo="Typo.h6" Class="mt-6 mb-2">Movement history</MudText>
+
+    <MudPaper Outlined="true">
+        @if (_row.Movements.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Class="mud-text-secondary pa-4">Nothing recorded yet.</MudText>
+        }
+        else
+        {
+            <MudTable Items="_row.Movements" Dense="true" Elevation="0">
+                <HeaderContent>
+                    <MudTh>Date</MudTh>
+                    <MudTh>Action</MudTh>
+                    <MudTh>From</MudTh>
+                    <MudTh>To</MudTh>
+                    <MudTh>Due back</MudTh>
+                    <MudTh>Purpose / remarks</MudTh>
+                    <MudTh>Recorded by</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Date">@context.MovedOn.ToString("yyyy-MM-dd")</MudTd>
+                    <MudTd DataLabel="Action">
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@context.Action</MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="From">@(context.FromHolderName ?? context.FromLocation ?? "")</MudTd>
+                    <MudTd DataLabel="To">@(context.ToHolderName ?? context.ToLocation ?? "")</MudTd>
+                    <MudTd DataLabel="Due back">
+                        @if (context.DueBack is { } due)
+                        {
+                            <span>@due.ToString("d MMM yyyy")</span>
+                            @if (_row.Status is PhysicalFileStatus.Issued && due < Clock.Today)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Error" Class="ml-1">late</MudChip>
+                            }
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Purpose / remarks">
+                        @string.Join(" · ", new[] { context.Purpose, context.Remarks }
+                            .Where(v => !string.IsNullOrWhiteSpace(v)))
+                    </MudTd>
+                    <MudTd DataLabel="Recorded by">@context.RecordedByName</MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private PhysicalFile? _row;
+    private bool _busy;
+
+    private string OwnerUrl => _row?.OwnerType is FileOwnerType.Tender
+        ? $"/tender/tenders/{_row.OwnerId}"
+        : $"/tender/projects/{_row?.OwnerId}";
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync() => _row = await Files.GetAsync(Id);
+
+    /// <summary>What the file's current state actually allows.</summary>
+    private IReadOnlyList<FileMovementAction> Available() => _row?.Status switch
+    {
+        PhysicalFileStatus.Issued =>
+            [FileMovementAction.Returned, FileMovementAction.Transferred, FileMovementAction.MarkedLost],
+        PhysicalFileStatus.Archived =>
+            [FileMovementAction.Reopened, FileMovementAction.MarkedLost],
+        PhysicalFileStatus.Lost =>
+            [FileMovementAction.Found],
+        PhysicalFileStatus.InRegistry =>
+            [FileMovementAction.Issued, FileMovementAction.Archived, FileMovementAction.MarkedLost],
+        _ => []
+    };
+
+    /// <summary>The one people reach for most in this state.</summary>
+    private FileMovementAction? Primary() => Available().Count == 0 ? null : Available()[0];
+
+    private static string Label(FileMovementAction action) => action switch
+    {
+        FileMovementAction.Issued => "Issue to someone",
+        FileMovementAction.Returned => "Record its return",
+        FileMovementAction.Transferred => "Hand on to someone else",
+        FileMovementAction.Archived => "Archive",
+        FileMovementAction.Reopened => "Reopen",
+        FileMovementAction.MarkedLost => "Mark lost",
+        FileMovementAction.Found => "Mark found",
+        FileMovementAction.Opened => "Opened",
+        _ => action.ToString()
+    };
+
+    private static string Icon(FileMovementAction action) => action switch
+    {
+        FileMovementAction.Issued => Icons.Material.Outlined.Outbox,
+        FileMovementAction.Returned => Icons.Material.Outlined.Inbox,
+        FileMovementAction.Transferred => Icons.Material.Outlined.SwapHoriz,
+        FileMovementAction.Archived => Icons.Material.Outlined.Archive,
+        FileMovementAction.Reopened => Icons.Material.Outlined.Unarchive,
+        FileMovementAction.MarkedLost => Icons.Material.Outlined.ReportProblem,
+        FileMovementAction.Found => Icons.Material.Outlined.Search,
+        _ => Icons.Material.Outlined.Circle
+    };
+
+    private static Color Colour(PhysicalFileStatus status) => status switch
+    {
+        PhysicalFileStatus.InRegistry => Color.Success,
+        PhysicalFileStatus.Issued => Color.Warning,
+        PhysicalFileStatus.Archived => Color.Default,
+        PhysicalFileStatus.Lost => Color.Error,
+        _ => Color.Default
+    };
+
+    private async Task MoveAsync(FileMovementAction action)
+    {
+        var parameters = new DialogParameters<FileMovementDialog>
+        {
+            { x => x.Action, action },
+            { x => x.File, _row }
+        };
+
+        var dialog = await Dialogs.ShowAsync<FileMovementDialog>(
+            Label(action), parameters, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+
+        var outcome = await dialog.Result;
+        if (outcome is not { Canceled: false, Data: FileMoveInput input }) return;
+
+        _busy = true;
+        try
+        {
+            var result = await Files.MoveAsync(Id, action, input);
+            if (result.Failed) { Snackbar.Add(result.Error!, Severity.Error); return; }
+
+            Snackbar.Add($"{Label(action)} recorded.", Severity.Success);
+            await LoadAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ShelfAsync()
+    {
+        var parameters = new DialogParameters<FileShelfDialog> { { x => x.File, _row } };
+
+        var dialog = await Dialogs.ShowAsync<FileShelfDialog>(
+            "Shelf details", parameters, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+
+        var outcome = await dialog.Result;
+        if (outcome is { Canceled: false }) await LoadAsync();
+    }
+}

@@ -9,17 +9,57 @@
 @inject ISnackbar Snackbar
 @inject NavigationManager Nav
 
-<MudContainer MaxWidth="@(AsDialog ? MaxWidth.False : MaxWidth.Large)" Class="@(AsDialog ? "" : "mt-4")">
-    @if (!AsDialog)
-    {
-        <MudText Typo="Typo.h5">New Money Request</MudText>
-    }
-    <MudText Typo="Typo.body2" Color="Color.Primary" Class="mb-4">
-        Describe what you need money for. After approval, the accounts team classifies
-        and pays it — you don't need to know any account codes.
-    </MudText>
+@* Two shells over one body: a dialog when the list opens it, a page when
+   somebody navigates to it. An itemized request grows a line at a time, so
+   the dialog's body scrolls inside itself - otherwise it runs off the bottom
+   of the screen and takes the buttons with it. *@
+@if (AsDialog)
+{
+    <MudDialog Style="max-width:72rem">
+        <TitleContent>
+            <div>
+                <MudText Typo="Typo.h6">New money request</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                    Describe what you need. The accounts team classifies and pays it —
+                    you don't need to know any account codes.
+                </MudText>
+            </div>
+        </TitleContent>
 
-    <MudForm @ref="_form">
+        <DialogContent>
+            <div style="max-height:68vh; overflow-y:auto; padding-right:.5rem">
+                <MudForm @ref="_form">
+                    @Body
+                </MudForm>
+            </div>
+        </DialogContent>
+
+        <DialogActions>
+            @Buttons
+        </DialogActions>
+    </MudDialog>
+}
+else
+{
+    <MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+        <MudText Typo="Typo.h5">New money request</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+            Describe what you need. The accounts team classifies and pays it —
+            you don't need to know any account codes.
+        </MudText>
+
+        <MudForm @ref="_form">
+            @Body
+        </MudForm>
+
+        <div class="d-flex justify-end gap-3 mt-4">
+            @Buttons
+        </div>
+    </MudContainer>
+}
+
+@code {
+    private RenderFragment Body => @<text>
         <MudPaper Class="pa-4 mb-4" Outlined="true">
             <MudText Typo="Typo.caption" Class="mud-text-secondary">Request type</MudText>
             <MudRadioGroup T="PaymentRequestKind" @bind-Value="_kind">
@@ -145,28 +185,25 @@
             }
         </MudPaper>
 
+
         @if (_error is not null)
         {
             <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mb-4">@_error</MudAlert>
         }
+    </text>;
 
-        <div class="d-flex justify-space-between align-center">
-            <MudButton Variant="Variant.Text" OnClick="CancelAsync">Cancel</MudButton>
-            <div class="d-flex gap-3">
-                <MudButton Variant="Variant.Outlined" Color="Color.Primary"
-                           Disabled="_busy" OnClick="@(() => SaveAsync(false))">
-                    Save draft
-                </MudButton>
-                <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                           Disabled="@(_busy || !HasAmount)" OnClick="@(() => SaveAsync(true))">
-                    Submit for approval
-                </MudButton>
-            </div>
-        </div>
-    </MudForm>
-</MudContainer>
+    private RenderFragment Buttons => @<text>
+        <MudButton Variant="Variant.Text" OnClick="CancelAsync" Disabled="_busy">Cancel</MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                   Disabled="_busy" OnClick="@(() => SaveAsync(false))">
+            Save draft
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   Disabled="@(_busy || !HasAmount)" OnClick="@(() => SaveAsync(true))">
+            Submit for approval
+        </MudButton>
+    </text>;
 
-@code {
     [Parameter] public bool AsDialog { get; set; }
     [Parameter] public bool DirectorMode { get; set; }
 

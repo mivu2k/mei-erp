@@ -1,0 +1,92 @@
+@inject IClock Clock
+
+@* One dialog per movement, asking only what that movement needs. The single
+   inline form asked for a holder when archiving and a location when issuing,
+   which is how people learn to ignore the fields. *@
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            @if (NeedsHolder)
+            {
+                <MudTextField @bind-Value="_holder" Label="Who is taking it" Required="true"
+                              RequiredError="Say who is taking the file."
+                              Variant="Variant.Outlined"
+                              HelperText="A name is enough — they do not have to be a system user." />
+
+                <MudTextField @bind-Value="_purpose" Label="What for" Variant="Variant.Outlined"
+                              Class="mt-4"
+                              HelperText="Site visit, audit, court submission." />
+
+                <MudDatePicker Label="Due back" Variant="Variant.Outlined" Class="mt-4"
+                               Date="_due" DateChanged="@(d => _due = d)" Clearable="true"
+                               HelperText="What makes it show as late once the date passes." />
+            }
+
+            @if (NeedsLocation)
+            {
+                <MudTextField @bind-Value="_location" Label="Where it goes back to"
+                              Variant="Variant.Outlined"
+                              HelperText="e.g. Cabinet 3, Shelf B." />
+            }
+
+            <MudTextField @bind-Value="_remarks" Label="Remarks" Lines="2"
+                          Variant="Variant.Outlined" Class="mt-4" />
+
+            @if (Action is FileMovementAction.MarkedLost)
+            {
+                <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Class="mt-4">
+                    The file stays on the register as lost. Mark it found if it turns up.
+                </MudAlert>
+            }
+        </MudForm>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled"
+                   Color="@(Action is FileMovementAction.MarkedLost ? Color.Error : Color.Primary)"
+                   OnClick="SubmitAsync">
+            Record
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+
+    [Parameter] public FileMovementAction Action { get; set; }
+    [Parameter] public PhysicalFile? File { get; set; }
+
+    private MudForm? _form;
+    private string? _holder, _purpose, _location, _remarks;
+    private DateTime? _due;
+
+    private bool NeedsHolder =>
+        Action is FileMovementAction.Issued or FileMovementAction.Transferred;
+
+    private bool NeedsLocation =>
+        Action is FileMovementAction.Returned or FileMovementAction.Archived or FileMovementAction.Found;
+
+    protected override void OnInitialized()
+    {
+        // Coming back to the shelf it came from is the common case, so it is
+        // offered rather than retyped.
+        if (NeedsLocation) _location = File?.Location;
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (_form is not null)
+        {
+            await _form.Validate();
+            if (!_form.IsValid) return;
+        }
+
+        Dialog.Close(DialogResult.Ok(new FileMoveInput(
+            HolderName: string.IsNullOrWhiteSpace(_holder) ? null : _holder.Trim(),
+            Location: string.IsNullOrWhiteSpace(_location) ? null : _location.Trim(),
+            Purpose: string.IsNullOrWhiteSpace(_purpose) ? null : _purpose.Trim(),
+            DueBack: _due is null ? null : DateOnly.FromDateTime(_due.Value),
+            Remarks: string.IsNullOrWhiteSpace(_remarks) ? null : _remarks.Trim())));
+    }
+}

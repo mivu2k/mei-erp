@@ -1,0 +1,64 @@
+@inject IFileRegistryService Files
+@inject ISnackbar Snackbar
+
+@* Where the file physically lives. Deliberately writes no movement row: moving
+   a file between shelves is not a movement of custody, and recording it as one
+   would bury the issues and returns people actually read the register for. *@
+<MudDialog>
+    <DialogContent>
+        <MudTextField @bind-Value="_location" Label="Location" Variant="Variant.Outlined"
+                      HelperText="Where it sits — e.g. Cabinet 3, Shelf B." />
+
+        <MudTextField @bind-Value="_volume" Label="Volume / rack" Variant="Variant.Outlined"
+                      Class="mt-4"
+                      HelperText="Rack, box or volume number, where the office uses them." />
+
+        <MudTextField @bind-Value="_remarks" Label="Remarks" Lines="2"
+                      Variant="Variant.Outlined" Class="mt-4" />
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+
+    [Parameter] public PhysicalFile? File { get; set; }
+
+    private string? _location, _volume, _remarks;
+    private string? _error;
+    private bool _busy;
+
+    protected override void OnInitialized()
+    {
+        _location = File?.Location;
+        _volume = File?.VolumeNumber;
+        _remarks = File?.Remarks;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (File is null) return;
+
+        _error = null;
+        _busy = true;
+        try
+        {
+            var result = await Files.UpdateDetailsAsync(File.Id, _location, _volume, _remarks);
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Shelf details saved.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

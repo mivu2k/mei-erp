@@ -3,75 +3,144 @@
 @inject IClock Clock
 @inject ISnackbar Snackbar
 
-<MudDialog>
+@* Wide enough for two columns, and the body scrolls rather than the dialog
+   growing past the screen - a long schedule preview must not push the buttons
+   out of reach. *@
+<MudDialog Style="max-width:44rem">
     <TitleContent>
-        <MudText Typo="Typo.h6">Request Advance</MudText>
+        <div>
+            <MudText Typo="Typo.h6">Request an advance</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                Money against your pay, recovered a month at a time.
+            </MudText>
+        </div>
     </TitleContent>
 
     <DialogContent>
-        @* What they already owe, before another is added to it. An approver
-           should not be the first person to work this out. *@
-        @if (_standing is not null)
-        {
-            <MudAlert Severity="@(Stretched ? Severity.Warning : Severity.Info)"
-                      Variant="Variant.Outlined" Dense="true" Class="mb-4">
-                @if (_standing.OpenAdvances == 0)
+        <div style="max-height:70vh; overflow-y:auto; padding-right:.5rem">
+            <MudForm @ref="_form">
+
+                @* What is already owed, before another is added to it. An
+                   approver should not be the first to work this out. *@
+                @if (_standing is not null)
                 {
-                    <text>Nothing outstanding@(_standing.MonthlyPay is null ? "" : $" against pay of {_standing.MonthlyPay:N2}").</text>
-                }
-                else
-                {
-                    <text>
-                        @_standing.Outstanding.ToString("N2") still owed on
-                        @_standing.OpenAdvances advance@(_standing.OpenAdvances == 1 ? "" : "s"),
-                        @_standing.CommittedMonthly.ToString("N2") a month already
-                        @if (_standing.CommittedShare is { } share)
+                    <MudPaper Outlined="true" Class="pa-3 mb-4">
+                        <MudText Typo="Typo.overline" Class="mud-text-secondary">
+                            Where you stand
+                        </MudText>
+
+                        @if (_standing.OpenAdvances == 0)
                         {
-                            <text>— @share.ToString("P0") of pay</text>
+                            <MudText Typo="Typo.body2" Class="mt-1">
+                                Nothing outstanding.
+                                @if (_standing.MonthlyPay is { } clear)
+                                {
+                                    <span class="mud-text-secondary">Pay is @clear.ToString("N2") a month.</span>
+                                }
+                            </MudText>
                         }
-                    </text>
+                        else
+                        {
+                            <div class="d-flex flex-wrap gap-6 mt-1">
+                                <div>
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Still owed</MudText>
+                                    <MudText Typo="Typo.h6">@_standing.Outstanding.ToString("N2")</MudText>
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                        over @_standing.OpenAdvances advance@(_standing.OpenAdvances == 1 ? "" : "s")
+                                    </MudText>
+                                </div>
+                                <div>
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Coming off each month</MudText>
+                                    <MudText Typo="Typo.h6">@_standing.CommittedMonthly.ToString("N2")</MudText>
+                                    @if (_standing.CommittedShare is { } share)
+                                    {
+                                        <MudText Typo="Typo.caption"
+                                                 Class="@(Stretched ? "mud-warning-text" : "mud-text-secondary")">
+                                            @share.ToString("P0") of pay
+                                        </MudText>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </MudPaper>
                 }
-            </MudAlert>
-        }
 
-        <MudForm @ref="_form">
-            <MudNumericField T="decimal" @bind-Value="_amount" Label="Amount" Required="true"
-                             RequiredError="How much do you need?"
-                             Variant="Variant.Text" HideSpinButtons="false" Format="N2" />
+                <div class="d-flex gap-4 flex-wrap">
+                    <MudNumericField T="decimal" @bind-Value="_amount" Label="Amount"
+                                     Required="true" RequiredError="How much do you need?"
+                                     Variant="Variant.Outlined" HideSpinButtons="true"
+                                     Format="N2" Style="flex:1;min-width:12rem"
+                                     Immediate="true" />
 
-            <MudTextField @bind-Value="_reason" Label="Reason" Variant="Variant.Text"
-                          Class="mt-4" />
+                    <MudNumericField T="int" @bind-Value="_months" Label="Repay over"
+                                     Required="true" Min="1" Max="60"
+                                     Variant="Variant.Outlined" Immediate="true"
+                                     Adornment="Adornment.End" AdornmentText="months"
+                                     Style="flex:1;min-width:12rem" />
+                </div>
 
-            <MudNumericField T="int" @bind-Value="_months" Label="Repay over (months)"
-                             Required="true" Min="1" Max="60"
-                             Variant="Variant.Text" Class="mt-4" />
+                <MudTextField @bind-Value="_reason" Label="Reason" Lines="2"
+                              Variant="Variant.Outlined" Class="mt-4"
+                              HelperText="What the money is for. An approver reads this." />
 
-            <MudDatePicker Label="Due date (optional)" Variant="Variant.Text" Class="mt-4"
-                           Date="_dueDate" DateChanged="@(d => _dueDate = d)" Clearable="true" />
+                <MudDatePicker Label="Due date (optional)" Variant="Variant.Outlined" Class="mt-4"
+                               Date="_dueDate" DateChanged="@(d => _dueDate = d)" Clearable="true"
+                               HelperText="Only if the whole balance is owed back by a particular date." />
 
-            @* Shown while they type, because "how much comes off each month" is
-               the only number most people actually decide on. *@
-            <MudText Typo="Typo.body2" Class="mt-4">
-                Monthly deduction: <b>@Monthly.ToString("N2")</b>
-                @if (TotalMonthly is { } total && _standing?.MonthlyPay is { } pay && pay > 0)
+                @* The monthly figure is the number most people actually decide
+                   on, so it is shown while they type rather than after saving. *@
+                @if (_amount > 0)
                 {
-                    <span class="mud-text-secondary">
-                        — @((total / pay).ToString("P0")) of pay once this is added
-                    </span>
-                }
-            </MudText>
+                    <MudPaper Outlined="true" Class="pa-3 mt-4">
+                        <div class="d-flex justify-space-between align-center">
+                            <div>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">Monthly deduction</MudText>
+                                <MudText Typo="Typo.h5">@Monthly.ToString("N2")</MudText>
+                            </div>
 
-            @if (_error is not null)
-            {
-                <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
-            }
-        </MudForm>
+                            @if (TotalMonthly is { } total && _standing?.MonthlyPay is { } pay && pay > 0)
+                            {
+                                <div class="text-right">
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                        Total off your pay
+                                    </MudText>
+                                    <MudText Typo="Typo.h6"
+                                             Class="@(total / pay > 0.5m ? "mud-warning-text" : "")">
+                                        @((total / pay).ToString("P0"))
+                                    </MudText>
+                                </div>
+                            }
+                        </div>
+
+                        @if (_months > 1)
+                        {
+                            <MudDivider Class="my-3" />
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                First deduction @FirstDue.ToString("MMMM yyyy"), last
+                                @LastDue.ToString("MMMM yyyy").
+                                @if (Parts.Count > 1 && Parts[^1] != Parts[0])
+                                {
+                                    <text>The final month is @Parts[^1].ToString("N2").</text>
+                                }
+                            </MudText>
+                        }
+                    </MudPaper>
+                }
+
+                @if (_error is not null)
+                {
+                    <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
+                }
+            </MudForm>
+        </div>
     </DialogContent>
 
     <DialogActions>
-        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton OnClick="@(() => Dialog.Cancel())" Disabled="_busy">Cancel</MudButton>
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                   OnClick="SubmitAsync" Disabled="_busy">Submit</MudButton>
+                   OnClick="SubmitAsync" Disabled="@(_busy || _amount <= 0)">
+            Submit for approval
+        </MudButton>
     </DialogActions>
 </MudDialog>
 
@@ -89,6 +158,11 @@
     private AdvanceStanding? _standing;
 
     private decimal Monthly => RepaymentSchedule.Monthly(_amount, _months);
+    private IReadOnlyList<decimal> Parts => RepaymentSchedule.Split(_amount, _months);
+
+    /// <summary>Deductions start the month after, never the pay run that funds it.</summary>
+    private DateOnly FirstDue => new DateOnly(Clock.Today.Year, Clock.Today.Month, 1).AddMonths(1);
+    private DateOnly LastDue => FirstDue.AddMonths(Math.Max(_months, 1) - 1);
 
     /// <summary>Everything coming off their pay each month if this is granted.</summary>
     private decimal? TotalMonthly =>

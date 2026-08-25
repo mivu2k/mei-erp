@@ -216,7 +216,17 @@
 
         var dialog = await Dialogs.ShowAsync<MoneyRequestEditor>(
             "New money request", parameters,
-            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true });
+            new DialogOptions
+            {
+                MaxWidth = MaxWidth.Large,
+                FullWidth = true,
+
+                // Itemized requests grow a line at a time, so the dialog has to
+                // scroll inside itself rather than run off the bottom of the
+                // screen and take the buttons with it.
+                CloseButton = true,
+                BackdropClick = false
+            });
 
         var result = await dialog.Result;
         if (result is { Canceled: false }) await LoadAsync();
