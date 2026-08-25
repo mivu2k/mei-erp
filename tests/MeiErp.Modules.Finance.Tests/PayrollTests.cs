@@ -489,7 +489,7 @@ public sealed class PayrollTests : IAsyncLifetime
 
         db.ChangeTracker.Clear();
 
-        var advance = await db.Advances.FirstAsync(a => a.Id == advanceId);
+        var advance = await db.PaymentRequests.FirstAsync(a => a.Id == advanceId);
         var accounts = new AccountService(db);
 
         // The payroll voucher credited the advance account; ApplyRecovery only
@@ -508,27 +508,31 @@ public sealed class PayrollTests : IAsyncLifetime
     private async Task<int> SeedRecoverableAdvanceAsync(
         FinanceDbContext db, string userId, decimal outstanding)
     {
-        var advance = new Advance
+        var advance = new PaymentRequest
         {
             Reference = $"ADV-26-{Random.Shared.Next(1000, 9999)}",
-            Purpose = "Site visit",
-            PersonId = userId,
-            PersonName = "Rafiq",
+            Title = "Site visit",
+
+            // Payroll only recovers advances; an itemized claim is paid, not
+            // deducted. The filter reads this, so the fixture has to say so.
+            Kind = PaymentRequestKind.Advance,
+            RequestedByUserId = userId,
+            RequestedByName = "Rafiq",
             Amount = outstanding,
             DisbursedAmount = outstanding,
             JustifiedAmount = 0,
-            Status = AdvanceStatus.Settled,
+            Status = PaymentRequestStatus.Settled,
             DifferenceHandling = DifferenceHandling.RecoverFromPayroll,
             NeededBy = new DateOnly(2026, 7, 1)
         };
 
-        db.Advances.Add(advance);
+        db.PaymentRequests.Add(advance);
 
         // The disbursement really did put the money on their advance account,
         // so the recovery has something to credit back.
         var vouchers = new VoucherService(db, _clock, _user);
         await vouchers.PostSystemVoucherAsync(new SystemVoucher(
-            VoucherType.Payment, new DateOnly(2026, 7, 1), "Advance out",
+            VoucherType.Payment, new DateOnly(2026, 7, 1), "PaymentRequest out",
             [
                 new VoucherLineInput(_advanceHead, outstanding, 0, null, userId, "Rafiq"),
                 new VoucherLineInput(_cash, 0, outstanding)

@@ -85,7 +85,7 @@ public sealed class AdvanceTests : IAsyncLifetime
         new(db, new VoucherService(db, _clock, _user), new AutoApprove(), _user, _clock);
 
     /// <summary>Takes an advance all the way to disbursed, which most tests start from.</summary>
-    private async Task<Advance> DisbursedAsync(
+    private async Task<PaymentRequest> DisbursedAsync(
         AdvanceService service, FinanceDbContext db, decimal asked, decimal taken)
     {
         var draft = await service.SaveDraftAsync(new AdvanceInput(
@@ -96,14 +96,74 @@ public sealed class AdvanceTests : IAsyncLifetime
 
         // The fake engine approves immediately; the sink is what a real one
         // would call, so the status moves the same way.
-        var live = await db.Advances.FirstAsync(a => a.Id == draft.Value.Id);
-        live.Status = AdvanceStatus.Approved;
+        var live = await db.PaymentRequests.FirstAsync(a => a.Id == draft.Value.Id);
+        live.Status = PaymentRequestStatus.Approved;
         await db.SaveChangesAsync();
 
         var paid = await service.DisburseAsync(draft.Value.Id, taken, _cash, _clock.Today);
         Assert.True(paid.Ok, paid.Error);
 
         return paid.Value;
+    }
+
+    // ---------- one record, two kinds ----------
+
+    [SkippableFact]
+    public async Task An_advance_is_a_payment_request_of_its_own_kind()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+
+        await using var db = NewDb();
+        var service = NewService(db);
+
+        var draft = await service.SaveDraftAsync(new AdvanceInput(
+            null, "Site visit", 5_000, _clock.Today, null, null, null));
+
+        db.ChangeTracker.Clear();
+
+        var stored = await db.PaymentRequests.FirstAsync(r => r.Id == draft.Value.Id);
+        Assert.Equal(PaymentRequestKind.Advance, stored.Kind);
+        Assert.Equal("Site visit", stored.Title);
+    }
+
+    [SkippableFact]
+    public async Task The_advance_list_does_not_pick_up_itemized_claims()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+
+        await using var db = NewDb();
+        var service = NewService(db);
+
+        await service.SaveDraftAsync(new AdvanceInput(
+            null, "Site visit", 5_000, _clock.Today, null, null, null));
+
+        // Same table now, so the filter is the only thing keeping the two
+        // screens from showing each other's documents.
+        db.PaymentRequests.Add(new PaymentRequest
+        {
+            Reference = "PR-26-9001",
+            Title = "Stationery claim",
+            Kind = PaymentRequestKind.Itemized,
+            Amount = 900,
+            RequestedByUserId = "user-1",
+            RequestedByName = "Rafiq",
+            NeededBy = _clock.Today,
+            Status = PaymentRequestStatus.Draft
+        });
+        await db.SaveChangesAsync();
+
+        var advances = await service.ListAsync(null, mineOnly: false);
+
+        Assert.Single(advances);
+        Assert.All(advances, a => Assert.Equal(PaymentRequestKind.Advance, a.Kind));
+
+        // ...and the same holds the other way round.
+        var requests = await new PaymentRequestService(
+            db, new VoucherService(db, _clock, _user), new AutoApprove(), _user, _clock)
+            .ListAsync(null, mineOnly: false);
+
+        Assert.Single(requests);
+        Assert.All(requests, r => Assert.Equal(PaymentRequestKind.Itemized, r.Kind));
     }
 
     // ---------- per-person accounts ----------
@@ -120,7 +180,7 @@ public sealed class AdvanceTests : IAsyncLifetime
 
         db.ChangeTracker.Clear();
 
-        var reloaded = await db.Advances.FirstAsync(a => a.Id == advance.Id);
+        var reloaded = await db.PaymentRequests.FirstAsync(a => a.Id == advance.Id);
         Assert.NotNull(reloaded.AdvanceAccountId);
         Assert.NotEqual(_advanceHead, reloaded.AdvanceAccountId);
 
@@ -154,8 +214,8 @@ public sealed class AdvanceTests : IAsyncLifetime
 
         db.ChangeTracker.Clear();
 
-        var a = await db.Advances.FirstAsync(x => x.Id == first.Id);
-        var b = await db.Advances.FirstAsync(x => x.Id == second.Id);
+        var a = await db.PaymentRequests.FirstAsync(x => x.Id == first.Id);
+        var b = await db.PaymentRequests.FirstAsync(x => x.Id == second.Id);
 
         Assert.Equal(a.AdvanceAccountId, b.AdvanceAccountId);
         Assert.Equal(8_000, await new AccountService(db).BalanceAsync(a.AdvanceAccountId!.Value));
@@ -231,8 +291,8 @@ public sealed class AdvanceTests : IAsyncLifetime
         Assert.StartsWith("DFR-", draft.Value.Reference);
 
         await service.SubmitAsync(draft.Value.Id);
-        var live = await db.Advances.FirstAsync(a => a.Id == draft.Value.Id);
-        live.Status = AdvanceStatus.Approved;
+        var live = await db.PaymentRequests.FirstAsync(a => a.Id == draft.Value.Id);
+        live.Status = PaymentRequestStatus.Approved;
         await db.SaveChangesAsync();
 
         var paid = await service.DisburseAsync(draft.Value.Id, 5_000, _cash, _clock.Today);
@@ -275,8 +335,8 @@ public sealed class AdvanceTests : IAsyncLifetime
             null, "Site visit", 20_000, _clock.Today, null, null, null));
         await service.SubmitAsync(draft.Value.Id);
 
-        var live = await db.Advances.FirstAsync(a => a.Id == draft.Value.Id);
-        live.Status = AdvanceStatus.Approved;
+        var live = await db.PaymentRequests.FirstAsync(a => a.Id == draft.Value.Id);
+        live.Status = PaymentRequestStatus.Approved;
         await db.SaveChangesAsync();
 
         var result = await service.DisburseAsync(draft.Value.Id, 30_000, _cash, _clock.Today);
@@ -352,7 +412,7 @@ public sealed class AdvanceTests : IAsyncLifetime
         Assert.Equal(-17_000, await accounts.BalanceAsync(_cash));
         Assert.Equal(0, await accounts.BalanceWithChildrenAsync(_advanceHead));
 
-        var closed = await db.Advances.FirstAsync(a => a.Id == advance.Id);
+        var closed = await db.PaymentRequests.FirstAsync(a => a.Id == advance.Id);
         Assert.Equal(0, closed.OutstandingDifference);
     }
 
@@ -378,7 +438,7 @@ public sealed class AdvanceTests : IAsyncLifetime
         Assert.Equal(3_000, await accounts.BalanceWithChildrenAsync(_advanceHead));
         Assert.Equal(-20_000, await accounts.BalanceAsync(_cash));
 
-        var closed = await db.Advances.FirstAsync(a => a.Id == advance.Id);
+        var closed = await db.PaymentRequests.FirstAsync(a => a.Id == advance.Id);
         Assert.Equal(3_000, closed.OutstandingDifference);
     }
 
@@ -403,7 +463,7 @@ public sealed class AdvanceTests : IAsyncLifetime
         // bug in advance handling.
         Assert.Equal(3_000, await new AccountService(db).BalanceWithChildrenAsync(_advanceHead));
 
-        var closed = await db.Advances.FirstAsync(a => a.Id == advance.Id);
+        var closed = await db.PaymentRequests.FirstAsync(a => a.Id == advance.Id);
         Assert.Equal(DifferenceHandling.RecoverFromPayroll, closed.DifferenceHandling);
         Assert.Equal(3_000, closed.OutstandingDifference);
     }
@@ -451,7 +511,7 @@ public sealed class AdvanceTests : IAsyncLifetime
         await service.SettleAsync(advance.Id, DifferenceHandling.SettleNow, _cash, _clock.Today);
 
         db.ChangeTracker.Clear();
-        var closed = await db.Advances.FirstAsync(a => a.Id == advance.Id);
+        var closed = await db.PaymentRequests.FirstAsync(a => a.Id == advance.Id);
 
         Assert.Equal(0, closed.Difference);
         Assert.Equal(0, await new AccountService(db).BalanceWithChildrenAsync(_advanceHead));
@@ -483,7 +543,7 @@ public sealed class AdvanceTests : IAsyncLifetime
         Assert.Equal(0, await accounts.BalanceWithChildrenAsync(_advanceHead));
         Assert.Equal(-17_000, await accounts.BalanceAsync(_cash));
 
-        var closed = await db.Advances.FirstAsync(a => a.Id == advance.Id);
+        var closed = await db.PaymentRequests.FirstAsync(a => a.Id == advance.Id);
         Assert.Equal(0, closed.OutstandingDifference);
     }
 
@@ -503,7 +563,7 @@ public sealed class AdvanceTests : IAsyncLifetime
         await service.ClearDifferenceAsync(advance.Id, 1_000, _cash, _clock.Today.AddDays(7));
 
         db.ChangeTracker.Clear();
-        var closed = await db.Advances.FirstAsync(a => a.Id == advance.Id);
+        var closed = await db.PaymentRequests.FirstAsync(a => a.Id == advance.Id);
 
         Assert.Equal(2_000, closed.OutstandingDifference);
         Assert.Equal(2_000, await new AccountService(db).BalanceWithChildrenAsync(_advanceHead));

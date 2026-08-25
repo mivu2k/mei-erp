@@ -206,7 +206,57 @@ public class PaymentRequest : AuditableEntity, IConcurrencyChecked
     public string Title { get; set; } = "";
     public string? Description { get; set; }
 
+    /// <summary>
+    /// Whether the money is being claimed back or asked for up front.
+    ///
+    /// One record rather than two, because they are the same request at
+    /// different points: an itemized claim arrives with its receipts, an advance
+    /// arrives without them and produces them later. Splitting them meant asking
+    /// people to pick a screen before they knew which they wanted.
+    /// </summary>
+    public PaymentRequestKind Kind { get; set; } = PaymentRequestKind.Itemized;
+
     public decimal Amount { get; set; }
+
+    // ---- advance-only, all null until Kind is Advance and it has been paid out
+
+    /// <summary>What was actually handed over. Usually the amount asked for.</summary>
+    public decimal? DisbursedAmount { get; set; }
+
+    /// <summary>What the receipts came to once they were produced.</summary>
+    public decimal? JustifiedAmount { get; set; }
+
+    /// <summary>The person's advance head, fixed at disbursement.</summary>
+    public int? AdvanceAccountId { get; set; }
+    public Account? AdvanceAccount { get; set; }
+
+    public int? DisbursementVoucherId { get; set; }
+    public int? SettlementVoucherId { get; set; }
+
+    public DateTime? DisbursedUtc { get; set; }
+    public DateTime? JustifiedUtc { get; set; }
+    public DateTime? SettledUtc { get; set; }
+
+    /// <summary>Where the disbursed-versus-justified gap was sent.</summary>
+    public DifferenceHandling? DifferenceHandling { get; set; }
+
+    /// <summary>How much of an outstanding difference has since been cleared.</summary>
+    public decimal ClearedDifference { get; set; }
+
+    /// <summary>
+    /// Taken minus spent. Positive means they are holding money that is not
+    /// theirs; negative means they spent more than they were given.
+    /// </summary>
+    public decimal? Difference =>
+        DisbursedAmount is null || JustifiedAmount is null
+            ? null
+            : DisbursedAmount.Value - JustifiedAmount.Value;
+
+    /// <summary>What is still owed after any partial clearing.</summary>
+    public decimal OutstandingDifference => (Difference ?? 0) - ClearedDifference;
+
+    /// <summary>Receipts produced against an advance. Empty for an itemized claim.</summary>
+    public List<AdvanceExpense> Expenses { get; set; } = [];
 
     /// <summary>Which expense head this is charged to. Chosen by the raiser, confirmed by the accountant.</summary>
     public int? ExpenseAccountId { get; set; }
@@ -245,12 +295,21 @@ public class PaymentRequest : AuditableEntity, IConcurrencyChecked
     public string? DecisionComment { get; set; }
 
     public bool IsOpen =>
-        Status is PaymentRequestStatus.Draft
-               or PaymentRequestStatus.Pending
-               or PaymentRequestStatus.Returned
-               or PaymentRequestStatus.Approved;
+        Status is not (PaymentRequestStatus.Paid
+                    or PaymentRequestStatus.Settled
+                    or PaymentRequestStatus.Rejected
+                    or PaymentRequestStatus.Cancelled);
 
     public List<PaymentRequestLine> Lines { get; set; } = [];
+}
+
+public enum PaymentRequestKind
+{
+    /// <summary>Known items and amounts, claimed back. Ends at Paid.</summary>
+    Itemized = 0,
+
+    /// <summary>A lump sum taken up front and accounted for later. Ends at Settled.</summary>
+    Advance = 1
 }
 
 /// <summary>An itemized reimbursement line; ordinary advances remain lump-sum Advance records.</summary>
@@ -290,7 +349,18 @@ public enum PaymentRequestStatus
 
     Rejected = 4,
     Returned = 5,
-    Cancelled = 6
+    Cancelled = 6,
+
+    // ---- advances only, after the money is handed over
+
+    /// <summary>Money handed over; receipts not yet produced.</summary>
+    Disbursed = 7,
+
+    /// <summary>Receipts entered, waiting for someone to accept them.</summary>
+    Justified = 8,
+
+    /// <summary>Closed. The gap has been dealt with one way or another. Terminal.</summary>
+    Settled = 9
 }
 
 /// <summary>

@@ -1,5 +1,6 @@
 using MeiErp.Modules.Finance;
 using MeiErp.Modules.Tender;
+using MeiErp.Platform.Identity;
 using Microsoft.EntityFrameworkCore;
 
 namespace MeiErp.Host.Services;
@@ -11,7 +12,7 @@ namespace MeiErp.Host.Services;
 /// is the only code that knows both modules exist, and it lives in the host for
 /// that reason - the same arrangement that lets Trade move Inventory's stock.
 /// </summary>
-public sealed class TenderProjectDirectory(TenderDbContext db) : IFinanceProjectDirectory
+public sealed class TenderProjectDirectory(TenderDbContext db, IAdminService admin) : IFinanceProjectDirectory
 {
     public async Task<IReadOnlyList<ProjectOption>> ActiveProjectsAsync(CancellationToken ct = default)
     {
@@ -28,5 +29,11 @@ public sealed class TenderProjectDirectory(TenderDbContext db) : IFinanceProject
         return rows
             .Select(p => new ProjectOption(p.Id.ToString(), $"{p.Code} — {p.Name}"))
             .ToList();
+    }
+
+    public async Task<IReadOnlyList<DepartmentOption>> DepartmentsAsync(CancellationToken ct = default)
+    {
+        var departments = await admin.DepartmentsAsync(ct);
+        return departments.Select(d => new DepartmentOption(d.Id, d.Name)).ToList();
     }
 }

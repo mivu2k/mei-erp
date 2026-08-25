@@ -1,0 +1,292 @@
+@page "/finance/money-requests/new"
+@attribute [Authorize(Policy = FinanceModule.RequestsRaise)]
+@rendermode InteractiveServer
+@inject IPaymentRequestService Requests
+@inject IAdvanceService Advances
+@inject IAccountService Chart
+@inject IFinanceProjectDirectory Projects
+@inject IClock Clock
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+    <MudText Typo="Typo.h5">New Money Request</MudText>
+    <MudText Typo="Typo.body2" Color="Color.Primary" Class="mb-4">
+        Describe what you need money for. After approval, the accounts team classifies
+        and pays it — you don't need to know any account codes.
+    </MudText>
+
+    <MudForm @ref="_form">
+        <MudPaper Class="pa-4 mb-4" Outlined="true">
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">Request type</MudText>
+            <MudRadioGroup T="PaymentRequestKind" @bind-Value="_kind">
+                <MudRadio T="PaymentRequestKind" Value="PaymentRequestKind.Advance" Color="Color.Primary">
+                    <b>Advance</b> — I need a lump sum now (e.g. a trip);
+                    I'll justify the expenses by category when I'm back.
+                </MudRadio>
+                <MudRadio T="PaymentRequestKind" Value="PaymentRequestKind.Itemized" Color="Color.Primary">
+                    <b>Itemized</b> — I already know the exact items and amounts.
+                </MudRadio>
+            </MudRadioGroup>
+        </MudPaper>
+
+        <MudPaper Class="pa-4 mb-4" Outlined="true">
+            <div class="d-flex gap-4 flex-wrap">
+                <MudTextField @bind-Value="_purpose" Label="Purpose" Required="true"
+                              RequiredError="Say what the money is for."
+                              Variant="Variant.Text" Style="flex:2;min-width:20rem"
+                              HelperText="One line summary, e.g. 'Site visit expenses for Lahore trip'" />
+
+                <MudSelect T="string" @bind-Value="_departmentId" Label="Department"
+                           Variant="Variant.Text" Clearable="true" Style="flex:1;min-width:14rem">
+                    @foreach (var d in _departments)
+                    {
+                        <MudSelectItem T="string" Value="@d.Id">@d.Name</MudSelectItem>
+                    }
+                </MudSelect>
+
+                <MudSelect T="string" Value="_projectId" ValueChanged="ProjectChanged"
+                           Label="@(_projects.Count == 0 ? "Project (none defined)" : "Project")"
+                           Disabled="@(_projects.Count == 0)"
+                           Variant="Variant.Text" Clearable="true" Style="flex:1;min-width:14rem">
+                    @foreach (var p in _projects)
+                    {
+                        <MudSelectItem T="string" Value="@p.Id">@p.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </div>
+        </MudPaper>
+
+        <MudPaper Class="pa-4 mb-4" Outlined="true">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">What do you need?</MudText>
+
+            @if (_kind is PaymentRequestKind.Advance)
+            {
+                @* No lines: an advance is a lump sum, and the receipts that
+                   justify it do not exist yet. *@
+                <div class="d-flex gap-4 flex-wrap align-center">
+                    <MudNumericField T="decimal" @bind-Value="_amount" Label="Amount"
+                                     Required="true" RequiredError="How much do you need?"
+                                     Variant="Variant.Text" HideSpinButtons="true"
+                                     Style="min-width:14rem" Format="N2" />
+
+                    <MudDatePicker Label="Needed by" Variant="Variant.Text"
+                                   Date="_neededBy" DateChanged="@(d => _neededBy = d)"
+                                   Style="min-width:14rem" />
+                </div>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2">
+                    You will enter the receipts against this once the money has been spent.
+                </MudText>
+            }
+            else
+            {
+                @foreach (var line in _lines)
+                {
+                    <MudPaper Class="pa-3 mb-2" Outlined="true">
+                        <div class="d-flex gap-3 align-center flex-wrap">
+                            <MudTextField @bind-Value="line.Category" Label="Category" Required="true"
+                                          RequiredError="What kind of cost is this?"
+                                          Variant="Variant.Text" Style="min-width:12rem" />
+
+                            <MudNumericField T="decimal" @bind-Value="line.Amount" Label="Amount"
+                                             Required="true" Variant="Variant.Text"
+                                             HideSpinButtons="true" Style="min-width:10rem" Format="N2" />
+
+                            <MudTextField @bind-Value="line.Reason" Label="Reason" Required="true"
+                                          RequiredError="Explain this item."
+                                          Variant="Variant.Text" Style="flex:1;min-width:12rem" />
+
+                            <MudTextField @bind-Value="line.Description" Label="Details (optional)"
+                                          Variant="Variant.Text" Style="flex:1;min-width:12rem" />
+
+                            <MudFileUpload T="IBrowserFile" FilesChanged="@(f => AttachAsync(line, f))"
+                                           Accept=".pdf,.png,.jpg,.jpeg,.webp">
+                                <ActivatorContent>
+                                    <MudButton Variant="Variant.Text" Size="Size.Small"
+                                               StartIcon="@Icons.Material.Filled.AttachFile">
+                                        @(line.AttachmentName is null ? "Receipt" : "Replace")
+                                    </MudButton>
+                                </ActivatorContent>
+                            </MudFileUpload>
+
+                            <MudIconButton Icon="@Icons.Material.Outlined.Delete" Color="Color.Default"
+                                           Disabled="@(_lines.Count == 1)"
+                                           OnClick="@(() => _lines.Remove(line))" />
+                        </div>
+
+                        @if (line.AttachmentName is not null)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success" Class="mt-2"
+                                     OnClose="@(() => ClearAttachment(line))">@line.AttachmentName</MudChip>
+                        }
+                    </MudPaper>
+                }
+
+                <div class="d-flex justify-space-between align-center mt-2">
+                    <MudButton StartIcon="@Icons.Material.Filled.Add" Variant="Variant.Outlined"
+                               OnClick="@(() => _lines.Add(new DraftLine()))">
+                        Add another item
+                    </MudButton>
+                    <MudText Typo="Typo.h6">Total: @_lines.Sum(l => l.Amount).ToString("N2")</MudText>
+                </div>
+            }
+        </MudPaper>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mb-4">@_error</MudAlert>
+        }
+
+        <div class="d-flex justify-space-between align-center">
+            <MudButton Variant="Variant.Text" OnClick="@(() => Nav.NavigateTo("/finance/requests"))">
+                Cancel
+            </MudButton>
+            <div class="d-flex gap-3">
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                           Disabled="_busy" OnClick="@(() => SaveAsync(false))">
+                    Save draft
+                </MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           Disabled="@(_busy || !HasAmount)" OnClick="@(() => SaveAsync(true))">
+                    Submit for approval
+                </MudButton>
+            </div>
+        </div>
+    </MudForm>
+</MudContainer>
+
+@code {
+    private MudForm? _form;
+    private PaymentRequestKind _kind = PaymentRequestKind.Itemized;
+
+    private string _purpose = "";
+    private string? _departmentId;
+    private string? _projectId;
+    private string? _projectName;
+    private decimal _amount;
+    private DateTime? _neededBy;
+    private List<DraftLine> _lines = [new()];
+
+    private IReadOnlyList<DepartmentOption> _departments = [];
+    private IReadOnlyList<ProjectOption> _projects = [];
+    private string? _error;
+    private bool _busy;
+
+    private const long MaxAttachmentBytes = 8 * 1024 * 1024;
+
+    private bool HasAmount => _kind is PaymentRequestKind.Advance
+        ? _amount > 0
+        : _lines.Sum(l => l.Amount) > 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _departments = await Projects.DepartmentsAsync();
+        _projects = await Projects.ActiveProjectsAsync();
+        _neededBy = Clock.Today.AddDays(7).ToDateTime(TimeOnly.MinValue);
+    }
+
+    private void ProjectChanged(string? projectId)
+    {
+        _projectId = projectId;
+        _projectName = _projects.FirstOrDefault(p => p.Id == projectId)?.Name;
+    }
+
+    private async Task AttachAsync(DraftLine line, IBrowserFile? file)
+    {
+        if (file is null) return;
+
+        if (file.Size > MaxAttachmentBytes)
+        {
+            _error = $"{file.Name} is larger than {MaxAttachmentBytes / (1024 * 1024)}MB.";
+            return;
+        }
+
+        _error = null;
+
+        using var buffer = new MemoryStream();
+        await file.OpenReadStream(MaxAttachmentBytes).CopyToAsync(buffer);
+
+        line.Attachment = buffer.ToArray();
+        line.AttachmentName = file.Name;
+        line.AttachmentContentType = file.ContentType;
+    }
+
+    private static void ClearAttachment(DraftLine line)
+    {
+        line.Attachment = null;
+        line.AttachmentName = null;
+        line.AttachmentContentType = null;
+    }
+
+    private async Task SaveAsync(bool submit)
+    {
+        _error = null;
+        if (_form is not null)
+        {
+            await _form.Validate();
+            if (!_form.IsValid) return;
+        }
+
+        _busy = true;
+        try
+        {
+            var neededBy = DateOnly.FromDateTime(
+                _neededBy ?? Clock.Today.ToDateTime(TimeOnly.MinValue));
+
+            // The two kinds are one record but different services: an advance
+            // runs disburse-justify-settle, an itemized claim is approved and
+            // paid. Choosing here is what saves the raiser choosing a screen.
+            if (_kind is PaymentRequestKind.Advance)
+            {
+                var saved = await Advances.SaveDraftAsync(new AdvanceInput(
+                    null, _purpose, _amount, neededBy, null, null, _departmentId));
+
+                if (saved.Failed) { _error = saved.Error; return; }
+
+                if (submit)
+                {
+                    var sent = await Advances.SubmitAsync(saved.Value.Id);
+                    if (sent.Failed) { _error = sent.Error; return; }
+                }
+
+                Snackbar.Add(submit ? $"{saved.Value.Reference} sent for approval." : "Draft saved.",
+                    Severity.Success);
+                Nav.NavigateTo($"/finance/advances/{saved.Value.Id}");
+            }
+            else
+            {
+                var lines = _lines.Select(l => new PaymentRequestLineInput(
+                    l.Category, l.Amount, l.Reason, l.Description, null,
+                    l.Attachment, l.AttachmentName, l.AttachmentContentType)).ToList();
+
+                var saved = await Requests.SaveDraftAsync(new PaymentRequestInput(
+                    null, _purpose, null, _lines.Sum(l => l.Amount), null, null,
+                    neededBy, _departmentId, false, lines, _projectId, _projectName));
+
+                if (saved.Failed) { _error = saved.Error; return; }
+
+                if (submit)
+                {
+                    var sent = await Requests.SubmitAsync(saved.Value.Id);
+                    if (sent.Failed) { _error = sent.Error; return; }
+                }
+
+                Snackbar.Add(submit ? $"{saved.Value.Reference} sent for approval." : "Draft saved.",
+                    Severity.Success);
+                Nav.NavigateTo($"/finance/requests/{saved.Value.Id}");
+            }
+        }
+        finally { _busy = false; }
+    }
+
+    private sealed class DraftLine
+    {
+        public string? Category { get; set; }
+        public decimal Amount { get; set; }
+        public string? Reason { get; set; }
+        public string? Description { get; set; }
+        public byte[]? Attachment { get; set; }
+        public string? AttachmentName { get; set; }
+        public string? AttachmentContentType { get; set; }
+    }
+}

@@ -1,0 +1,118 @@
+@page "/finance/salary-advances"
+@attribute [Authorize(Policy = FinanceModule.AdvancesRaise)]
+@rendermode InteractiveServer
+@inject IEmployeeAdvanceService Advances
+@inject IDialogService Dialogs
+@inject NavigationManager Nav
+
+<ListShell Title="Salary advances"
+           Subtitle="Money lent against salary and taken back in monthly instalments."
+           Icon="@Icons.Material.Outlined.CreditScore"
+           Loading="_loading"
+           IsEmpty="@(_rows.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.CreditScore"
+           EmptyTitle="No salary advances yet"
+           EmptyHint="Request one here; it is recovered automatically from the next payroll runs.">
+    <Actions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="RequestAsync">
+            Request advance
+        </MudButton>
+    </Actions>
+
+    <EmptyAction>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="RequestAsync">
+            Request advance
+        </MudButton>
+    </EmptyAction>
+
+    <Toolbar>
+        <MudSwitch T="bool" @bind-Value="_mineOnly" @bind-Value:after="LoadAsync"
+                   Color="Color.Primary" Label="Only mine" />
+    </Toolbar>
+
+    <ChildContent>
+        <MudDataGrid T="EmployeeAdvance" Items="_rows" Dense="true" Hover="true" Elevation="0"
+                     Filterable="false" RowsPerPage="25"
+                     RowClick="@(e => Nav.NavigateTo($"/finance/salary-advances/{e.Item.Id}"))">
+            <Columns>
+                <PropertyColumn Property="@(a => a.Reference)" Title="Reference" />
+                <PropertyColumn Property="@(a => a.PersonName)" Title="Who" />
+
+                <TemplateColumn Title="Amount">
+                    <CellTemplate>@context.Item.Amount.ToString("N2")</CellTemplate>
+                </TemplateColumn>
+
+                <TemplateColumn Title="Repaid">
+                    <CellTemplate>
+                        <MudText Typo="Typo.body2">@context.Item.RepaidAmount.ToString("N2")</MudText>
+                        @if (context.Item.Amount > 0)
+                        {
+                            <MudProgressLinear Color="Color.Primary" Size="Size.Small"
+                                               Value="@((double)(context.Item.RepaidAmount / context.Item.Amount * 100))" />
+                        }
+                    </CellTemplate>
+                </TemplateColumn>
+
+                <TemplateColumn Title="Outstanding">
+                    <CellTemplate>
+                        <b>@context.Item.OutstandingBalance.ToString("N2")</b>
+                    </CellTemplate>
+                </TemplateColumn>
+
+                <TemplateColumn Title="Terms">
+                    <CellTemplate>
+                        <MudText Typo="Typo.caption">
+                            @context.Item.MonthlyDeduction.ToString("N2") ×
+                            @context.Item.InstallmentCount
+                        </MudText>
+                    </CellTemplate>
+                </TemplateColumn>
+
+                <TemplateColumn Title="Status">
+                    <CellTemplate>
+                        <MudChip T="string" Size="Size.Small" Color="@Colour(context.Item.Status)">
+                            @context.Item.Status
+                        </MudChip>
+                    </CellTemplate>
+                </TemplateColumn>
+            </Columns>
+        </MudDataGrid>
+    </ChildContent>
+</ListShell>
+
+@code {
+    private IReadOnlyList<EmployeeAdvance> _rows = [];
+    private bool _mineOnly = true;
+    private bool _loading = true;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _rows = await Advances.ListAsync(null, _mineOnly);
+        _loading = false;
+    }
+
+    private async Task RequestAsync()
+    {
+        var dialog = await Dialogs.ShowAsync<SalaryAdvanceDialog>("");
+        var result = await dialog.Result;
+        if (result is { Canceled: false }) await LoadAsync();
+    }
+
+    private static Color Colour(EmployeeAdvanceStatus status) => status switch
+    {
+        EmployeeAdvanceStatus.Draft => Color.Default,
+        EmployeeAdvanceStatus.Pending => Color.Warning,
+        EmployeeAdvanceStatus.Approved => Color.Info,
+        EmployeeAdvanceStatus.Disbursed => Color.Primary,
+        EmployeeAdvanceStatus.Repaying => Color.Primary,
+        EmployeeAdvanceStatus.Settled => Color.Success,
+        EmployeeAdvanceStatus.Rejected => Color.Error,
+        EmployeeAdvanceStatus.Returned => Color.Warning,
+        _ => Color.Default
+    };
+}

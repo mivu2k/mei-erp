@@ -21,7 +21,8 @@ public class FinanceDbContext(
     public DbSet<PettyCashEntry> PettyCashEntries => Set<PettyCashEntry>();
     public DbSet<UtilityConnection> UtilityConnections => Set<UtilityConnection>();
     public DbSet<UtilityBill> UtilityBills => Set<UtilityBill>();
-    public DbSet<Advance> Advances => Set<Advance>();
+    public DbSet<EmployeeAdvance> EmployeeAdvances => Set<EmployeeAdvance>();
+    public DbSet<EmployeeAdvanceInstallment> EmployeeAdvanceInstallments => Set<EmployeeAdvanceInstallment>();
     public DbSet<AdvanceExpense> AdvanceExpenses => Set<AdvanceExpense>();
     public DbSet<PayrollEmployee> PayrollEmployees => Set<PayrollEmployee>();
     public DbSet<PayComponent> PayComponents => Set<PayComponent>();
@@ -155,6 +156,19 @@ public class FinanceDbContext(
              .HasForeignKey(r => r.PaidFromAccountId)
              .OnDelete(DeleteBehavior.Restrict);
 
+            // Advance-kind requests hang their receipts and their own advance
+            // head here; both stay null for an itemized claim.
+            b.HasMany(r => r.Expenses).WithOne(e => e.Advance)
+             .HasForeignKey(e => e.AdvanceId).OnDelete(DeleteBehavior.Cascade);
+
+            b.HasOne(r => r.AdvanceAccount).WithMany()
+             .HasForeignKey(r => r.AdvanceAccountId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            b.HasIndex(r => new { r.Kind, r.Status });
+            b.Ignore(r => r.Difference);
+            b.Ignore(r => r.OutstandingDifference);
+
             b.HasOne(r => r.Voucher).WithMany()
              .HasForeignKey(r => r.VoucherId)
              .OnDelete(DeleteBehavior.Restrict);
@@ -259,17 +273,17 @@ public class FinanceDbContext(
             b.HasQueryFilter(x => !x.Connection!.IsDeleted);
         });
 
-        modelBuilder.Entity<Advance>(b =>
+        modelBuilder.Entity<EmployeeAdvance>(b =>
         {
             b.Property(a => a.Reference).HasMaxLength(30).IsRequired();
             b.HasIndex(a => a.Reference).IsUnique().HasFilter("\"IsDeleted\" = false");
-            b.HasIndex(a => a.IsDirectorRequest);
-            b.Property(a => a.Purpose).HasMaxLength(500).IsRequired();
             b.Property(a => a.PersonName).HasMaxLength(200);
+            b.Property(a => a.PersonId).HasMaxLength(450);
+            b.Property(a => a.Reason).HasMaxLength(500);
             b.Property(a => a.DecisionComment).HasMaxLength(2000);
 
-            b.HasMany(a => a.Expenses).WithOne(e => e.Advance)
-             .HasForeignKey(e => e.AdvanceId).OnDelete(DeleteBehavior.Cascade);
+            b.HasMany(a => a.Installments).WithOne(i => i.EmployeeAdvance)
+             .HasForeignKey(i => i.EmployeeAdvanceId).OnDelete(DeleteBehavior.Cascade);
 
             b.HasOne(a => a.AdvanceAccount).WithMany()
              .HasForeignKey(a => a.AdvanceAccountId)
@@ -278,9 +292,19 @@ public class FinanceDbContext(
             b.HasIndex(a => new { a.PersonId, a.Status });
             b.HasIndex(a => a.Status);
 
-            b.Ignore(a => a.Difference);
-            b.Ignore(a => a.OutstandingDifference);
+            b.Ignore(a => a.OutstandingBalance);
             b.Ignore(a => a.IsOpen);
+        });
+
+        modelBuilder.Entity<EmployeeAdvanceInstallment>(b =>
+        {
+            // One row per month of a given advance, so rebuilding a schedule
+            // cannot quietly leave two number 3s behind.
+            b.HasIndex(i => new { i.EmployeeAdvanceId, i.Number }).IsUnique()
+             .HasFilter("\"IsDeleted\" = false");
+
+            b.HasIndex(i => i.DueDate);
+            b.Ignore(i => i.Outstanding);
         });
 
         modelBuilder.Entity<AdvanceExpense>(b =>

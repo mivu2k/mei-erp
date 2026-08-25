@@ -3,6 +3,7 @@ using System;
 using MeiErp.Modules.Finance;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace MeiErp.Modules.Finance.Migrations
 {
     [DbContext(typeof(FinanceDbContext))]
-    partial class FinanceDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260825122753_SalaryAdvances")]
+    partial class SalaryAdvances
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -103,6 +106,134 @@ namespace MeiErp.Modules.Finance.Migrations
                         .HasFilter("\"PersonId\" IS NOT NULL AND \"IsDeleted\" = false");
 
                     b.ToTable("Accounts", "finance");
+                });
+
+            modelBuilder.Entity("MeiErp.Modules.Finance.Advance", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("AdvanceAccountId")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<int?>("ApprovalRequestId")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("ClearedDifference")
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DecisionComment")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("DeletedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DepartmentId")
+                        .HasColumnType("text");
+
+                    b.Property<int?>("DifferenceHandling")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal?>("DisbursedAmount")
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<DateTime?>("DisbursedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("DisbursementVoucherId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDirectorRequest")
+                        .HasColumnType("boolean");
+
+                    b.Property<decimal?>("JustifiedAmount")
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<DateTime?>("JustifiedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("ModifiedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly>("NeededBy")
+                        .HasColumnType("date");
+
+                    b.Property<string>("PersonId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("PersonName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Reference")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime?>("SettledUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("SettlementVoucherId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("SubmittedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AdvanceAccountId");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("IsDirectorRequest");
+
+                    b.HasIndex("Reference")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("PersonId", "Status");
+
+                    b.ToTable("Advances", "finance");
                 });
 
             modelBuilder.Entity("MeiErp.Modules.Finance.AdvanceExpense", b =>
@@ -452,17 +583,11 @@ namespace MeiErp.Modules.Finance.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<int?>("AdvanceAccountId")
-                        .HasColumnType("integer");
-
                     b.Property<decimal>("Amount")
                         .HasColumnType("numeric(18,4)");
 
                     b.Property<int?>("ApprovalRequestId")
                         .HasColumnType("integer");
-
-                    b.Property<decimal>("ClearedDifference")
-                        .HasColumnType("numeric(18,4)");
 
                     b.Property<string>("CreatedBy")
                         .HasColumnType("text");
@@ -487,18 +612,6 @@ namespace MeiErp.Modules.Finance.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
 
-                    b.Property<int?>("DifferenceHandling")
-                        .HasColumnType("integer");
-
-                    b.Property<decimal?>("DisbursedAmount")
-                        .HasColumnType("numeric(18,4)");
-
-                    b.Property<DateTime?>("DisbursedUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("DisbursementVoucherId")
-                        .HasColumnType("integer");
-
                     b.Property<int?>("ExpenseAccountId")
                         .HasColumnType("integer");
 
@@ -507,15 +620,6 @@ namespace MeiErp.Modules.Finance.Migrations
 
                     b.Property<bool>("IsDirectorRequest")
                         .HasColumnType("boolean");
-
-                    b.Property<decimal?>("JustifiedAmount")
-                        .HasColumnType("numeric(18,4)");
-
-                    b.Property<DateTime?>("JustifiedUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Kind")
-                        .HasColumnType("integer");
 
                     b.Property<string>("ModifiedBy")
                         .HasColumnType("text");
@@ -557,12 +661,6 @@ namespace MeiErp.Modules.Finance.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<DateTime?>("SettledUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("SettlementVoucherId")
-                        .HasColumnType("integer");
-
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
@@ -585,8 +683,6 @@ namespace MeiErp.Modules.Finance.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("AdvanceAccountId");
-
                     b.HasIndex("ExpenseAccountId");
 
                     b.HasIndex("IsDeleted");
@@ -604,8 +700,6 @@ namespace MeiErp.Modules.Finance.Migrations
                     b.HasIndex("Status");
 
                     b.HasIndex("VoucherId");
-
-                    b.HasIndex("Kind", "Status");
 
                     b.ToTable("PaymentRequests", "finance");
                 });
@@ -1852,9 +1946,19 @@ namespace MeiErp.Modules.Finance.Migrations
                     b.Navigation("Parent");
                 });
 
+            modelBuilder.Entity("MeiErp.Modules.Finance.Advance", b =>
+                {
+                    b.HasOne("MeiErp.Modules.Finance.Account", "AdvanceAccount")
+                        .WithMany()
+                        .HasForeignKey("AdvanceAccountId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("AdvanceAccount");
+                });
+
             modelBuilder.Entity("MeiErp.Modules.Finance.AdvanceExpense", b =>
                 {
-                    b.HasOne("MeiErp.Modules.Finance.PaymentRequest", "Advance")
+                    b.HasOne("MeiErp.Modules.Finance.Advance", "Advance")
                         .WithMany("Expenses")
                         .HasForeignKey("AdvanceId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -1903,11 +2007,6 @@ namespace MeiErp.Modules.Finance.Migrations
 
             modelBuilder.Entity("MeiErp.Modules.Finance.PaymentRequest", b =>
                 {
-                    b.HasOne("MeiErp.Modules.Finance.Account", "AdvanceAccount")
-                        .WithMany()
-                        .HasForeignKey("AdvanceAccountId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("MeiErp.Modules.Finance.Account", "ExpenseAccount")
                         .WithMany()
                         .HasForeignKey("ExpenseAccountId")
@@ -1922,8 +2021,6 @@ namespace MeiErp.Modules.Finance.Migrations
                         .WithMany()
                         .HasForeignKey("VoucherId")
                         .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("AdvanceAccount");
 
                     b.Navigation("ExpenseAccount");
 
@@ -2129,6 +2226,11 @@ namespace MeiErp.Modules.Finance.Migrations
                     b.Navigation("Children");
                 });
 
+            modelBuilder.Entity("MeiErp.Modules.Finance.Advance", b =>
+                {
+                    b.Navigation("Expenses");
+                });
+
             modelBuilder.Entity("MeiErp.Modules.Finance.EmployeeAdvance", b =>
                 {
                     b.Navigation("Installments");
@@ -2136,8 +2238,6 @@ namespace MeiErp.Modules.Finance.Migrations
 
             modelBuilder.Entity("MeiErp.Modules.Finance.PaymentRequest", b =>
                 {
-                    b.Navigation("Expenses");
-
                     b.Navigation("Lines");
                 });
 

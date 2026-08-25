@@ -157,6 +157,25 @@ money.
 - **Approval authorises spend; it does not move money.** The voucher is posted when
   someone actually pays, which is what lets an approved request wait for funds
   without the books claiming it was settled.
+- **One `PaymentRequest`, two `Kind`s.** `Itemized` is claimed back and ends at
+  `Paid`; `Advance` is taken up front and runs disburse → justify → settle. They
+  are one record because they are the same request at different points, and
+  splitting them made people choose a screen before they knew which they wanted.
+  **Every query must filter on `Kind`** — the two lists otherwise show each
+  other's documents beside actions that do not apply. There are tests both ways.
+- **An `EmployeeAdvance` is not an `Advance`.** One is a loan repaid out of
+  salary on a schedule; the other is money for a trip, accounted for with
+  receipts. Merging them loses the answer to "did they spend it, or do they
+  still owe it?"
+- **Advances sit on a head per person**, created on first use beneath `1700`
+  (or `3210` for directors), and the head is stamped on the advance at
+  disbursement so settlement clears the one the money went to. One shared head
+  tells you the company is owed something and nothing about by whom. A parent
+  that gains a child stops being postable, or it double-counts itself.
+- **An overspend left outstanding is a payable, not a negative asset.** The
+  company owes it back, so it moves to the person's head under `2100`.
+- **Payroll recovery posts nothing.** The salary voucher already credits the
+  advance head; marking the instalment repaid as well collects it twice.
 
 ## Inventory — the rules that must not be relaxed
 

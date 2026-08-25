@@ -28,6 +28,7 @@ public static class FinanceModule
     public const string UtilitiesManage = "finance.utilities.manage";
     public const string AdvancesRaise = "finance.advances.raise";
     public const string AdvancesManage = "finance.advances.manage";
+    public const string SalaryAdvancesManage = "finance.salary-advances.manage";
     public const string PayrollView = "finance.payroll.view";
     public const string PayrollManage = "finance.payroll.manage";
     public const string PayrollPay = "finance.payroll.pay";
@@ -63,6 +64,7 @@ public static class FinanceModule
             new(UtilitiesManage,  "Cash",     "Record utility connections and their bills"),
             new(AdvancesRaise,    "Advances", "Ask for an advance and account for it"),
             new(AdvancesManage,   "Advances", "Pay out, accept receipts and settle advances"),
+            new(SalaryAdvancesManage, "Advances", "Approve, pay out and recover salary advances"),
             new(PayrollView,      "Payroll",  "See payroll runs and payslips"),
             new(PayrollManage,    "Payroll",  "Set salaries and build payroll runs"),
             new(PayrollPay,       "Payroll",  "Approve and pay a payroll run"),
@@ -77,14 +79,14 @@ public static class FinanceModule
                  VouchersReverse, RequestsRaise, RequestsPay, ReportsView,
                  DirectorFundsRequest, DirectorFundsView,
                  PartiesManage, PettyCashManage, UtilitiesManage,
-                 AdvancesRaise, AdvancesManage, PayrollView, ReconcileManage]),
+                 AdvancesRaise, AdvancesManage, SalaryAdvancesManage, PayrollView, ReconcileManage]),
 
             new("Finance Manager", "Everything an accountant can do, plus closing the year.",
                 [AccountsView, AccountsManage, VouchersView, VouchersPost, VouchersReverse,
                  RequestsRaise, RequestsPay, ReportsView, YearClose,
                  DirectorFundsRequest, DirectorFundsView,
                  PartiesManage, PettyCashManage, UtilitiesManage,
-                 AdvancesRaise, AdvancesManage,
+                 AdvancesRaise, AdvancesManage, SalaryAdvancesManage,
                  PayrollView, PayrollManage, PayrollPay, ReconcileManage, PostingManage]),
 
             new("Requester", "Can ask for money and follow their own requests.",
@@ -102,6 +104,7 @@ public static class FinanceModule
             new("Payment requests",  "/finance/requests", "RequestQuote", RequestsRaise, "Spending"),
             new("Director funds",    "/finance/advances?director=true", "AccountBalanceWallet", DirectorFundsView, "Spending"),
             new("Advances",          "/finance/advances", "AccountBalanceWallet", AdvancesRaise, "Spending"),
+            new("Salary advances",   "/finance/salary-advances", "CreditScore", AdvancesRaise, "Spending"),
             new("Petty cash",        "/finance/petty-cash", "Savings", PettyCashManage, "Spending"),
             new("Utilities",         "/finance/utilities", "Bolt", UtilitiesManage, "Spending"),
 
@@ -120,7 +123,8 @@ public static class FinanceModule
         Approvables =
         [
             new(PaymentRequestService.DocumentType, "Payment request", "Amount requested"),
-            new(AdvanceService.DocumentType, "Advance request", "Amount requested")
+            new(AdvanceService.DocumentType, "Advance request", "Amount requested"),
+            new(EmployeeAdvanceService.DocumentType, "Salary advance", "Amount requested")
         ]
     };
 
@@ -152,6 +156,8 @@ public static class FinanceModule
         services.AddScoped<IUtilityService, UtilityService>();
         services.AddScoped<IAdvanceService, AdvanceService>();
         services.AddScoped<IApprovalSink, AdvanceApprovalSink>();
+        services.AddScoped<IEmployeeAdvanceService, EmployeeAdvanceService>();
+        services.AddScoped<IApprovalSink, EmployeeAdvanceApprovalSink>();
         services.AddScoped<IPayrollService, PayrollService>();
         services.AddScoped<IReconciliationService, ReconciliationService>();
         services.AddScoped<IYearEndService, YearEndService>();

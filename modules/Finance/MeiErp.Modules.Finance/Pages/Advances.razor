@@ -18,7 +18,7 @@
             @(_directorOnly ? "Request director funds" : "Request an advance")
         </MudButton>
         <MudTooltip Text="Open as a full page instead">
-            <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Href="/finance/advances/new" />
+            <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Href="/finance/money-requests/new" />
         </MudTooltip>
     </Actions>
 
@@ -35,15 +35,15 @@
     </Toolbar>
 
     <ChildContent>
-    <MudDataGrid T="Advance" Items="_rows" Dense="true" Hover="true" Elevation="0"
+    <MudDataGrid T="PaymentRequest" Items="_rows" Dense="true" Hover="true" Elevation="0"
                  Filterable="false" RowsPerPage="25">
         <Columns>
             <PropertyColumn Property="@(a => a.Reference)" Title="Reference" />
             <TemplateColumn Title="For">
                 <CellTemplate>
-                    <MudText Typo="Typo.body2"><b>@context.Item.Purpose</b></MudText>
+                    <MudText Typo="Typo.body2"><b>@context.Item.Title</b></MudText>
                     <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                        @context.Item.PersonName
+                        @context.Item.RequestedByName
                     </MudText>
                 </CellTemplate>
             </TemplateColumn>
@@ -68,7 +68,7 @@
             </TemplateColumn>
             <TemplateColumn Title="Outstanding" HeaderClass="text-right" CellClass="text-right">
                 <CellTemplate>
-                    @if (context.Item.Status == AdvanceStatus.Settled
+                    @if (context.Item.Status == PaymentRequestStatus.Settled
                          && context.Item.OutstandingDifference != 0)
                     {
                         @* Money the person is still holding, or still owed.
@@ -89,7 +89,7 @@
             <TemplateColumn Title="" Sortable="false">
                 <CellTemplate>
                     <div class="d-flex justify-end gap-1">
-                        @if (context.Item.Status is AdvanceStatus.Draft or AdvanceStatus.Returned)
+                        @if (context.Item.Status is PaymentRequestStatus.Draft or PaymentRequestStatus.Returned)
                         {
                             <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small"
                                            Href="@($"/finance/advances/{context.Item.Id}/edit")"
@@ -119,7 +119,7 @@
 }
 
 @code {
-    private IReadOnlyList<Advance> _rows = [];
+    private IReadOnlyList<PaymentRequest> _rows = [];
     private bool _mineOnly;
     private bool _loading = true;
     [SupplyParameterFromQuery(Name = "director")]
@@ -136,27 +136,27 @@
         _loading = false;
     }
 
-    private static Color Colour(AdvanceStatus status) => status switch
+    private static Color Colour(PaymentRequestStatus status) => status switch
     {
-        AdvanceStatus.Settled => Color.Success,
-        AdvanceStatus.Approved => Color.Info,
-        AdvanceStatus.Disbursed => Color.Primary,
-        AdvanceStatus.Justified => Color.Info,
-        AdvanceStatus.Rejected => Color.Error,
-        AdvanceStatus.Returned => Color.Warning,
+        PaymentRequestStatus.Settled => Color.Success,
+        PaymentRequestStatus.Approved => Color.Info,
+        PaymentRequestStatus.Disbursed => Color.Primary,
+        PaymentRequestStatus.Justified => Color.Info,
+        PaymentRequestStatus.Rejected => Color.Error,
+        PaymentRequestStatus.Returned => Color.Warning,
         _ => Color.Default
     };
 
     private bool _editing;
     private int? _editingId;
 
-    private void Edit(Advance? row)
+    private void Edit(PaymentRequest? row)
     {
         _editingId = row?.Id;
         _editing = true;
     }
 
-    private async Task Submit(Advance row)
+    private async Task Submit(PaymentRequest row)
     {
         var result = await Loans.SubmitAsync(row.Id);
         if (result.Failed) Snackbar.Add(result.Error!, Severity.Error);

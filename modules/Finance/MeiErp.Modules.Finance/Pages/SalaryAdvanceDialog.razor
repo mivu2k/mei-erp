@@ -1,0 +1,87 @@
+@inject IEmployeeAdvanceService Advances
+@inject IClock Clock
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Request Advance</MudText>
+    </TitleContent>
+
+    <DialogContent>
+        <MudForm @ref="_form">
+            <MudNumericField T="decimal" @bind-Value="_amount" Label="Amount" Required="true"
+                             RequiredError="How much do you need?"
+                             Variant="Variant.Text" HideSpinButtons="false" Format="N2" />
+
+            <MudTextField @bind-Value="_reason" Label="Reason" Variant="Variant.Text"
+                          Class="mt-4" />
+
+            <MudNumericField T="int" @bind-Value="_months" Label="Repay over (months)"
+                             Required="true" Min="1" Max="60"
+                             Variant="Variant.Text" Class="mt-4" />
+
+            <MudDatePicker Label="Due date (optional)" Variant="Variant.Text" Class="mt-4"
+                           Date="_dueDate" DateChanged="@(d => _dueDate = d)" Clearable="true" />
+
+            @* Shown while they type, because "how much comes off each month" is
+               the only number most people actually decide on. *@
+            <MudText Typo="Typo.body2" Class="mt-4">
+                Monthly deduction: <b>@Monthly.ToString("N2")</b>
+            </MudText>
+
+            @if (_error is not null)
+            {
+                <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
+            }
+        </MudForm>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Cancel())">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SubmitAsync" Disabled="_busy">Submit</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+
+    private MudForm? _form;
+    private decimal _amount;
+    private string? _reason;
+    private int _months = 1;
+    private DateTime? _dueDate;
+    private string? _error;
+    private bool _busy;
+
+    private decimal Monthly => RepaymentSchedule.Monthly(_amount, _months);
+
+    private async Task SubmitAsync()
+    {
+        _error = null;
+        if (_form is not null)
+        {
+            await _form.Validate();
+            if (!_form.IsValid) return;
+        }
+
+        _busy = true;
+        try
+        {
+            var saved = await Advances.SaveDraftAsync(new EmployeeAdvanceInput(
+                null, _amount, _reason, _months,
+                _dueDate is null ? null : DateOnly.FromDateTime(_dueDate.Value)));
+
+            if (saved.Failed) { _error = saved.Error; return; }
+
+            // Saved and sent in one action: the dialog has no draft state to
+            // come back to, so leaving it unsubmitted would strand it.
+            var sent = await Advances.SubmitAsync(saved.Value.Id);
+            if (sent.Failed) { _error = sent.Error; return; }
+
+            Snackbar.Add($"{saved.Value.Reference} sent for approval.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally { _busy = false; }
+    }
+}

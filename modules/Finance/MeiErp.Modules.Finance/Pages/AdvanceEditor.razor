@@ -61,7 +61,7 @@
             var existing = await Advances.GetAsync(AdvanceId.Value);
             if (existing is not null)
             {
-                _purpose = existing.Purpose;
+                _purpose = existing.Title;
                 _amount = existing.Amount;
                 DirectorMode = existing.IsDirectorRequest;
                 _neededBy = existing.NeededBy.ToDateTime(TimeOnly.MinValue);

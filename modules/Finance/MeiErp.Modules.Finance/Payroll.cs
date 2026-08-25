@@ -190,4 +190,7 @@ public class PayslipLine : Entity
 
     /// <summary>Set when this line is recovering an advance, so payroll can mark it repaid.</summary>
     public int? AdvanceId { get; set; }
+
+    /// <summary>Set when this line is recovering a salary advance instead.</summary>
+    public int? EmployeeAdvanceId { get; set; }
 }

@@ -316,7 +316,7 @@ public sealed class PayrollService(
                 });
             }
 
-            await AddAdvanceRecoveryAsync(payslip, employee, ct);
+            await AddAdvanceRecoveryAsync(payslip, employee, run.Month, ct);
 
             run.Payslips.Add(payslip);
         }
@@ -331,13 +331,14 @@ public sealed class PayrollService(
     /// can never go negative. The shortfall simply rolls to next month.
     /// </summary>
     private async Task AddAdvanceRecoveryAsync(
-        Payslip payslip, PayrollEmployee employee, CancellationToken ct)
+        Payslip payslip, PayrollEmployee employee, DateOnly month, CancellationToken ct)
     {
         if (employee.UserId is null) return;
 
-        var recoverable = await db.Advances
-            .Where(a => a.PersonId == employee.UserId
-                     && a.Status == AdvanceStatus.Settled
+        var recoverable = await db.PaymentRequests
+            .Where(a => a.Kind == PaymentRequestKind.Advance
+                     && a.RequestedByUserId == employee.UserId
+                     && a.Status == PaymentRequestStatus.Settled
                      && a.DifferenceHandling == DifferenceHandling.RecoverFromPayroll)
             .ToListAsync(ct);
 
@@ -364,6 +365,57 @@ public sealed class PayrollService(
                 Kind = PayComponentKind.Deduction,
                 Amount = Round(take),
                 AdvanceId = advance.Id
+            });
+
+            headroom -= take;
+        }
+
+        await AddSalaryAdvanceRecoveryAsync(payslip, employee, month, headroom, ct);
+    }
+
+    /// <summary>
+    /// Instalments due on a salary advance, taken in the same run and under the
+    /// same cap: an advance is not a reason for somebody to be paid nothing.
+    /// </summary>
+    private async Task AddSalaryAdvanceRecoveryAsync(
+        Payslip payslip, PayrollEmployee employee, DateOnly month, decimal headroom, CancellationToken ct)
+    {
+        if (employee.UserId is null || headroom <= 0) return;
+
+        var advances = await db.EmployeeAdvances
+            .Include(a => a.Installments)
+            .Where(a => a.PersonId == employee.UserId
+                     && (a.Status == EmployeeAdvanceStatus.Disbursed
+                      || a.Status == EmployeeAdvanceStatus.Repaying))
+            .OrderBy(a => a.Id)
+            .ToListAsync(ct);
+
+        foreach (var advance in advances)
+        {
+            if (headroom <= 0) break;
+
+            // Everything already due, so a month the run was skipped is caught
+            // up rather than quietly written off.
+            var owing = advance.Installments
+                .Where(i => i.Status != InstallmentStatus.Paid && i.DueDate <= month)
+                .Sum(i => i.Outstanding);
+
+            if (owing <= 0) continue;
+
+            var take = Math.Min(Math.Min(owing, advance.OutstandingBalance), headroom);
+            if (take <= 0) continue;
+
+            payslip.Lines.Add(new PayslipLine
+            {
+                Name = $"Salary advance — {advance.Reference}",
+                Kind = PayComponentKind.Deduction,
+                Amount = Round(take),
+
+                // Credited straight to their advance head, so the debt comes
+                // down as the deduction is made. Left to the default it would
+                // land on salaries payable and the advance would never clear.
+                AccountId = advance.AdvanceAccountId,
+                EmployeeAdvanceId = advance.Id
             });
 
             headroom -= take;
@@ -487,6 +539,7 @@ public sealed class PayrollService(
         if (posted.Failed) return Result.Fail<PayrollRun>(posted.Error!, posted.Code);
 
         await ApplyRecoveryAsync(run, ct);
+        await ApplySalaryAdvanceRecoveryAsync(run, ct);
 
         run.Status = PayrollRunStatus.Paid;
         run.VoucherId = posted.Value.Id;
@@ -512,10 +565,39 @@ public sealed class PayrollService(
         if (recoveries.Count == 0) return;
 
         var ids = recoveries.Keys.ToList();
-        var advances = await db.Advances.Where(a => ids.Contains(a.Id)).ToListAsync(ct);
+        var advances = await db.PaymentRequests.Where(a => ids.Contains(a.Id)).ToListAsync(ct);
 
         foreach (var advance in advances)
             advance.ClearedDifference += recoveries[advance.Id];
+    }
+
+    /// <summary>
+    /// Marks salary-advance instalments as repaid. Posts nothing, for the same
+    /// reason: the payroll voucher already credited the advance head, and
+    /// posting again here would collect the money twice.
+    /// </summary>
+    private async Task ApplySalaryAdvanceRecoveryAsync(PayrollRun run, CancellationToken ct)
+    {
+        var recoveries = run.Payslips
+            .SelectMany(p => p.Lines)
+            .Where(l => l.EmployeeAdvanceId is not null)
+            .GroupBy(l => l.EmployeeAdvanceId!.Value)
+            .ToDictionary(g => g.Key, g => g.Sum(l => l.Amount));
+
+        if (recoveries.Count == 0) return;
+
+        var ids = recoveries.Keys.ToList();
+
+        var advances = await db.EmployeeAdvances
+            .Include(a => a.Installments)
+            .Where(a => ids.Contains(a.Id))
+            .ToListAsync(ct);
+
+        foreach (var advance in advances)
+        {
+            EmployeeAdvanceService.ApplyToSchedule(
+                advance, recoveries[advance.Id], run.Month, voucherId: null);
+        }
     }
 
     private async Task<int> PayableHeadIdAsync(CancellationToken ct)

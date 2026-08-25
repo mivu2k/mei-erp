@@ -26,8 +26,8 @@ public sealed class DirectorFundParityTests
     [Fact]
     public void Director_fund_records_are_distinguishable_from_employee_advances()
     {
-        var ordinary = new Advance { Reference = "ADV-26-0001" };
-        var director = new Advance { Reference = "DFR-26-0001", IsDirectorRequest = true };
+        var ordinary = new PaymentRequest { Reference = "ADV-26-0001" };
+        var director = new PaymentRequest { Reference = "DFR-26-0001", IsDirectorRequest = true };
 
         Assert.False(ordinary.IsDirectorRequest);
         Assert.True(director.IsDirectorRequest);

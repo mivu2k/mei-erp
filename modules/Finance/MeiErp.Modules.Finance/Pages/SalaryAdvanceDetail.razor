@@ -1,0 +1,214 @@
+@page "/finance/salary-advances/{AdvanceId:int}"
+@attribute [Authorize(Policy = FinanceModule.AdvancesRaise)]
+@rendermode InteractiveServer
+@inject IEmployeeAdvanceService Advances
+@inject IAccountService Chart
+@inject IClock Clock
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+    @if (_advance is null)
+    {
+        <MudSkeleton Height="200px" />
+    }
+    else
+    {
+        <div class="d-flex justify-space-between align-center mb-4">
+            <div>
+                <MudText Typo="Typo.h5">@_advance.Reference</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                    @_advance.PersonName — @_advance.Amount.ToString("N2")
+                    over @_advance.InstallmentCount
+                    @(_advance.InstallmentCount == 1 ? "month" : "months")
+                </MudText>
+            </div>
+            <MudChip T="string" Color="@Colour(_advance.Status)">@_advance.Status</MudChip>
+        </div>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mb-4">@_error</MudAlert>
+        }
+
+        <MudGrid>
+            <MudItem xs="12" md="4">
+                <MudPaper Class="pa-4" Outlined="true">
+                    <MudText Typo="Typo.overline">Outstanding</MudText>
+                    <MudText Typo="Typo.h4">@_advance.OutstandingBalance.ToString("N2")</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        @_advance.RepaidAmount.ToString("N2") repaid of @_advance.Amount.ToString("N2")
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" md="8">
+                <MudPaper Class="pa-4" Outlined="true">
+                    <MudText Typo="Typo.overline">Reason</MudText>
+                    <MudText Typo="Typo.body2">@(_advance.Reason ?? "—")</MudText>
+                    @if (_advance.DueDate is not null)
+                    {
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2">
+                            Due in full by @_advance.DueDate.Value.ToString("d MMM yyyy")
+                        </MudText>
+                    }
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <AuthorizeView Policy="@FinanceModule.SalaryAdvancesManage">
+            <Authorized>
+                @if (_advance.Status is EmployeeAdvanceStatus.Approved)
+                {
+                    <MudPaper Class="pa-4 mt-4" Outlined="true">
+                        <MudText Typo="Typo.subtitle1" Class="mb-3">Pay it out</MudText>
+                        <div class="d-flex gap-3 align-center flex-wrap">
+                            <MudSelect T="int?" @bind-Value="_cashAccount" Label="Paid out of"
+                                       Variant="Variant.Outlined" Style="min-width:18rem">
+                                @foreach (var a in _cashHeads)
+                                {
+                                    <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                            <MudDatePicker Label="Date" Variant="Variant.Outlined"
+                                           Date="_date" DateChanged="@(d => _date = d)"
+                                           Style="min-width:14rem" />
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                       Disabled="@(_busy || _cashAccount is null)" OnClick="DisburseAsync">
+                                Pay &amp; build schedule
+                            </MudButton>
+                        </div>
+                    </MudPaper>
+                }
+
+                @if (_advance.Status is EmployeeAdvanceStatus.Disbursed or EmployeeAdvanceStatus.Repaying)
+                {
+                    <MudPaper Class="pa-4 mt-4" Outlined="true">
+                        <MudText Typo="Typo.subtitle1" Class="mb-1">Record a repayment</MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary mb-3">
+                            Only for money handed back outside payroll — payroll deductions post themselves.
+                        </MudText>
+                        <div class="d-flex gap-3 align-center flex-wrap">
+                            <MudNumericField T="decimal" @bind-Value="_repayAmount" Label="Amount"
+                                             Variant="Variant.Outlined" HideSpinButtons="true"
+                                             Style="min-width:12rem" />
+                            <MudSelect T="int?" @bind-Value="_cashAccount" Label="Received into"
+                                       Variant="Variant.Outlined" Style="min-width:18rem">
+                                @foreach (var a in _cashHeads)
+                                {
+                                    <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                            <MudDatePicker Label="Date" Variant="Variant.Outlined"
+                                           Date="_date" DateChanged="@(d => _date = d)"
+                                           Style="min-width:14rem" />
+                            <MudButton Variant="Variant.Filled" Color="Color.Success"
+                                       Disabled="@(_busy || _cashAccount is null || _repayAmount <= 0)"
+                                       OnClick="RepayAsync">
+                                Record
+                            </MudButton>
+                        </div>
+                    </MudPaper>
+                }
+            </Authorized>
+        </AuthorizeView>
+
+        @if (_advance.Installments.Count > 0)
+        {
+            <MudPaper Class="pa-4 mt-4" Outlined="true">
+                <MudText Typo="Typo.subtitle1" Class="mb-3">Repayment schedule</MudText>
+                <MudDataGrid T="EmployeeAdvanceInstallment" Items="_advance.Installments"
+                             Dense="true" Elevation="0" Filterable="false">
+                    <Columns>
+                        <PropertyColumn Property="@(i => i.Number)" Title="#" />
+                        <TemplateColumn Title="Due">
+                            <CellTemplate>@context.Item.DueDate.ToString("MMM yyyy")</CellTemplate>
+                        </TemplateColumn>
+                        <TemplateColumn Title="Amount">
+                            <CellTemplate>@context.Item.Amount.ToString("N2")</CellTemplate>
+                        </TemplateColumn>
+                        <TemplateColumn Title="Paid">
+                            <CellTemplate>@context.Item.PaidAmount.ToString("N2")</CellTemplate>
+                        </TemplateColumn>
+                        <TemplateColumn Title="Status">
+                            <CellTemplate>
+                                <MudChip T="string" Size="Size.Small"
+                                         Color="@(context.Item.Status is InstallmentStatus.Paid ? Color.Success
+                                                : context.Item.Status is InstallmentStatus.PartiallyPaid ? Color.Warning
+                                                : Color.Default)">
+                                    @context.Item.Status
+                                </MudChip>
+                            </CellTemplate>
+                        </TemplateColumn>
+                    </Columns>
+                </MudDataGrid>
+            </MudPaper>
+        }
+    }
+</MudContainer>
+
+@code {
+    [Parameter] public int AdvanceId { get; set; }
+
+    private EmployeeAdvance? _advance;
+    private IReadOnlyList<Account> _cashHeads = [];
+    private int? _cashAccount;
+    private DateTime? _date;
+    private decimal _repayAmount;
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _cashHeads = await Chart.PostableAsync(AccountType.Asset);
+        _date = Clock.Today.ToDateTime(TimeOnly.MinValue);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync() => _advance = await Advances.GetAsync(AdvanceId);
+
+    private DateOnly ChosenDate =>
+        DateOnly.FromDateTime(_date ?? Clock.Today.ToDateTime(TimeOnly.MinValue));
+
+    private async Task DisburseAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var result = await Advances.DisburseAsync(AdvanceId, _cashAccount!.Value, ChosenDate);
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Paid out, and the schedule is set.", Severity.Success);
+            await LoadAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task RepayAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var result = await Advances.RepayAsync(AdvanceId, _repayAmount, _cashAccount!.Value, ChosenDate);
+            if (result.Failed) { _error = result.Error; return; }
+
+            Snackbar.Add("Repayment recorded.", Severity.Success);
+            _repayAmount = 0;
+            await LoadAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private static Color Colour(EmployeeAdvanceStatus status) => status switch
+    {
+        EmployeeAdvanceStatus.Pending => Color.Warning,
+        EmployeeAdvanceStatus.Approved => Color.Info,
+        EmployeeAdvanceStatus.Disbursed or EmployeeAdvanceStatus.Repaying => Color.Primary,
+        EmployeeAdvanceStatus.Settled => Color.Success,
+        EmployeeAdvanceStatus.Rejected => Color.Error,
+        EmployeeAdvanceStatus.Returned => Color.Warning,
+        _ => Color.Default
+    };
+}

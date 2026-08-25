@@ -35,6 +35,9 @@ public interface IPaymentRequestService
 /// <summary>One project a spend can be charged against.</summary>
 public sealed record ProjectOption(string Id, string Name);
 
+/// <summary>One department a spend can be attributed to.</summary>
+public sealed record DepartmentOption(string Id, string Name);
+
 /// <summary>
 /// The projects a payment request can be charged to.
 ///
@@ -45,6 +48,12 @@ public sealed record ProjectOption(string Id, string Name);
 public interface IFinanceProjectDirectory
 {
     Task<IReadOnlyList<ProjectOption>> ActiveProjectsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Departments, which Identity owns. Same reasoning: Finance names what it
+    /// needs and the host supplies it.
+    /// </summary>
+    Task<IReadOnlyList<DepartmentOption>> DepartmentsAsync(CancellationToken ct = default);
 }
 
 /// <summary>Used when no project source is registered.</summary>
@@ -52,6 +61,9 @@ public sealed class NoProjectDirectory : IFinanceProjectDirectory
 {
     public Task<IReadOnlyList<ProjectOption>> ActiveProjectsAsync(CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<ProjectOption>>([]);
+
+    public Task<IReadOnlyList<DepartmentOption>> DepartmentsAsync(CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<DepartmentOption>>([]);
 }
 
 public sealed record PaymentRequestInput(
@@ -77,9 +89,13 @@ public sealed class PaymentRequestService(
     public async Task<IReadOnlyList<PaymentRequest>> ListAsync(
         PaymentRequestStatus? status, bool mineOnly, bool directorOnly = false, CancellationToken ct = default)
     {
+        // Advances share this table but run a different lifecycle and have
+        // their own screen. Without this filter each list shows the other's
+        // documents alongside actions that do not apply to them.
         var query = db.PaymentRequests.AsNoTracking()
             .Include(r => r.ExpenseAccount)
             .Include(r => r.Lines).ThenInclude(l => l.ExpenseAccount)
+            .Where(r => r.Kind == PaymentRequestKind.Itemized)
             .AsQueryable();
 
         if (status is not null) query = query.Where(r => r.Status == status);

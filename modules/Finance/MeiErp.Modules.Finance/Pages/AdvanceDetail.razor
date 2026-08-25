@@ -6,7 +6,7 @@
 @inject IClock Clock
 @inject ISnackbar Snackbar
 
-<PageTitle>Advance</PageTitle>
+<PageTitle>PaymentRequest</PageTitle>
 
 @if (_advance is null)
 {
@@ -18,7 +18,7 @@ else
         <div>
             <MudText Typo="Typo.h5">@_advance.Reference</MudText>
             <MudText Typo="Typo.body2" Class="mud-text-secondary">
-                @_advance.Purpose — @_advance.PersonName
+                @_advance.Title — @_advance.RequestedByName
             </MudText>
         </div>
         <MudSpacer />
@@ -54,7 +54,7 @@ else
                          Color="@(_advance.Difference is null or 0 ? Color.Default : Color.Warning)">
                     @(_advance.Difference?.ToString("N2") ?? "—")
                 </MudText>
-                @if (_advance.Status == AdvanceStatus.Settled && _advance.OutstandingDifference != 0)
+                @if (_advance.Status == PaymentRequestStatus.Settled && _advance.OutstandingDifference != 0)
                 {
                     <MudText Typo="Typo.caption" Class="mud-text-secondary">
                         @Math.Abs(_advance.OutstandingDifference).ToString("N2") still outstanding
@@ -64,7 +64,7 @@ else
         </MudItem>
     </MudGrid>
 
-    @if (_advance.Status == AdvanceStatus.Approved)
+    @if (_advance.Status == PaymentRequestStatus.Approved)
     {
         <MudPaper Outlined="true" Elevation="0" Class="pa-4 mt-4">
             <MudText Typo="Typo.subtitle1" Class="mb-3">Hand the money over</MudText>
@@ -89,7 +89,7 @@ else
         </MudPaper>
     }
 
-    @if (_advance.Status is AdvanceStatus.Disbursed or AdvanceStatus.Justified)
+    @if (_advance.Status is PaymentRequestStatus.Disbursed or PaymentRequestStatus.Justified)
     {
         <MudPaper Outlined="true" Elevation="0" Class="pa-4 mt-4">
             <MudText Typo="Typo.subtitle1" Class="mb-1">Receipts</MudText>
@@ -151,7 +151,7 @@ else
         </MudPaper>
     }
 
-    @if (_advance.Status == AdvanceStatus.Justified)
+    @if (_advance.Status == PaymentRequestStatus.Justified)
     {
         <MudPaper Outlined="true" Elevation="0" Class="pa-4 mt-4">
             <MudText Typo="Typo.subtitle1">Settle</MudText>
@@ -162,14 +162,14 @@ else
                     @if (difference > 0)
                     {
                         <text>
-                            @_advance.PersonName is holding <b>@difference.ToString("N2")</b>
+                            @_advance.RequestedByName is holding <b>@difference.ToString("N2")</b>
                             that has not been accounted for. Say where it goes.
                         </text>
                     }
                     else
                     {
                         <text>
-                            @_advance.PersonName spent <b>@Math.Abs(difference).ToString("N2")</b>
+                            @_advance.RequestedByName spent <b>@Math.Abs(difference).ToString("N2")</b>
                             more than they were given. Say how that is handled.
                         </text>
                     }
@@ -212,7 +212,7 @@ else
         </MudPaper>
     }
 
-    @if (_advance.Status == AdvanceStatus.Settled && _advance.OutstandingDifference != 0)
+    @if (_advance.Status == PaymentRequestStatus.Settled && _advance.OutstandingDifference != 0)
     {
         <MudPaper Outlined="true" Elevation="0" Class="pa-4 mt-4">
             <MudText Typo="Typo.subtitle1" Class="mb-1">Clear the outstanding amount</MudText>
@@ -254,7 +254,7 @@ else
         public int? HeadId { get; set; }
     }
 
-    private Advance? _advance;
+    private PaymentRequest? _advance;
     private List<ExpenseRow> _expenses = [];
     private IReadOnlyList<Account> _cashHeads = [];
     private IReadOnlyList<Account> _expenseHeads = [];
