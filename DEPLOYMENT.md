@@ -244,6 +244,20 @@ sudo systemctl daemon-reload
 sudo systemctl enable mei-erp.service mei-erp-monitor.timer
 ```
 
+`ops/deploy.sh` and `ops/rollback.sh` run as `meierp`, but restarting a systemd
+unit needs root. Grant exactly that, and nothing else, with a sudoers rule:
+
+```bash
+sudo visudo -f /etc/sudoers.d/meierp-deploy
+```
+
+```
+meierp ALL=(root) NOPASSWD: /usr/bin/systemctl restart mei-erp.service
+```
+
+Without this, `deploy.sh` builds successfully but fails at the restart step
+with `Failed to restart mei-erp.service: Access denied`.
+
 The unit hardens the process: `ProtectSystem=strict` makes the filesystem
 read-only apart from `ReadWritePaths=/opt/mei-erp/current/logs`, plus
 `NoNewPrivileges` and `PrivateTmp`. Anything else the app needs to write must
@@ -439,6 +453,7 @@ takes no view on this, so it is on you to know which kind of change you shipped.
 | `NETSDK1004: Assets file '...project.assets.json' not found` | No restore has been run yet with the current SDK. Run `sudo -u meierp -H dotnet restore` in `/opt/mei-erp/src`, then redeploy |
 | `NETSDK1064: Package ... was not found` or `Permission denied` on a file under `obj/` | A previous `dotnet` command was run as `root` (or another user), leaving `obj`/`bin` owned by that user. Clean and restore as `meierp` — see the recovery snippet in step 5 |
 | Installed SDK doesn't satisfy `global.json` (`SDK ... not found`) | The pinned SDK isn't installed on this machine. Install the matching `dotnet-sdk-10.0` package (step 3) — `global.json`'s `rollForward: latestFeature` accepts any `10.0.3xx` |
+| Build succeeds, then `Failed to restart mei-erp.service: Access denied` | `meierp` isn't allowed to restart the unit. Add the sudoers rule in step 7 |
 
 ---
 
