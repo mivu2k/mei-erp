@@ -149,7 +149,27 @@ sudo chmod 750 /srv/backup/mei-erp
 ```bash
 sudo -u meierp git clone https://github.com/mivu2k/mei-erp.git /opt/mei-erp/src
 cd /opt/mei-erp/src
+sudo -u meierp -H dotnet restore
 ```
+
+> **Always run `dotnet` commands as `meierp`, never as `root`.** `ops/deploy.sh`
+> runs `dotnet publish --no-restore`, so a restore must already exist — and it
+> must have been written by the same user that deploys. Restoring as `root`
+> writes `obj/` under the source tree owned by `root`; the next `dotnet` command
+> run as `meierp` then fails with `NETSDK1064: Package ... was not found` or an
+> outright `Permission denied` on a `.tmp` file in `obj/`, because `meierp`
+> cannot write into directories `root` created. The `-H` flag matters too:
+> `meierp`'s home is `/var/lib/meierp`, not `/root`, and without it NuGet may
+> resolve the wrong cache or none at all.
+>
+> If this has already happened — deploy fails with `NETSDK1004` (assets file
+> not found) or `NETSDK1064` — recover with:
+>
+> ```bash
+> sudo find /opt/mei-erp/src -type d \( -name obj -o -name bin \) -exec rm -rf {} +
+> sudo chown -R meierp:meierp /opt/mei-erp/src
+> sudo -u meierp -H dotnet restore
+> ```
 
 ---
 
@@ -388,7 +408,7 @@ output. Per `ops/RUNBOOK.md`, run this before each module cutover.
 
 ```bash
 # Deploy a new version
-cd /opt/mei-erp/src && sudo -u meierp git pull && sudo -u meierp ops/deploy.sh
+cd /opt/mei-erp/src && sudo -u meierp git pull && sudo -u meierp -H dotnet restore && sudo -u meierp ops/deploy.sh
 
 # Roll back to the previous release
 sudo -u meierp ops/rollback.sh
@@ -416,6 +436,9 @@ takes no view on this, so it is on you to know which kind of change you shipped.
 | Cannot sign in at all on a fresh install | `Seed__AdminPassword` was not set, so no administrator was created — the log says so |
 | `deploy.sh` reports rollback | New release failed readiness within 30s; previous release is still serving. Check `journalctl -u mei-erp` |
 | Service starts but cannot write logs | `ProtectSystem=strict` — the path must be in `ReadWritePaths` |
+| `NETSDK1004: Assets file '...project.assets.json' not found` | No restore has been run yet with the current SDK. Run `sudo -u meierp -H dotnet restore` in `/opt/mei-erp/src`, then redeploy |
+| `NETSDK1064: Package ... was not found` or `Permission denied` on a file under `obj/` | A previous `dotnet` command was run as `root` (or another user), leaving `obj`/`bin` owned by that user. Clean and restore as `meierp` — see the recovery snippet in step 5 |
+| Installed SDK doesn't satisfy `global.json` (`SDK ... not found`) | The pinned SDK isn't installed on this machine. Install the matching `dotnet-sdk-10.0` package (step 3) — `global.json`'s `rollForward: latestFeature` accepts any `10.0.3xx` |
 
 ---
 
