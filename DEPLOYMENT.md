@@ -278,7 +278,8 @@ sudo -u meierp ops/deploy.sh
 
 `ops/deploy.sh` publishes a Release build into a new timestamped directory under
 `/opt/mei-erp/releases/`, atomically repoints the `current` symlink, restarts the
-service, and polls `/health/ready` for 30 seconds. **If readiness does not come
+service, and polls `/health/ready` for up to 120 seconds — first boot runs each
+module's migrations and seeding, which is slower than a warm restart. **If readiness does not come
 back it rolls itself back automatically** and exits non-zero. A failed deploy
 therefore leaves the previous release running rather than a broken one.
 
@@ -455,7 +456,8 @@ takes no view on this, so it is on you to know which kind of change you shipped.
 | Sign-in page loads, then nothing is clickable | nginx not upgrading the WebSocket (step 8) |
 | Screens die after ~1 minute idle | `proxy_read_timeout` too low (step 8) |
 | Cannot sign in at all on a fresh install | `Seed__AdminPassword` was not set, so no administrator was created — the log says so |
-| `deploy.sh` reports rollback | New release failed readiness within 30s; previous release is still serving. Check `journalctl -u mei-erp` |
+| `deploy.sh` reports rollback | New release failed readiness within 120s; previous release is still serving. Check `journalctl -u mei-erp` |
+| Rollback target itself crash-loops with `226/NAMESPACE` | The release rolled back to predates the `logs/` symlink fix (an old release directory from before this guide's step 7 update). Run `ln -sfn /opt/mei-erp/shared/logs <old-release>/logs` and restart, then redeploy properly once stable |
 | Service starts but cannot write logs | `ProtectSystem=strict` — the path must be in `ReadWritePaths` |
 | `NETSDK1004: Assets file '...project.assets.json' not found` | No restore has been run yet with the current SDK. Run `sudo -u meierp -H dotnet restore` in `/opt/mei-erp/src`, then redeploy |
 | `NETSDK1064: Package ... was not found` or `Permission denied` on a file under `obj/` | A previous `dotnet` command was run as `root` (or another user), leaving `obj`/`bin` owned by that user. Clean and restore as `meierp` — see the recovery snippet in step 5 |
