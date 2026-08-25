@@ -54,7 +54,8 @@ public sealed record VoucherInput(
 
 public sealed record VoucherLineInput(
     int AccountId, decimal Debit, decimal Credit,
-    string? Narration = null, string? PersonId = null, string? PersonName = null);
+    string? Narration = null, string? PersonId = null, string? PersonName = null,
+    string? ProjectId = null, string? DepartmentId = null);
 
 /// <param name="Module">Which module raised it, so the entry can be traced back.</param>
 public sealed record SystemVoucher(
@@ -300,7 +301,9 @@ public sealed class VoucherService(
                 Credit = l.Debit,
                 Narration = l.Narration,
                 PersonId = l.PersonId,
-                PersonName = l.PersonName
+                PersonName = l.PersonName,
+                ProjectId = l.ProjectId,
+                DepartmentId = l.DepartmentId
             })]
         };
 
@@ -354,7 +357,9 @@ public sealed class VoucherService(
                 Credit = l.Credit,
                 Narration = l.Narration,
                 PersonId = l.PersonId,
-                PersonName = l.PersonName
+                PersonName = l.PersonName,
+                ProjectId = l.ProjectId,
+                DepartmentId = l.DepartmentId
             })]
         };
 
@@ -416,7 +421,9 @@ public sealed class VoucherService(
                 Credit = input.Credit,
                 Narration = input.Narration,
                 PersonId = input.PersonId,
-                PersonName = input.PersonName
+                PersonName = input.PersonName,
+                ProjectId = input.ProjectId,
+                DepartmentId = input.DepartmentId
             });
         }
 

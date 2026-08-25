@@ -16,6 +16,9 @@ public interface IAccountService
 
     /// <summary>Signed balance as at a date. Positive means debit.</summary>
     Task<decimal> BalanceAsync(int accountId, DateOnly? asAt = null, CancellationToken ct = default);
+
+    /// <summary>This account's balance plus every account beneath it.</summary>
+    Task<decimal> BalanceWithChildrenAsync(int accountId, DateOnly? asAt = null, CancellationToken ct = default);
 }
 
 public sealed class AccountService(FinanceDbContext db) : IAccountService
@@ -145,6 +148,32 @@ public sealed class AccountService(FinanceDbContext db) : IAccountService
 
         // Summed in the database rather than pulled into memory: this is read on
         // every account row of the chart, and at year five that is a lot of rows.
+        return await query.SumAsync(l => l.Debit - l.Credit, ct);
+    }
+
+    public async Task<decimal> BalanceWithChildrenAsync(
+        int accountId, DateOnly? asAt = null, CancellationToken ct = default)
+    {
+        // A heading's own balance is not its total once it has children hanging
+        // beneath it - advances per person, one payable per supplier. Asking for
+        // "employee advances" means the sum of everyone's, not the empty parent.
+        var ids = new List<int> { accountId };
+
+        for (var frontier = ids.ToList(); frontier.Count > 0;)
+        {
+            frontier = await db.Accounts
+                .Where(a => a.ParentId != null && frontier.Contains(a.ParentId.Value))
+                .Select(a => a.Id)
+                .ToListAsync(ct);
+
+            ids.AddRange(frontier);
+        }
+
+        var query = db.VoucherLines
+            .Where(l => ids.Contains(l.AccountId) && l.Voucher!.Status == VoucherStatus.Posted);
+
+        if (asAt is not null) query = query.Where(l => l.Voucher!.Date <= asAt);
+
         return await query.SumAsync(l => l.Debit - l.Credit, ct);
     }
 }

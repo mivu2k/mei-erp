@@ -4,6 +4,7 @@ using MeiErp.Platform.Messaging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace MeiErp.Modules.Finance;
 
@@ -141,6 +142,10 @@ public static class FinanceModule
         services.AddScoped<IFinanceReports, FinanceReports>();
         services.AddScoped<IPersonalLedgerService, PersonalLedgerService>();
         services.AddScoped<IPaymentRequestService, PaymentRequestService>();
+
+        // The host replaces this when Tender is present. Without it the project
+        // picker is simply empty rather than the screen failing to resolve.
+        services.TryAddScoped<IFinanceProjectDirectory, NoProjectDirectory>();
         services.AddScoped<IApprovalSink, PaymentRequestApprovalSink>();
         services.AddScoped<IThirdPartyService, ThirdPartyService>();
         services.AddScoped<IPettyCashService, PettyCashService>();

@@ -50,6 +50,13 @@ public class FinanceDbContext(
              .HasForeignKey(a => a.ParentId)
              .OnDelete(DeleteBehavior.Restrict);
 
+            b.Property(a => a.PersonId).HasMaxLength(450);
+
+            // One head per person beneath a given parent, so a second advance
+            // finds the first one's account rather than opening another.
+            b.HasIndex(a => new { a.ParentId, a.PersonId }).IsUnique()
+             .HasFilter("\"PersonId\" IS NOT NULL AND \"IsDeleted\" = false");
+
             b.Ignore(a => a.IsDebitNatured);
         });
 
@@ -108,9 +115,16 @@ public class FinanceDbContext(
              .HasForeignKey(l => l.AccountId)
              .OnDelete(DeleteBehavior.Restrict);
 
+            b.Property(l => l.ProjectId).HasMaxLength(450);
+            b.Property(l => l.DepartmentId).HasMaxLength(450);
+
             // The account ledger's hot path.
             b.HasIndex(l => l.AccountId);
             b.HasIndex(l => l.PersonId);
+
+            // Spend by project and by department.
+            b.HasIndex(l => l.ProjectId);
+            b.HasIndex(l => l.DepartmentId);
 
             // Match Account's soft-delete filter on the required navigation.
             // AccountService prevents deleting an account with history, so this
@@ -128,7 +142,10 @@ public class FinanceDbContext(
             b.Property(r => r.Description).HasMaxLength(2000);
             b.Property(r => r.DecisionComment).HasMaxLength(2000);
             b.Property(r => r.PayeeName).HasMaxLength(200);
+            b.Property(r => r.ProjectId).HasMaxLength(450);
+            b.Property(r => r.ProjectName).HasMaxLength(200);
             b.HasIndex(r => r.IsDirectorRequest);
+            b.HasIndex(r => r.ProjectId);
 
             b.HasOne(r => r.ExpenseAccount).WithMany()
              .HasForeignKey(r => r.ExpenseAccountId)
@@ -158,6 +175,11 @@ public class FinanceDbContext(
              .HasForeignKey(l => l.ExpenseAccountId)
              .OnDelete(DeleteBehavior.Restrict);
             b.HasIndex(l => l.PaymentRequestId);
+
+            b.Property(l => l.Attachment).HasColumnType("bytea");
+            b.Property(l => l.AttachmentName).HasMaxLength(255);
+            b.Property(l => l.AttachmentContentType).HasMaxLength(150);
+            b.Ignore(l => l.HasAttachment);
         });
 
         modelBuilder.Entity<FiscalYear>(b =>
@@ -248,6 +270,10 @@ public class FinanceDbContext(
 
             b.HasMany(a => a.Expenses).WithOne(e => e.Advance)
              .HasForeignKey(e => e.AdvanceId).OnDelete(DeleteBehavior.Cascade);
+
+            b.HasOne(a => a.AdvanceAccount).WithMany()
+             .HasForeignKey(a => a.AdvanceAccountId)
+             .OnDelete(DeleteBehavior.Restrict);
 
             b.HasIndex(a => new { a.PersonId, a.Status });
             b.HasIndex(a => a.Status);

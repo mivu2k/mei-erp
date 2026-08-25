@@ -27,7 +27,7 @@ public sealed class AdvanceTests : IAsyncLifetime
     private readonly TestUser _user = new("user-1", "Rafiq");
 
     private bool _available;
-    private int _cash, _advanceHead, _directorCapital, _travel;
+    private int _cash, _advanceHead, _directorCapital, _travel, _payables;
 
     private string Connection => BaseConnection + $"Database={_database};";
 
@@ -52,10 +52,15 @@ public sealed class AdvanceTests : IAsyncLifetime
             var directorCapital = new Account { Code = "3210", Name = "Director capital", Type = AccountType.Equity, IsPostable = true };
             var travel = new Account { Code = "5220", Name = "Staff travel", Type = AccountType.Expense, IsPostable = true };
 
-            db.Accounts.AddRange(cash, advances, directorCapital, travel);
+            // Where an overspend left outstanding is parked: the company owes
+            // it back, so it belongs on a liability.
+            var payables = new Account { Code = "2100", Name = "Payables", Type = AccountType.Liability, IsPostable = false };
+
+            db.Accounts.AddRange(cash, advances, directorCapital, travel, payables);
             await db.SaveChangesAsync();
 
-            _cash = cash.Id; _advanceHead = advances.Id; _directorCapital = directorCapital.Id; _travel = travel.Id;
+            _cash = cash.Id; _advanceHead = advances.Id; _directorCapital = directorCapital.Id;
+            _travel = travel.Id; _payables = payables.Id;
             _available = true;
         }
         catch (NpgsqlException) { _available = false; }
@@ -101,6 +106,115 @@ public sealed class AdvanceTests : IAsyncLifetime
         return paid.Value;
     }
 
+    // ---------- per-person accounts ----------
+
+    [SkippableFact]
+    public async Task Each_person_gets_their_own_advance_account()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+
+        await using var db = NewDb();
+        var service = NewService(db);
+
+        var advance = await DisbursedAsync(service, db, 20_000, 20_000);
+
+        db.ChangeTracker.Clear();
+
+        var reloaded = await db.Advances.FirstAsync(a => a.Id == advance.Id);
+        Assert.NotNull(reloaded.AdvanceAccountId);
+        Assert.NotEqual(_advanceHead, reloaded.AdvanceAccountId);
+
+        var own = await db.Accounts.FirstAsync(a => a.Id == reloaded.AdvanceAccountId);
+        Assert.Equal(_advanceHead, own.ParentId);
+        Assert.Equal(_user.UserId, own.PersonId);
+
+        // One shared head says the company is owed something and nothing about
+        // by whom. This is what makes the trial balance answer it.
+        var accounts = new AccountService(db);
+        Assert.Equal(20_000, await accounts.BalanceAsync(own.Id));
+        Assert.Equal(0, await accounts.BalanceAsync(_advanceHead));
+        Assert.Equal(20_000, await accounts.BalanceWithChildrenAsync(_advanceHead));
+
+        // The parent stops being postable once it has a child, or it would
+        // double-count itself against them in every report.
+        var parent = await db.Accounts.FirstAsync(a => a.Id == _advanceHead);
+        Assert.False(parent.IsPostable);
+    }
+
+    [SkippableFact]
+    public async Task A_second_advance_reuses_the_same_persons_account()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+
+        await using var db = NewDb();
+        var service = NewService(db);
+
+        var first = await DisbursedAsync(service, db, 5_000, 5_000);
+        var second = await DisbursedAsync(service, db, 3_000, 3_000);
+
+        db.ChangeTracker.Clear();
+
+        var a = await db.Advances.FirstAsync(x => x.Id == first.Id);
+        var b = await db.Advances.FirstAsync(x => x.Id == second.Id);
+
+        Assert.Equal(a.AdvanceAccountId, b.AdvanceAccountId);
+        Assert.Equal(8_000, await new AccountService(db).BalanceAsync(a.AdvanceAccountId!.Value));
+    }
+
+    [SkippableFact]
+    public async Task An_overspend_left_outstanding_becomes_a_payable_not_a_negative_asset()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+
+        await using var db = NewDb();
+        var service = NewService(db);
+
+        var advance = await DisbursedAsync(service, db, 20_000, 20_000);
+        await service.JustifyAsync(advance.Id,
+            [new AdvanceExpenseInput(_clock.Today, "Fuel", 23_000, _travel, null)]);
+
+        var settled = await service.SettleAsync(
+            advance.Id, DifferenceHandling.Outstanding, _cash, _clock.Today);
+        Assert.True(settled.Ok, settled.Error);
+
+        db.ChangeTracker.Clear();
+        var accounts = new AccountService(db);
+
+        // They spent 3,000 of their own money. The company owes it back, so it
+        // sits on a liability - as a negative on the advance asset head it would
+        // read as though they were still holding company cash.
+        Assert.Equal(0, await accounts.BalanceWithChildrenAsync(_advanceHead));
+        Assert.Equal(-3_000, await accounts.BalanceWithChildrenAsync(_payables));
+
+        var owed = await db.Accounts.FirstAsync(a => a.ParentId == _payables);
+        Assert.Equal(_user.UserId, owed.PersonId);
+        Assert.Contains(_user.Name, owed.Name);
+    }
+
+    [SkippableFact]
+    public async Task Paying_off_an_outstanding_overspend_clears_the_payable()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+
+        await using var db = NewDb();
+        var service = NewService(db);
+
+        var advance = await DisbursedAsync(service, db, 20_000, 20_000);
+        await service.JustifyAsync(advance.Id,
+            [new AdvanceExpenseInput(_clock.Today, "Fuel", 23_000, _travel, null)]);
+        await service.SettleAsync(advance.Id, DifferenceHandling.Outstanding, _cash, _clock.Today);
+
+        var cleared = await service.ClearDifferenceAsync(advance.Id, 3_000, _cash, _clock.Today);
+        Assert.True(cleared.Ok, cleared.Error);
+
+        db.ChangeTracker.Clear();
+        var accounts = new AccountService(db);
+
+        // Settled: nothing owed either way, and the cash actually went out.
+        Assert.Equal(0, await accounts.BalanceWithChildrenAsync(_payables));
+        Assert.Equal(-23_000, await accounts.BalanceAsync(_cash));
+    }
+
     // ---------- disbursement ----------
 
     [SkippableFact]
@@ -124,9 +238,9 @@ public sealed class AdvanceTests : IAsyncLifetime
         var paid = await service.DisburseAsync(draft.Value.Id, 5_000, _cash, _clock.Today);
         Assert.True(paid.Ok, paid.Error);
         var accounts = new AccountService(db);
-        Assert.Equal(5_000, await accounts.BalanceAsync(_directorCapital));
+        Assert.Equal(5_000, await accounts.BalanceWithChildrenAsync(_directorCapital));
         Assert.Equal(-5_000, await accounts.BalanceAsync(_cash));
-        Assert.Equal(0, await accounts.BalanceAsync(_advanceHead));
+        Assert.Equal(0, await accounts.BalanceWithChildrenAsync(_advanceHead));
     }
 
     [SkippableFact]
@@ -144,7 +258,7 @@ public sealed class AdvanceTests : IAsyncLifetime
 
         // The money has left the business but is still theirs to account for,
         // so it sits on the advance account rather than on an expense head.
-        Assert.Equal(20_000, await accounts.BalanceAsync(_advanceHead));
+        Assert.Equal(20_000, await accounts.BalanceWithChildrenAsync(_advanceHead));
         Assert.Equal(-20_000, await accounts.BalanceAsync(_cash));
         Assert.Equal(0, await accounts.BalanceAsync(_travel));
     }
@@ -236,7 +350,7 @@ public sealed class AdvanceTests : IAsyncLifetime
         // 20,000 out, 3,000 handed back: cash is down by the 17,000 actually
         // spent, and the person owes nothing.
         Assert.Equal(-17_000, await accounts.BalanceAsync(_cash));
-        Assert.Equal(0, await accounts.BalanceAsync(_advanceHead));
+        Assert.Equal(0, await accounts.BalanceWithChildrenAsync(_advanceHead));
 
         var closed = await db.Advances.FirstAsync(a => a.Id == advance.Id);
         Assert.Equal(0, closed.OutstandingDifference);
@@ -261,7 +375,7 @@ public sealed class AdvanceTests : IAsyncLifetime
 
         // The books keep showing they are holding 3,000. Cash has not moved
         // again, because the money never came back.
-        Assert.Equal(3_000, await accounts.BalanceAsync(_advanceHead));
+        Assert.Equal(3_000, await accounts.BalanceWithChildrenAsync(_advanceHead));
         Assert.Equal(-20_000, await accounts.BalanceAsync(_cash));
 
         var closed = await db.Advances.FirstAsync(a => a.Id == advance.Id);
@@ -287,7 +401,7 @@ public sealed class AdvanceTests : IAsyncLifetime
         // Payroll will credit this account when it deducts. Posting anything
         // here as well would take the money twice - the classic double-posting
         // bug in advance handling.
-        Assert.Equal(3_000, await new AccountService(db).BalanceAsync(_advanceHead));
+        Assert.Equal(3_000, await new AccountService(db).BalanceWithChildrenAsync(_advanceHead));
 
         var closed = await db.Advances.FirstAsync(a => a.Id == advance.Id);
         Assert.Equal(DifferenceHandling.RecoverFromPayroll, closed.DifferenceHandling);
@@ -318,7 +432,7 @@ public sealed class AdvanceTests : IAsyncLifetime
 
         // Cash is down by the full 23,000, and their account is square.
         Assert.Equal(-23_000, await accounts.BalanceAsync(_cash));
-        Assert.Equal(0, await accounts.BalanceAsync(_advanceHead));
+        Assert.Equal(0, await accounts.BalanceWithChildrenAsync(_advanceHead));
         Assert.Equal(23_000, await accounts.BalanceAsync(_travel));
     }
 
@@ -340,7 +454,7 @@ public sealed class AdvanceTests : IAsyncLifetime
         var closed = await db.Advances.FirstAsync(a => a.Id == advance.Id);
 
         Assert.Equal(0, closed.Difference);
-        Assert.Equal(0, await new AccountService(db).BalanceAsync(_advanceHead));
+        Assert.Equal(0, await new AccountService(db).BalanceWithChildrenAsync(_advanceHead));
     }
 
     // ---------- clearing later ----------
@@ -366,7 +480,7 @@ public sealed class AdvanceTests : IAsyncLifetime
         db.ChangeTracker.Clear();
         var accounts = new AccountService(db);
 
-        Assert.Equal(0, await accounts.BalanceAsync(_advanceHead));
+        Assert.Equal(0, await accounts.BalanceWithChildrenAsync(_advanceHead));
         Assert.Equal(-17_000, await accounts.BalanceAsync(_cash));
 
         var closed = await db.Advances.FirstAsync(a => a.Id == advance.Id);
@@ -392,7 +506,7 @@ public sealed class AdvanceTests : IAsyncLifetime
         var closed = await db.Advances.FirstAsync(a => a.Id == advance.Id);
 
         Assert.Equal(2_000, closed.OutstandingDifference);
-        Assert.Equal(2_000, await new AccountService(db).BalanceAsync(_advanceHead));
+        Assert.Equal(2_000, await new AccountService(db).BalanceWithChildrenAsync(_advanceHead));
     }
 
     [SkippableFact]

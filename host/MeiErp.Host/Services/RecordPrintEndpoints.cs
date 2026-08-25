@@ -27,6 +27,11 @@ public static class RecordPrintEndpoints
             if(!user.Can(HrModule.DocumentsView))return Results.Forbid();var file=await documents.FileAsync(id,ct);
             return file?.Content is null?Results.NotFound():Results.File(file.Content,file.ContentType??"application/octet-stream",file.FileName??file.Title);
         }).RequireAuthorization();
+        app.MapGet("/finance/request-receipt/{id:int}",async(int id,IPaymentRequestService requests,ICurrentUser user,CancellationToken ct)=>
+        {
+            if(!user.Can(FinanceModule.RequestsRaise))return Results.Forbid();var line=await requests.AttachmentAsync(id,ct);
+            return line?.Attachment is null?Results.NotFound():Results.File(line.Attachment,line.AttachmentContentType??"application/octet-stream",line.AttachmentName??"receipt");
+        }).RequireAuthorization();
         var group = app.MapGroup("/print").RequireAuthorization();
         group.MapGet("/gatepass/{id:int}", async (int id, string? size, IGatePassService service,
             IPrintService print, ICompanyProfileService company, ICurrentUser user, CancellationToken ct) =>

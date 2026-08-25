@@ -109,6 +109,10 @@ builder.Services.AddScoped<ITradeJobSource, MeiErp.Host.Services.RepairJobSource
 // ...and lets the workshop book devices in against the one party master,
 // instead of keeping a second customer list of its own.
 builder.Services.AddScoped<IRepairCustomerDirectory, MeiErp.Host.Services.TradeCustomerDirectory>();
+
+// And lets Finance charge a payment request to one of Tender's projects, so
+// spend reports by project cover money as well as work.
+builder.Services.AddScoped<IFinanceProjectDirectory, MeiErp.Host.Services.TenderProjectDirectory>();
 builder.Services.AddAutoModule(builder.Configuration);
 builder.Services.AddGatePassModule(builder.Configuration);
 builder.Services.AddRepairModule(builder.Configuration);

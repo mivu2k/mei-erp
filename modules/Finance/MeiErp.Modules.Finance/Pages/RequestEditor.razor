@@ -1,5 +1,6 @@
 @inject IPaymentRequestService Requests
 @inject IAccountService Chart
+@inject IFinanceProjectDirectory Projects
 @inject IClock Clock
 @inject ISnackbar Snackbar
 @inject NavigationManager Nav
@@ -18,6 +19,19 @@
                                      HelperText="Larger amounts may need more signatures." />
                     <MudDatePicker Label="Needed by" Variant="Variant.Outlined"
                                    Date="_neededBy" DateChanged="@(d => _neededBy = d)" />
+                    @if (_projects.Count > 0)
+                    {
+                        @* Carried onto every voucher line, so project spend
+                           reports cover money as well as work. *@
+                        <MudSelect T="string" Value="_projectId" ValueChanged="ProjectChanged"
+                                   Label="Project" Variant="Variant.Outlined" Clearable="true"
+                                   HelperText="Optional — charges this spend to a project.">
+                            @foreach (var p in _projects)
+                            {
+                                <MudSelectItem T="string" Value="@p.Id">@p.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    }
                     <MudTextField @bind-Value="_payee" Label="Pay to" Variant="Variant.Outlined"
                                   Class="app-form-wide"
                                   HelperText="The supplier or person receiving the money." />
@@ -46,13 +60,34 @@
                                       RequiredError="Explain this item." Variant="Variant.Outlined" Class="mt-3" />
                         <MudTextField @bind-Value="line.Description" Label="Details" Lines="2"
                                       Variant="Variant.Outlined" Class="mt-3" />
+                        @* Optional: the accountant settles the head at payment,
+                           so nobody claiming a taxi fare has to know the chart. *@
                         <MudSelect T="int?" @bind-Value="line.ExpenseAccountId" Label="Charge to"
-                                   Variant="Variant.Outlined" Clearable="true" Class="mt-3">
+                                   Variant="Variant.Outlined" Clearable="true" Class="mt-3"
+                                   HelperText="Optional — the accountant confirms this when paying.">
                             @foreach (var a in _expenseHeads)
                             {
                                 <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
                             }
                         </MudSelect>
+
+                        <div class="d-flex align-center gap-3 mt-3">
+                            <MudFileUpload T="IBrowserFile" FilesChanged="@(f => AttachAsync(line, f))"
+                                           Accept=".pdf,.png,.jpg,.jpeg,.webp">
+                                <ActivatorContent>
+                                    <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                                               StartIcon="@Icons.Material.Filled.AttachFile">
+                                        @(line.AttachmentName is null ? "Attach receipt" : "Replace receipt")
+                                    </MudButton>
+                                </ActivatorContent>
+                            </MudFileUpload>
+
+                            @if (line.AttachmentName is not null)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Success"
+                                         OnClose="@(() => ClearAttachment(line))">@line.AttachmentName</MudChip>
+                            }
+                        </div>
                     </MudPaper>
                 }
                 <div class="d-flex justify-space-between align-center">
@@ -114,12 +149,24 @@
     private int? _expenseAccountId;
     private DateTime? _neededBy;
     private IReadOnlyList<Account> _expenseHeads = [];
+    private IReadOnlyList<ProjectOption> _projects = [];
+    private string? _projectId;
+    private string? _projectName;
     private string? _error;
     private bool _busy;
+
+    /// <summary>The name is stored beside the id so a report can print it without
+    /// reaching into Tender for every row.</summary>
+    private void ProjectChanged(string? projectId)
+    {
+        _projectId = projectId;
+        _projectName = _projects.FirstOrDefault(p => p.Id == projectId)?.Name;
+    }
 
     protected override async Task OnInitializedAsync()
     {
         _expenseHeads = await Chart.PostableAsync(AccountType.Expense);
+        _projects = await Projects.ActiveProjectsAsync();
         _neededBy = Clock.Today.AddDays(7).ToDateTime(TimeOnly.MinValue);
 
         if (RequestId is not null)
@@ -132,6 +179,8 @@
                 _amount = existing.Amount;
                 _payee = existing.PayeeName;
                 _expenseAccountId = existing.ExpenseAccountId;
+                _projectId = existing.ProjectId;
+                _projectName = existing.ProjectName;
                 DirectorMode = existing.IsDirectorRequest;
                 _neededBy = existing.NeededBy.ToDateTime(TimeOnly.MinValue);
                 if (existing.Lines.Count > 0)
@@ -143,7 +192,10 @@
                         Amount = line.Amount,
                         Reason = line.Reason,
                         Description = line.Description,
-                        ExpenseAccountId = line.ExpenseAccountId
+                        ExpenseAccountId = line.ExpenseAccountId,
+                        Attachment = line.Attachment,
+                        AttachmentName = line.AttachmentName,
+                        AttachmentContentType = line.AttachmentContentType
                     }).ToList();
                 }
             }
@@ -164,13 +216,14 @@
         {
             var lines = _itemized
                 ? _lines.Select(line => new PaymentRequestLineInput(
-                    line.Category, line.Amount, line.Reason, line.Description, line.ExpenseAccountId)).ToList()
+                    line.Category, line.Amount, line.Reason, line.Description, line.ExpenseAccountId,
+                    line.Attachment, line.AttachmentName, line.AttachmentContentType)).ToList()
                 : null;
             var amount = _itemized ? _lines.Sum(line => line.Amount) : _amount;
             var saved = await Requests.SaveDraftAsync(new PaymentRequestInput(
                 RequestId, _title, _description, amount, _itemized ? null : _expenseAccountId,
                 _payee, DateOnly.FromDateTime(_neededBy ?? Clock.Today.ToDateTime(TimeOnly.MinValue)), null,
-                DirectorMode, lines));
+                DirectorMode, lines, _projectId, _projectName));
 
             if (saved.Failed) { _error = saved.Error; return; }
 
@@ -196,6 +249,40 @@
         finally { _busy = false; }
     }
 
+    /// <summary>
+    /// The receipt travels with the claim into the database. A claim whose
+    /// evidence lives somewhere else is one nobody can defend at audit.
+    /// </summary>
+    private async Task AttachAsync(DraftLine line, IBrowserFile? file)
+    {
+        if (file is null) return;
+
+        if (file.Size > MaxAttachmentBytes)
+        {
+            _error = $"{file.Name} is larger than {MaxAttachmentBytes / (1024 * 1024)}MB. " +
+                     "Photograph the receipt rather than scanning it at full resolution.";
+            return;
+        }
+
+        _error = null;
+
+        using var buffer = new MemoryStream();
+        await file.OpenReadStream(MaxAttachmentBytes).CopyToAsync(buffer);
+
+        line.Attachment = buffer.ToArray();
+        line.AttachmentName = file.Name;
+        line.AttachmentContentType = file.ContentType;
+    }
+
+    private static void ClearAttachment(DraftLine line)
+    {
+        line.Attachment = null;
+        line.AttachmentName = null;
+        line.AttachmentContentType = null;
+    }
+
+    private const long MaxAttachmentBytes = 8 * 1024 * 1024;
+
     private void AddLine() => _lines.Add(new DraftLine());
     private void RemoveLine(DraftLine line)
     {
@@ -218,5 +305,8 @@
         public string? Reason { get; set; }
         public string? Description { get; set; }
         public int? ExpenseAccountId { get; set; }
+        public byte[]? Attachment { get; set; }
+        public string? AttachmentName { get; set; }
+        public string? AttachmentContentType { get; set; }
     }
 }

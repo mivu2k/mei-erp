@@ -17,19 +17,53 @@ public interface IPaymentRequestService
     /// Pays an approved request: posts the voucher and marks it paid. This is
     /// the moment money actually moves and the books change.
     /// </summary>
-    Task<Result<PaymentRequest>> PayAsync(int id, int paidFromAccountId, DateOnly date, CancellationToken ct = default);
+    /// <param name="classifications">
+    /// Expense head per line id, assigned by the accountant at payment. Key 0
+    /// classifies a request that has no lines. Null leaves whatever the raiser
+    /// chose.
+    /// </param>
+    Task<Result<PaymentRequest>> PayAsync(
+        int id, int paidFromAccountId, DateOnly date,
+        IReadOnlyDictionary<int, int>? classifications = null, CancellationToken ct = default);
+
+    /// <summary>The receipt attached to one request line, for download.</summary>
+    Task<PaymentRequestLine?> AttachmentAsync(int lineId, CancellationToken ct = default);
 
     Task<Result> CancelAsync(int id, CancellationToken ct = default);
+}
+
+/// <summary>One project a spend can be charged against.</summary>
+public sealed record ProjectOption(string Id, string Name);
+
+/// <summary>
+/// The projects a payment request can be charged to.
+///
+/// Projects belong to Tender, and Finance must not reference a business module,
+/// so it states what it needs and the host supplies it. A deployment without
+/// Tender gets an empty list and the picker simply does not appear.
+/// </summary>
+public interface IFinanceProjectDirectory
+{
+    Task<IReadOnlyList<ProjectOption>> ActiveProjectsAsync(CancellationToken ct = default);
+}
+
+/// <summary>Used when no project source is registered.</summary>
+public sealed class NoProjectDirectory : IFinanceProjectDirectory
+{
+    public Task<IReadOnlyList<ProjectOption>> ActiveProjectsAsync(CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<ProjectOption>>([]);
 }
 
 public sealed record PaymentRequestInput(
     int? Id, string Title, string? Description, decimal Amount,
     int? ExpenseAccountId, string? PayeeName, DateOnly NeededBy, string? DepartmentId,
     bool IsDirectorRequest = false,
-    IReadOnlyList<PaymentRequestLineInput>? Lines = null);
+    IReadOnlyList<PaymentRequestLineInput>? Lines = null,
+    string? ProjectId = null, string? ProjectName = null);
 
 public sealed record PaymentRequestLineInput(
-    string? Category, decimal Amount, string? Reason, string? Description, int? ExpenseAccountId);
+    string? Category, decimal Amount, string? Reason, string? Description, int? ExpenseAccountId,
+    byte[]? Attachment = null, string? AttachmentName = null, string? AttachmentContentType = null);
 
 public sealed class PaymentRequestService(
     FinanceDbContext db,
@@ -127,6 +161,8 @@ public sealed class PaymentRequestService(
         request.PayeeName = input.PayeeName;
         request.NeededBy = input.NeededBy;
         request.DepartmentId = input.DepartmentId;
+        request.ProjectId = input.ProjectId;
+        request.ProjectName = input.ProjectName;
         request.IsDirectorRequest = input.IsDirectorRequest;
 
         if (input.Lines is not null)
@@ -138,7 +174,10 @@ public sealed class PaymentRequestService(
                 Amount = line.Amount,
                 Reason = line.Reason,
                 Description = line.Description,
-                ExpenseAccountId = line.ExpenseAccountId
+                ExpenseAccountId = line.ExpenseAccountId,
+                Attachment = line.Attachment,
+                AttachmentName = line.AttachmentName,
+                AttachmentContentType = line.AttachmentContentType
             }).ToList();
             request.Amount = request.Lines.Sum(line => line.Amount);
             request.ExpenseAccountId = request.Lines.Count == 1
@@ -188,7 +227,8 @@ public sealed class PaymentRequestService(
     }
 
     public async Task<Result<PaymentRequest>> PayAsync(
-        int id, int paidFromAccountId, DateOnly date, CancellationToken ct = default)
+        int id, int paidFromAccountId, DateOnly date,
+        IReadOnlyDictionary<int, int>? classifications = null, CancellationToken ct = default)
     {
         var request = await db.PaymentRequests.Include(r => r.Lines)
             .FirstOrDefaultAsync(r => r.Id == id, ct);
@@ -201,6 +241,22 @@ public sealed class PaymentRequestService(
             // exists to prevent.
             return Result.Fail<PaymentRequest>(
                 "Only an approved request can be paid.", "request.not-approved");
+        }
+
+        // The accountant classifies at payment, which is the point of this
+        // parameter: the person claiming a taxi fare should not have to know
+        // which head it belongs under, and guessing is worse than leaving it to
+        // somebody who knows the chart.
+        if (classifications is not null)
+        {
+            foreach (var line in request.Lines)
+            {
+                if (classifications.TryGetValue(line.Id, out var accountId))
+                    line.ExpenseAccountId = accountId;
+            }
+
+            if (classifications.TryGetValue(0, out var headerAccountId))
+                request.ExpenseAccountId = headerAccountId;
         }
 
         if (request.ExpenseAccountId is null && request.Lines.Count == 0)
@@ -221,13 +277,18 @@ public sealed class PaymentRequestService(
                        (request.PayeeName is null ? "" : $" — {request.PayeeName}"),
             Lines:
             [
+                // Project and department ride on every expense line, so spend
+                // reports can group by them without joining back to the request
+                // - which would miss every voucher raised by hand.
                 ..(request.Lines.Count > 0
                     ? request.Lines.Select(line => new VoucherLineInput(
                         line.ExpenseAccountId!.Value, line.Amount, 0,
                         line.Reason ?? line.Description ?? line.Category ?? request.Title,
-                        request.RequestedByUserId, request.RequestedByName))
+                        request.RequestedByUserId, request.RequestedByName,
+                        request.ProjectId, request.DepartmentId))
                     : [new VoucherLineInput(request.ExpenseAccountId!.Value, request.Amount, 0,
-                        request.Title, request.RequestedByUserId, request.RequestedByName)]),
+                        request.Title, request.RequestedByUserId, request.RequestedByName,
+                        request.ProjectId, request.DepartmentId)]),
                 new VoucherLineInput(paidFromAccountId, 0, request.Amount, request.PayeeName)
             ],
             Module: FinanceModule.Key,
@@ -246,6 +307,9 @@ public sealed class PaymentRequestService(
         await db.SaveChangesAsync(ct);
         return Result.Success(request);
     }
+
+    public Task<PaymentRequestLine?> AttachmentAsync(int lineId, CancellationToken ct = default) =>
+        db.PaymentRequestLines.AsNoTracking().FirstOrDefaultAsync(l => l.Id == lineId, ct);
 
     public async Task<Result> CancelAsync(int id, CancellationToken ct = default)
     {

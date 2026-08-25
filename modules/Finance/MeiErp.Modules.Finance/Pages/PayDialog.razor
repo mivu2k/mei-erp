@@ -22,6 +22,50 @@
         <MudDatePicker Label="Payment date" Variant="Variant.Outlined"
                        Date="_date" DateChanged="@(d => _date = d)" />
 
+        @* The claimant is not expected to know the chart of accounts, so the
+           head is settled here, by somebody who does. *@
+        @if (_lines.Count > 0)
+        {
+            <MudText Typo="Typo.subtitle2" Class="mt-6 mb-2">Charge each item to</MudText>
+
+            @foreach (var line in _lines)
+            {
+                <div class="d-flex align-center gap-3 mb-2">
+                    <MudText Typo="Typo.body2" Style="flex:1">
+                        @(line.Reason ?? line.Description ?? line.Category ?? "Item")
+                        @if (line.HasAttachment)
+                        {
+                            @* The head is easier to pick with the receipt open. *@
+                            <MudLink Href="@($"/finance/request-receipt/{line.Id}")" Target="_blank" Class="ml-1">
+                                <MudIcon Icon="@Icons.Material.Outlined.AttachFile" Size="Size.Small" />
+                            </MudLink>
+                        }
+                    </MudText>
+                    <MudText Typo="Typo.body2">@line.Amount.ToString("N2")</MudText>
+                    <MudSelect T="int?" Value="@Head(line.Id)"
+                               ValueChanged="@(v => SetHead(line.Id, v))"
+                               Label="Expense head" Variant="Variant.Outlined"
+                               Margin="Margin.Dense" Style="min-width:16rem">
+                        @foreach (var a in _expenseHeads)
+                        {
+                            <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </div>
+            }
+        }
+        else
+        {
+            <MudSelect T="int?" Value="@Head(0)" ValueChanged="@(v => SetHead(0, v))"
+                       Label="Expense head" Variant="Variant.Outlined" Class="mt-4"
+                       HelperText="Which head this spend is charged to.">
+                @foreach (var a in _expenseHeads)
+                {
+                    <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                }
+            </MudSelect>
+        }
+
         @if (_error is not null)
         {
             <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">@_error</MudAlert>
@@ -44,16 +88,42 @@
     [Parameter] public string Title { get; set; } = "";
 
     private IReadOnlyList<Account> _cashHeads = [];
+    private IReadOnlyList<Account> _expenseHeads = [];
+    private IReadOnlyList<PaymentRequestLine> _lines = [];
+    private readonly Dictionary<int, int> _classifications = [];
     private int? _paidFrom;
     private DateTime? _date;
     private string? _error;
     private bool _busy;
 
+    private int? Head(int lineId) =>
+        _classifications.TryGetValue(lineId, out var id) ? id : null;
+
+    private void SetHead(int lineId, int? accountId)
+    {
+        if (accountId is null) _classifications.Remove(lineId);
+        else _classifications[lineId] = accountId.Value;
+    }
+
     protected override async Task OnInitializedAsync()
     {
         // Money leaves an asset head - cash or bank.
         _cashHeads = await Chart.PostableAsync(AccountType.Asset);
+        _expenseHeads = await Chart.PostableAsync(AccountType.Expense);
         _date = Clock.Today.ToDateTime(TimeOnly.MinValue);
+
+        var request = await Requests.GetAsync(RequestId);
+        if (request is null) return;
+
+        _lines = request.Lines;
+
+        // Whatever the raiser did choose is offered back rather than blanked,
+        // so a request that arrived already classified needs no retyping.
+        foreach (var line in _lines.Where(l => l.ExpenseAccountId is not null))
+            _classifications[line.Id] = line.ExpenseAccountId!.Value;
+
+        if (_lines.Count == 0 && request.ExpenseAccountId is not null)
+            _classifications[0] = request.ExpenseAccountId.Value;
     }
 
     private async Task PayAsync()
@@ -63,7 +133,9 @@
         try
         {
             var result = await Requests.PayAsync(
-                RequestId, _paidFrom!.Value, DateOnly.FromDateTime(_date ?? Clock.Today.ToDateTime(TimeOnly.MinValue)));
+                RequestId, _paidFrom!.Value,
+                DateOnly.FromDateTime(_date ?? Clock.Today.ToDateTime(TimeOnly.MinValue)),
+                _classifications);
 
             if (result.Failed) { _error = result.Error; return; }
 

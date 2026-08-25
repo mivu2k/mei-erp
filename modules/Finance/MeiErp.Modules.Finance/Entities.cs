@@ -41,6 +41,13 @@ public class Account : AuditableEntity, IConcurrencyChecked
     public string? Description { get; set; }
 
     /// <summary>
+    /// Set on a head that belongs to one person - their advances, what is owed
+    /// back to them. Matched on rather than the name, so renaming somebody does
+    /// not strand the account they already have entries on.
+    /// </summary>
+    public string? PersonId { get; set; }
+
+    /// <summary>
     /// Which way a balance on this account normally sits. Assets and expenses
     /// are debit-natured; liabilities, equity and income are credit-natured.
     /// Used to present a balance as a positive number on the side it belongs.
@@ -174,6 +181,15 @@ public class VoucherLine : Entity
     public string? PersonId { get; set; }
     public string? PersonName { get; set; }
 
+    /// <summary>
+    /// Which project and department the spend belongs to, stamped on the line
+    /// rather than only on the document. A report that has to join back to the
+    /// originating request cannot cover a hand-written voucher, and a spend
+    /// report that silently omits those is worse than none.
+    /// </summary>
+    public string? ProjectId { get; set; }
+    public string? DepartmentId { get; set; }
+
     public decimal SignedAmount => Debit - Credit;
 }
 
@@ -203,6 +219,10 @@ public class PaymentRequest : AuditableEntity, IConcurrencyChecked
     public string RequestedByUserId { get; set; } = "";
     public string RequestedByName { get; set; } = "";
     public string? DepartmentId { get; set; }
+
+    /// <summary>Which project the spend belongs to, carried onto the voucher lines.</summary>
+    public string? ProjectId { get; set; }
+    public string? ProjectName { get; set; }
 
     /// <summary>True for a director fund request, kept separate from ordinary staff payment requests.</summary>
     public bool IsDirectorRequest { get; set; }
@@ -244,6 +264,17 @@ public class PaymentRequestLine : AuditableEntity
     public string? Description { get; set; }
     public int? ExpenseAccountId { get; set; }
     public Account? ExpenseAccount { get; set; }
+
+    /// <summary>
+    /// The receipt behind this line. Held in the database rather than on disk so
+    /// one backup covers the claim and its evidence together - a receipt that
+    /// went missing between the two is a claim nobody can defend at audit.
+    /// </summary>
+    public byte[]? Attachment { get; set; }
+    public string? AttachmentName { get; set; }
+    public string? AttachmentContentType { get; set; }
+
+    public bool HasAttachment => Attachment is not null && Attachment.Length > 0;
 }
 
 public enum PaymentRequestStatus

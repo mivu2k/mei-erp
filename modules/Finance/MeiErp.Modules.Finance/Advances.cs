@@ -45,6 +45,16 @@ public class Advance : AuditableEntity, IConcurrencyChecked
     public int? ApprovalRequestId { get; set; }
     public string? DecisionComment { get; set; }
 
+    /// <summary>
+    /// The account this person's advance sits on, fixed at disbursement.
+    ///
+    /// Settlement has to clear the same account the money was put on, so this is
+    /// stored rather than re-derived: advances raised before per-person accounts
+    /// existed carry null and fall back to the shared head they were posted to.
+    /// </summary>
+    public int? AdvanceAccountId { get; set; }
+    public Account? AdvanceAccount { get; set; }
+
     /// <summary>The voucher raised when the money was handed over.</summary>
     public int? DisbursementVoucherId { get; set; }
 
@@ -189,6 +199,7 @@ public sealed class AdvanceService(
     /// <summary>Where money held by staff sits until it is accounted for.</summary>
     private const string AdvanceAccountCode = "1700";
     private const string DirectorCapitalCode = "3210";
+    private const string PayableAccountCode = "2100";
 
     public async Task<IReadOnlyList<Advance>> ListAsync(
         AdvanceStatus? status, bool mineOnly, bool directorOnly = false, CancellationToken ct = default)
@@ -313,7 +324,7 @@ public sealed class AdvanceService(
                 "advance.over-disbursement");
         }
 
-        var advanceAccount = await AdvanceAccountAsync(advance.IsDirectorRequest, ct);
+        var advanceAccount = await AdvanceAccountAsync(advance, ct);
         if (advanceAccount.Failed) return Result.Fail<Advance>(advanceAccount.Error!, advanceAccount.Code);
 
         // Dr the person's advance account, Cr cash. The money has left the
@@ -337,6 +348,7 @@ public sealed class AdvanceService(
 
         advance.Status = AdvanceStatus.Disbursed;
         advance.DisbursedAmount = amount;
+        advance.AdvanceAccountId = advanceAccount.Value.Id;
         advance.DisbursementVoucherId = posted.Value.Id;
         advance.DisbursedUtc = clock.UtcNow;
 
@@ -409,7 +421,7 @@ public sealed class AdvanceService(
         if (advance.Status is not AdvanceStatus.Justified)
             return Result.Fail<Advance>("Only a justified advance can be settled.", "advance.not-justified");
 
-        var advanceAccount = await AdvanceAccountAsync(advance.IsDirectorRequest, ct);
+        var advanceAccount = await AdvanceAccountAsync(advance, ct);
         if (advanceAccount.Failed) return Result.Fail<Advance>(advanceAccount.Error!, advanceAccount.Code);
 
         var disbursed = advance.DisbursedAmount ?? 0;
@@ -451,11 +463,28 @@ public sealed class AdvanceService(
                             "Advance shortfall", advance.PersonId, advance.PersonName));
                     break;
 
+                case DifferenceHandling.Outstanding when difference < 0:
+                    // They are owed money. Left as a negative on the advance
+                    // asset head it reads as though they still hold company
+                    // cash; it belongs on a liability, because the company owes
+                    // it back to them.
+                    var payable = await PersonPayableAccountAsync(advance, ct);
+                    if (payable.Failed) return Result.Fail<Advance>(payable.Error!, payable.Code);
+
+                    lines.Add(new VoucherLineInput(
+                        advanceAccount.Value.Id, -difference, 0,
+                        "Advance overspend", advance.PersonId, advance.PersonName));
+
+                    lines.Add(new VoucherLineInput(
+                        payable.Value.Id, 0, -difference,
+                        $"Owed to {advance.PersonName}", advance.PersonId, advance.PersonName));
+                    break;
+
                 case DifferenceHandling.Outstanding:
                 case DifferenceHandling.RecoverFromPayroll:
-                    // The gap stays on the person's advance account, so the books
-                    // keep showing they are holding it. Nothing extra is posted -
-                    // the balance already says so.
+                    // Unspent money they are still holding. The gap stays on
+                    // their advance account, so the books keep showing it.
+                    // Nothing extra is posted - the balance already says so.
                     break;
             }
         }
@@ -507,10 +536,20 @@ public sealed class AdvanceService(
                 "advance.over-clearing");
         }
 
-        var advanceAccount = await AdvanceAccountAsync(advance.IsDirectorRequest, ct);
+        var advanceAccount = await AdvanceAccountAsync(advance, ct);
         if (advanceAccount.Failed) return Result.Fail<Advance>(advanceAccount.Error!, advanceAccount.Code);
 
         var returning = advance.OutstandingDifference > 0;
+
+        // Settling an outstanding overspend parked it on the person's payable,
+        // so paying them clears that head - not the advance account, which
+        // settlement already emptied.
+        var owedAccount = advanceAccount;
+        if (!returning)
+        {
+            owedAccount = await PersonPayableAccountAsync(advance, ct);
+            if (owedAccount.Failed) return Result.Fail<Advance>(owedAccount.Error!, owedAccount.Code);
+        }
 
         var posted = await vouchers.PostSystemVoucherAsync(new SystemVoucher(
             Type: returning ? VoucherType.Receipt : VoucherType.Payment,
@@ -523,7 +562,7 @@ public sealed class AdvanceService(
                         "Advance returned", advance.PersonId, advance.PersonName)
                   ]
                 : [
-                    new VoucherLineInput(advanceAccount.Value.Id, amount, 0,
+                    new VoucherLineInput(owedAccount.Value.Id, amount, 0,
                         "Advance shortfall", advance.PersonId, advance.PersonName),
                     new VoucherLineInput(cashAccountId, 0, amount, "Advance shortfall paid")
                   ],
@@ -540,7 +579,30 @@ public sealed class AdvanceService(
         return Result.Success(advance);
     }
 
-    private async Task<Result<Account>> AdvanceAccountAsync(bool director, CancellationToken ct)
+    /// <summary>
+    /// The account an advance clears through.
+    ///
+    /// Once disbursed the advance keeps the account it was put on, because
+    /// settling has to clear the same head the money went to. Only a fresh
+    /// disbursement resolves a new one.
+    /// </summary>
+    private async Task<Result<Account>> AdvanceAccountAsync(Advance advance, CancellationToken ct)
+    {
+        if (advance.AdvanceAccountId is { } existing)
+        {
+            var held = await db.Accounts.FirstOrDefaultAsync(a => a.Id == existing, ct);
+            if (held is not null) return Result.Success(held);
+        }
+
+        // Advances raised before per-person accounts existed were posted to the
+        // shared head. They have to settle back to it, not to a new sub-account
+        // that never received the disbursement.
+        return advance.Status is AdvanceStatus.Draft or AdvanceStatus.Pending or AdvanceStatus.Approved
+            ? await PersonAdvanceAccountAsync(advance, ct)
+            : await SharedAccountAsync(advance.IsDirectorRequest, ct);
+    }
+
+    private async Task<Result<Account>> SharedAccountAsync(bool director, CancellationToken ct)
     {
         var code = director ? DirectorCapitalCode : AdvanceAccountCode;
         var account = await db.Accounts.FirstOrDefaultAsync(a => a.Code == code, ct);
@@ -550,6 +612,85 @@ public sealed class AdvanceService(
                 $"The {code} account needed for this advance is missing from the chart of accounts.",
                 "advance.no-account")
             : Result.Success(account);
+    }
+
+    /// <summary>
+    /// This person's own advance account, created on first use.
+    ///
+    /// One shared advance head tells you the company is owed something and
+    /// nothing about by whom; recovering that costs an afternoon with the
+    /// voucher lines. A head per person makes the trial balance answer it.
+    /// </summary>
+    private async Task<Result<Account>> PersonAdvanceAccountAsync(Advance advance, CancellationToken ct)
+    {
+        var parent = await SharedAccountAsync(advance.IsDirectorRequest, ct);
+        if (parent.Failed) return parent;
+
+        var name = advance.IsDirectorRequest
+            ? $"Director — {advance.PersonName}"
+            : advance.PersonName;
+
+        return await EnsureChildAccountAsync(parent.Value, name, advance.PersonId, ct);
+    }
+
+    private async Task<Result<Account>> EnsureChildAccountAsync(
+        Account parent, string name, string personId, CancellationToken ct)
+    {
+        var existing = await db.Accounts
+            .FirstOrDefaultAsync(a => a.ParentId == parent.Id && a.PersonId == personId, ct);
+
+        if (existing is not null) return Result.Success(existing);
+
+        var siblings = await db.Accounts.CountAsync(a => a.ParentId == parent.Id, ct);
+
+        var child = new Account
+        {
+            Code = $"{parent.Code}-{(siblings + 1):D3}",
+            Name = name,
+            Type = parent.Type,
+            ParentId = parent.Id,
+            PersonId = personId,
+            IsPostable = true,
+            IsSystem = true,
+            Description = $"Advances held by {name}."
+        };
+
+        db.Accounts.Add(child);
+
+        // A heading with a balance of its own double-counts itself against its
+        // children in every report, so the parent stops being postable the
+        // moment it gains one.
+        if (parent.IsPostable)
+        {
+            var used = await db.VoucherLines.AnyAsync(l => l.AccountId == parent.Id, ct);
+            if (!used) parent.IsPostable = false;
+        }
+
+        await db.SaveChangesAsync(ct);
+        return Result.Success(child);
+    }
+
+    /// <summary>
+    /// This person's payable, for an overspend left outstanding.
+    ///
+    /// The company owes them, so it belongs on a liability head. Left as a
+    /// negative on the advance asset account it reads as though they still hold
+    /// money that is in fact owed back to them.
+    /// </summary>
+    private async Task<Result<Account>> PersonPayableAccountAsync(Advance advance, CancellationToken ct)
+    {
+        var parent = await db.Accounts.FirstOrDefaultAsync(a => a.Code == PayableAccountCode, ct);
+
+        if (parent is null)
+        {
+            return Result.Fail<Account>(
+                $"The {PayableAccountCode} account needed to record what is owed back is missing " +
+                "from the chart of accounts.",
+                "advance.no-payable-account");
+        }
+
+        return await EnsureChildAccountAsync(
+            parent, $"Payable — {advance.PersonName}", advance.PersonId, ct);
     }
 
     private async Task<string> NextReferenceAsync(bool director, CancellationToken ct)
