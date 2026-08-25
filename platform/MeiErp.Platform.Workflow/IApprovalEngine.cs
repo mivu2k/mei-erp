@@ -44,6 +44,15 @@ public interface IApprovalEngine
     /// <summary>Whether the current user may decide this request right now, and why not if they may not.</summary>
     Task<Result> CanDecideAsync(int requestId, CancellationToken ct = default);
 
+    /// <summary>
+    /// Where each of many documents has got to, in one query.
+    ///
+    /// A list that asked per row would issue one query per line, which is the
+    /// difference between a screen that opens and one that people stop using.
+    /// </summary>
+    Task<IReadOnlyDictionary<int, ApprovalPosition>> PositionsAsync(
+        string documentType, IReadOnlyList<int> documentIds, CancellationToken ct = default);
+
     /// <summary>The full history of one document's approval, for its detail page.</summary>
     Task<ApprovalHistory?> HistoryAsync(
         string documentType, int documentId, CancellationToken ct = default);
@@ -91,6 +100,21 @@ public sealed record ApprovalHistory(
     string? CurrentStepName,
     IReadOnlyList<ApprovalHistoryStep> Steps,
     IReadOnlyList<ApprovalHistoryAction> Actions);
+
+/// <summary>
+/// Where one document has got to, for a list that shows many of them.
+/// </summary>
+public sealed record ApprovalPosition(
+    ApprovalStatus Status,
+    string? CurrentStepName,
+    int StepNumber,
+    int StepCount,
+    DateTime? DueUtc)
+{
+    /// <summary>Late, and still nobody has decided it.</summary>
+    public bool IsOverdue(DateTime nowUtc) =>
+        Status is ApprovalStatus.Pending && DueUtc is not null && DueUtc < nowUtc;
+}
 
 public sealed record ApprovalHistoryStep(
     int Order, string Name, StepOutcome Outcome,

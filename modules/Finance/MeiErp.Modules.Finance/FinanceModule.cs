@@ -101,9 +101,8 @@ public static class FinanceModule
             new("Vouchers",          "/finance/vouchers", "ReceiptLong", VouchersView),
             new("Day book",          "/finance/day-book", "MenuBook", VouchersView),
 
-            new("Payment requests",  "/finance/requests", "RequestQuote", RequestsRaise, "Spending"),
-            new("Director funds",    "/finance/advances?director=true", "AccountBalanceWallet", DirectorFundsView, "Spending"),
-            new("Advances",          "/finance/advances", "AccountBalanceWallet", AdvancesRaise, "Spending"),
+            new("Money requests",    "/finance/money-requests", "RequestQuote", RequestsRaise, "Spending"),
+            new("Director funds",    "/finance/money-requests?director=true", "AccountBalanceWallet", DirectorFundsView, "Spending"),
             new("Salary advances",   "/finance/salary-advances", "CreditScore", AdvancesRaise, "Spending"),
             new("Petty cash",        "/finance/petty-cash", "Savings", PettyCashManage, "Spending"),
             new("Utilities",         "/finance/utilities", "Bolt", UtilitiesManage, "Spending"),

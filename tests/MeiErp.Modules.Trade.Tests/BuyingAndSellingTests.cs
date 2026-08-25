@@ -353,6 +353,11 @@ public sealed class BuyingAndSellingTests : IAsyncLifetime
         public Task<Result> CanDecideAsync(int requestId, CancellationToken ct = default) =>
             Task.FromResult(Result.Success());
 
+        public Task<IReadOnlyDictionary<int, MeiErp.Platform.Workflow.ApprovalPosition>> PositionsAsync(
+            string documentType, IReadOnlyList<int> documentIds, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyDictionary<int, MeiErp.Platform.Workflow.ApprovalPosition>>(
+                new Dictionary<int, MeiErp.Platform.Workflow.ApprovalPosition>());
+
         public Task<MeiErp.Platform.Workflow.ApprovalHistory?> HistoryAsync(
             string documentType, int documentId, CancellationToken ct = default) =>
             Task.FromResult<MeiErp.Platform.Workflow.ApprovalHistory?>(null);

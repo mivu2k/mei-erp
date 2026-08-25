@@ -166,6 +166,72 @@ public sealed class AdvanceTests : IAsyncLifetime
         Assert.All(requests, r => Assert.Equal(PaymentRequestKind.Itemized, r.Kind));
     }
 
+    [SkippableFact]
+    public async Task The_merged_list_shows_both_kinds_and_can_narrow_to_one()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+
+        await using var db = NewDb();
+        var service = NewService(db);
+        var requests = new PaymentRequestService(
+            db, new VoucherService(db, _clock, _user), new AutoApprove(), _user, _clock);
+
+        await service.SaveDraftAsync(new AdvanceInput(
+            null, "Site visit", 5_000, _clock.Today, null, null, null));
+
+        await requests.SaveDraftAsync(new PaymentRequestInput(
+            null, "Stationery", null, 900, null, "Shop", _clock.Today, null));
+
+        // The screen people actually work from shows everything they asked for,
+        // whichever way they asked for it.
+        var all = await requests.ListAllAsync(null, null, mineOnly: false);
+        Assert.Equal(2, all.Count);
+
+        var onlyAdvances = await requests.ListAllAsync(
+            PaymentRequestKind.Advance, null, mineOnly: false);
+        Assert.Single(onlyAdvances);
+        Assert.Equal("Site visit", onlyAdvances[0].Title);
+
+        var onlyItemized = await requests.ListAllAsync(
+            PaymentRequestKind.Itemized, null, mineOnly: false);
+        Assert.Single(onlyItemized);
+        Assert.Equal("Stationery", onlyItemized[0].Title);
+    }
+
+    [SkippableFact]
+    public async Task The_administration_view_shows_everyones_and_mine_shows_only_mine()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+
+        await using var db = NewDb();
+        var requests = new PaymentRequestService(
+            db, new VoucherService(db, _clock, _user), new AutoApprove(), _user, _clock);
+
+        await requests.SaveDraftAsync(new PaymentRequestInput(
+            null, "Mine", null, 100, null, null, _clock.Today, null));
+
+        db.PaymentRequests.Add(new PaymentRequest
+        {
+            Reference = "PR-26-9002",
+            Title = "Somebody else's",
+            Kind = PaymentRequestKind.Itemized,
+            Amount = 250,
+            RequestedByUserId = "user-2",
+            RequestedByName = "Someone Else",
+            NeededBy = _clock.Today,
+            Status = PaymentRequestStatus.Draft
+        });
+        await db.SaveChangesAsync();
+
+        var mine = await requests.ListAllAsync(null, null, mineOnly: true);
+        Assert.Single(mine);
+        Assert.Equal("Mine", mine[0].Title);
+
+        // What an approver or the accounts team works from.
+        var everyones = await requests.ListAllAsync(null, null, mineOnly: false);
+        Assert.Equal(2, everyones.Count);
+    }
+
     // ---------- per-person accounts ----------
 
     [SkippableFact]
@@ -699,6 +765,12 @@ public sealed class AdvanceTests : IAsyncLifetime
 
         public Task<Result> CanDecideAsync(int requestId, CancellationToken ct = default) =>
             Task.FromResult(Result.Success());
+
+
+        public Task<IReadOnlyDictionary<int, ApprovalPosition>> PositionsAsync(
+            string documentType, IReadOnlyList<int> documentIds, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyDictionary<int, ApprovalPosition>>(
+                new Dictionary<int, ApprovalPosition>());
 
         public Task<ApprovalHistory?> HistoryAsync(
             string documentType, int documentId, CancellationToken ct = default) =>

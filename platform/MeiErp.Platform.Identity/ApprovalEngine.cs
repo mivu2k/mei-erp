@@ -473,6 +473,38 @@ public sealed class ApprovalEngine(
             approval, definition, step, currentUser.UserId ?? "", eligible);
     }
 
+    public async Task<IReadOnlyDictionary<int, ApprovalPosition>> PositionsAsync(
+        string documentType, IReadOnlyList<int> documentIds, CancellationToken ct = default)
+    {
+        if (documentIds.Count == 0) return new Dictionary<int, ApprovalPosition>();
+
+        // One query for the whole page rather than one per row.
+        var approvals = await db.ApprovalRequests
+            .AsNoTracking()
+            .Include(r => r.StepStates)
+            .Where(r => r.DocumentType == documentType && documentIds.Contains(r.DocumentId))
+            .ToListAsync(ct);
+
+        // A document resubmitted after a return has more than one request
+        // against it. The latest is the one it is actually sitting in.
+        return approvals
+            .GroupBy(r => r.DocumentId)
+            .ToDictionary(
+                g => g.Key,
+                g =>
+                {
+                    var latest = g.OrderByDescending(r => r.Id).First();
+                    var current = WorkflowRouter.CurrentStep(latest);
+
+                    return new ApprovalPosition(
+                        latest.Status,
+                        current?.Name,
+                        current?.Order ?? latest.StepStates.Count,
+                        latest.StepStates.Count,
+                        latest.DueUtc);
+                });
+    }
+
     public async Task<ApprovalHistory?> HistoryAsync(
         string documentType, int documentId, CancellationToken ct = default)
     {

@@ -9,6 +9,14 @@ public interface IPaymentRequestService
     Task<IReadOnlyList<PaymentRequest>> ListAsync(
         PaymentRequestStatus? status, bool mineOnly, bool directorOnly = false, CancellationToken ct = default);
 
+    /// <summary>
+    /// Every money request, both kinds together, for the one screen people
+    /// actually work from. <paramref name="kind"/> null means both.
+    /// </summary>
+    Task<IReadOnlyList<PaymentRequest>> ListAllAsync(
+        PaymentRequestKind? kind, PaymentRequestStatus? status, bool mineOnly,
+        bool directorOnly = false, CancellationToken ct = default);
+
     Task<PaymentRequest?> GetAsync(int id, CancellationToken ct = default);
     Task<Result<PaymentRequest>> SaveDraftAsync(PaymentRequestInput input, CancellationToken ct = default);
     Task<Result<PaymentRequest>> SubmitAsync(int id, CancellationToken ct = default);
@@ -98,6 +106,29 @@ public sealed class PaymentRequestService(
             .Where(r => r.Kind == PaymentRequestKind.Itemized)
             .AsQueryable();
 
+        if (status is not null) query = query.Where(r => r.Status == status);
+
+        if (mineOnly)
+        {
+            var me = currentUser.UserId ?? "";
+            query = query.Where(r => r.RequestedByUserId == me);
+        }
+
+        query = query.Where(r => r.IsDirectorRequest == directorOnly);
+
+        return await query.OrderByDescending(r => r.Id).Take(500).ToListAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<PaymentRequest>> ListAllAsync(
+        PaymentRequestKind? kind, PaymentRequestStatus? status, bool mineOnly,
+        bool directorOnly = false, CancellationToken ct = default)
+    {
+        var query = db.PaymentRequests.AsNoTracking()
+            .Include(r => r.ExpenseAccount)
+            .Include(r => r.Lines)
+            .AsQueryable();
+
+        if (kind is not null) query = query.Where(r => r.Kind == kind);
         if (status is not null) query = query.Where(r => r.Status == status);
 
         if (mineOnly)

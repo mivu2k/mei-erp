@@ -258,6 +258,12 @@ public sealed class PaymentRequestPayTests : IAsyncLifetime
         public Task<Result> CanDecideAsync(int requestId, CancellationToken ct = default) =>
             Task.FromResult(Result.Success());
 
+
+        public Task<IReadOnlyDictionary<int, ApprovalPosition>> PositionsAsync(
+            string documentType, IReadOnlyList<int> documentIds, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyDictionary<int, ApprovalPosition>>(
+                new Dictionary<int, ApprovalPosition>());
+
         public Task<ApprovalHistory?> HistoryAsync(
             string documentType, int documentId, CancellationToken ct = default) =>
             Task.FromResult<ApprovalHistory?>(null);

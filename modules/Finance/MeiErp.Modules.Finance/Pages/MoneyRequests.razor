@@ -1,0 +1,222 @@
+@page "/finance/money-requests"
+@attribute [Authorize(Policy = FinanceModule.RequestsRaise)]
+@rendermode InteractiveServer
+@inject IPaymentRequestService Requests
+@inject IApprovalEngine Approvals
+@inject IClock Clock
+@inject NavigationManager Nav
+
+<ListShell Title="Money requests"
+           Subtitle="Everything asked for, whichever way it was asked. Approval authorises the spend; the voucher is posted when it is actually paid."
+           Icon="@Icons.Material.Outlined.RequestPage"
+           Loading="_loading"
+           IsEmpty="@(_rows.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.RequestPage"
+           EmptyTitle="Nothing here yet"
+           EmptyHint="Raise a request to get spend approved before it is paid.">
+    <Actions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add"
+                   Href="/finance/money-requests/new">
+            New request
+        </MudButton>
+    </Actions>
+
+    <EmptyAction>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add"
+                   Href="/finance/money-requests/new">
+            New request
+        </MudButton>
+    </EmptyAction>
+
+    <Toolbar>
+        <div class="d-flex gap-4 align-center flex-wrap">
+            @* Whether you are looking at your own or at everyone's. The
+               administration view is what an approver or the accounts team
+               works from, so it is behind the permission that pays them. *@
+            <AuthorizeView Policy="@FinanceModule.RequestsPay">
+                <Authorized>
+                    <MudToggleGroup T="bool" Value="_mineOnly" ValueChanged="ScopeChangedAsync"
+                                    Color="Color.Primary" Size="Size.Small" CheckMark="true">
+                        <MudToggleItem T="bool" Value="true" Text="Mine" />
+                        <MudToggleItem T="bool" Value="false" Text="Everyone's" />
+                    </MudToggleGroup>
+                </Authorized>
+            </AuthorizeView>
+
+            <MudSelect T="PaymentRequestKind?" Value="_kind" ValueChanged="KindChangedAsync"
+                       Label="Type" Variant="Variant.Outlined" Margin="Margin.Dense"
+                       Clearable="true" Style="min-width:12rem">
+                <MudSelectItem T="PaymentRequestKind?" Value="@(PaymentRequestKind.Itemized)">Itemized</MudSelectItem>
+                <MudSelectItem T="PaymentRequestKind?" Value="@(PaymentRequestKind.Advance)">Advance</MudSelectItem>
+            </MudSelect>
+
+            <MudSelect T="PaymentRequestStatus?" Value="_status" ValueChanged="StatusChangedAsync"
+                       Label="Status" Variant="Variant.Outlined" Margin="Margin.Dense"
+                       Clearable="true" Style="min-width:12rem">
+                @foreach (var s in Enum.GetValues<PaymentRequestStatus>())
+                {
+                    <MudSelectItem T="PaymentRequestStatus?" Value="@s">@s</MudSelectItem>
+                }
+            </MudSelect>
+        </div>
+    </Toolbar>
+
+    <ChildContent>
+        <MudDataGrid T="PaymentRequest" Items="_rows" Dense="true" Hover="true" Elevation="0"
+                     Filterable="false" RowsPerPage="25" RowClick="@(e => Open(e.Item))">
+            <Columns>
+                <PropertyColumn Property="@(r => r.Reference)" Title="Reference" />
+
+                <TemplateColumn Title="Type">
+                    <CellTemplate>
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                 Color="@(context.Item.Kind is PaymentRequestKind.Advance ? Color.Warning : Color.Default)">
+                            @(context.Item.Kind is PaymentRequestKind.Advance ? "Advance" : "Itemized")
+                        </MudChip>
+                    </CellTemplate>
+                </TemplateColumn>
+
+                <TemplateColumn Title="For">
+                    <CellTemplate>
+                        <MudText Typo="Typo.body2"><b>@context.Item.Title</b></MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                            @context.Item.RequestedByName
+                            @if (context.Item.Lines.Count > 0)
+                            {
+                                <span> — @context.Item.Lines.Count item@(context.Item.Lines.Count == 1 ? "" : "s")</span>
+                            }
+                        </MudText>
+                    </CellTemplate>
+                </TemplateColumn>
+
+                <TemplateColumn Title="Amount">
+                    <CellTemplate>
+                        <MudText Typo="Typo.body2">@context.Item.Amount.ToString("N2")</MudText>
+                        @if (context.Item.Kind is PaymentRequestKind.Advance
+                             && context.Item.OutstandingDifference != 0)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Warning">
+                                @Math.Abs(context.Item.OutstandingDifference).ToString("N2")
+                                @(context.Item.OutstandingDifference > 0 ? "unspent" : "owed back")
+                            </MudText>
+                        }
+                    </CellTemplate>
+                </TemplateColumn>
+
+                <TemplateColumn Title="Status">
+                    <CellTemplate>
+                        <MudChip T="string" Size="Size.Small" Color="@Colour(context.Item.Status)">
+                            @context.Item.Status
+                        </MudChip>
+                    </CellTemplate>
+                </TemplateColumn>
+
+                @* Where it is sitting, so the raiser can see what is happening
+                   to it without asking, and an approver can see what is late. *@
+                <TemplateColumn Title="With">
+                    <CellTemplate>
+                        @if (_positions.TryGetValue(context.Item.Id, out var at)
+                             && at.CurrentStepName is not null)
+                        {
+                            <MudText Typo="Typo.body2">@at.CurrentStepName</MudText>
+                            <MudText Typo="Typo.caption"
+                                     Class="@(at.IsOverdue(Clock.UtcNow) ? "mud-error-text" : "mud-text-secondary")">
+                                step @at.StepNumber of @at.StepCount@(at.IsOverdue(Clock.UtcNow) ? " — overdue" : "")
+                            </MudText>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">—</MudText>
+                        }
+                    </CellTemplate>
+                </TemplateColumn>
+
+                <TemplateColumn Title="Needed by">
+                    <CellTemplate>@context.Item.NeededBy.ToString("d MMM yyyy")</CellTemplate>
+                </TemplateColumn>
+            </Columns>
+        </MudDataGrid>
+    </ChildContent>
+</ListShell>
+
+@code {
+    [SupplyParameterFromQuery(Name = "director")] public bool DirectorOnly { get; set; }
+
+    private IReadOnlyList<PaymentRequest> _rows = [];
+    private IReadOnlyDictionary<int, ApprovalPosition> _positions =
+        new Dictionary<int, ApprovalPosition>();
+
+    private PaymentRequestKind? _kind;
+    private PaymentRequestStatus? _status;
+    private bool _mineOnly = true;
+    private bool _loading = true;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task ScopeChangedAsync(bool mineOnly)
+    {
+        _mineOnly = mineOnly;
+        await LoadAsync();
+    }
+
+    private async Task KindChangedAsync(PaymentRequestKind? kind)
+    {
+        _kind = kind;
+        await LoadAsync();
+    }
+
+    private async Task StatusChangedAsync(PaymentRequestStatus? status)
+    {
+        _status = status;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+
+        _rows = await Requests.ListAllAsync(_kind, _status, _mineOnly, DirectorOnly);
+
+        // Advances and itemized claims route as different document types, so
+        // where-it-sits has to be asked for each - still two queries for the
+        // page rather than one per row.
+        var itemized = _rows.Where(r => r.Kind is PaymentRequestKind.Itemized)
+            .Select(r => r.Id).ToList();
+        var advances = _rows.Where(r => r.Kind is PaymentRequestKind.Advance)
+            .Select(r => r.Id).ToList();
+
+        var merged = new Dictionary<int, ApprovalPosition>();
+
+        foreach (var (type, ids) in new[]
+                 {
+                     (PaymentRequestService.DocumentType, itemized),
+                     (AdvanceService.DocumentType, advances)
+                 })
+        {
+            foreach (var (id, position) in await Approvals.PositionsAsync(type, ids))
+                merged[id] = position;
+        }
+
+        _positions = merged;
+        _loading = false;
+    }
+
+    private void Open(PaymentRequest request) =>
+        Nav.NavigateTo(request.Kind is PaymentRequestKind.Advance
+            ? $"/finance/advances/{request.Id}"
+            : $"/finance/requests/{request.Id}");
+
+    private static Color Colour(PaymentRequestStatus status) => status switch
+    {
+        PaymentRequestStatus.Draft => Color.Default,
+        PaymentRequestStatus.Pending => Color.Warning,
+        PaymentRequestStatus.Approved => Color.Info,
+        PaymentRequestStatus.Disbursed or PaymentRequestStatus.Justified => Color.Primary,
+        PaymentRequestStatus.Paid or PaymentRequestStatus.Settled => Color.Success,
+        PaymentRequestStatus.Rejected => Color.Error,
+        PaymentRequestStatus.Returned => Color.Warning,
+        _ => Color.Default
+    };
+}

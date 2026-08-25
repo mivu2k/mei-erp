@@ -117,6 +117,6 @@
     private async Task DismissedAsync()
     {
         if (Closed.HasDelegate) { await Closed.InvokeAsync(); return; }
-        Nav.NavigateTo("/finance/advances");
+        Nav.NavigateTo("/finance/money-requests");
     }
 }
