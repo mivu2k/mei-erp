@@ -1,4 +1,5 @@
 @inject IEmployeeService Employees
+@inject IAdminService Admin
 @inject IClock Clock
 @inject ISnackbar Snackbar
 @inject NavigationManager Nav
@@ -38,7 +39,17 @@
                          Hint="Joining date drives leave entitlement; status decides whether they appear on the active roll.">
                 <div class="app-form-grid">
                     <MudTextField @bind-Value="_model.Designation" Label="Designation" Variant="Variant.Outlined" />
-                    <MudTextField @bind-Value="_model.DepartmentName" Label="Department" Variant="Variant.Outlined" />
+                    @* Bound to the real department id, not free text: approval
+                       routing resolves the department head from it, and a typed
+                       name matches nothing. *@
+                    <MudSelect T="string" Value="_model.DepartmentId" ValueChanged="DepartmentChanged"
+                               Label="Department" Variant="Variant.Outlined" Clearable="true"
+                               HelperText="Drives who approves their leave.">
+                        @foreach (var d in _departments)
+                        {
+                            <MudSelectItem T="string" Value="@d.Id">@d.Name</MudSelectItem>
+                        }
+                    </MudSelect>
                     <MudSelect T="EmploymentType" @bind-Value="_model.EmploymentType" Label="Employment type"
                                Variant="Variant.Outlined">
                         @foreach (var type in Enum.GetValues<EmploymentType>())
@@ -171,9 +182,23 @@
     private LoginCandidate? _selectedCandidate;
     private string? _linkError;
     private bool _linkBusy;
+    private IReadOnlyList<Department> _departments = [];
+
+    /// <summary>
+    /// The name is stored alongside the id so lists and reports can print a
+    /// department without joining across to Identity on every row. Setting one
+    /// without the other is what left them disagreeing.
+    /// </summary>
+    private void DepartmentChanged(string? departmentId)
+    {
+        _model.DepartmentId = departmentId;
+        _model.DepartmentName = _departments.FirstOrDefault(d => d.Id == departmentId)?.Name;
+    }
 
     protected override async Task OnInitializedAsync()
     {
+        _departments = await Admin.DepartmentsAsync();
+
         if (EmployeeId is not null)
         {
             _model = await Employees.GetAsync(EmployeeId.Value) ?? new Employee();

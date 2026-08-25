@@ -1,7 +1,11 @@
 using MeiErp.Modules.Hr;
+using MeiErp.Platform.Identity;
 using MeiErp.Platform.Kernel;
 using MeiErp.Platform.Workflow;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Xunit;
 
@@ -43,8 +47,17 @@ public sealed class LeaveTests : IAsyncLifetime
                 await admin.Database.ExecuteSqlRawAsync($"CREATE DATABASE \"{_database}\";");
             }
 
+            // Platform first: submitting falls back to the linked login's
+            // department when the employee has none, so those tables have to be
+            // there. EnsureCreated is a no-op once any table exists, so HR is
+            // then told to create its own outright.
+            await using (var platformDb = NewPlatformDb())
+            {
+                await platformDb.Database.EnsureCreatedAsync();
+            }
+
             await using var db = NewDb();
-            await db.Database.EnsureCreatedAsync();
+            await db.GetService<IRelationalDatabaseCreator>().CreateTablesAsync();
             await db.EnsureAuditTableForTestsAsync();
 
             var type = new LeaveType
@@ -91,8 +104,15 @@ public sealed class LeaveTests : IAsyncLifetime
     private HrDbContext NewDb() =>
         new(new DbContextOptionsBuilder<HrDbContext>().UseNpgsql(Connection).Options, _user, _clock);
 
+    /// <summary>
+    /// Only consulted when an employee has no department of their own but does
+    /// have a linked login, which none of these fixtures set up.
+    /// </summary>
+    private PlatformDbContext NewPlatformDb() =>
+        new(new DbContextOptionsBuilder<PlatformDbContext>().UseNpgsql(Connection).Options);
+
     private LeaveService NewService(HrDbContext db, FakeApprovals approvals) =>
-        new(db, approvals, _user, _clock);
+        new(db, NewPlatformDb(), approvals, _user, _clock);
 
     // ---------- working days ----------
 

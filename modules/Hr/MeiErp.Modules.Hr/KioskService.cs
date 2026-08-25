@@ -85,7 +85,13 @@ public sealed class KioskService(
                 return (null, PunchMethod.QrCode, null);
             return (employee, PunchMethod.QrCode, $"qr step {token.Step}");
         }
-        var byCard = await db.Employees.FirstOrDefaultAsync(e => e.CardNumber == scanned, ct);
+        // Readers differ on case and on padding: the same fob reads as "04A1B2",
+        // "04a1b2" or " 04A1B2 " depending on the make. Matching those exactly is
+        // indistinguishable, to the person holding the card, from not being
+        // registered at all.
+        var byCard = await db.Employees.FirstOrDefaultAsync(
+            e => e.CardNumber != null && EF.Functions.ILike(e.CardNumber.Trim(), scanned), ct);
+
         return (byCard, PunchMethod.Card, byCard is null ? null : $"card {scanned}");
     }
 

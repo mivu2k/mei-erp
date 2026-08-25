@@ -34,10 +34,13 @@
  [Parameter] public string Token{get;set;}=""; private AttendanceStation? _station;private KioskResult? _result;private string _scan="";private DateTimeOffset _now;private ElementReference _input,_video,_canvas;private PeriodicTimer? _timer;private CancellationTokenSource? _cts;private IJSObjectReference? _camera;private DotNetObjectReference<Kiosk>? _self;private string? _cameraMessage;
  private string StateClass=>_result is null?"":_result.Accepted?"ok":"bad";
  protected override async Task OnInitializedAsync(){_station=await KioskService.ResolveStationAsync(Token);_now=Clock.Now;_cts=new();_timer=new(TimeSpan.FromSeconds(1));_=TickAsync();}
- protected override async Task OnAfterRenderAsync(bool first){if(!first)return;await FocusAsync();if(_station is null)return;_camera=await JS.InvokeAsync<IJSObjectReference>("import","/kiosk-camera.js");_self=DotNetObjectReference.Create(this);var status=await _camera.InvokeAsync<string>("start",_video,_canvas,Token,_self);_cameraMessage=status=="ok"?"Camera QR scanner ready":status switch{"insecure"=>"Camera needs HTTPS or localhost","denied"=>"Camera permission denied","nocamera"=>"No camera found","inuse"=>"Camera is already in use",_=>"Camera unavailable"};StateHasChanged();}
+ protected override async Task OnAfterRenderAsync(bool first){if(!first)return;if(_station is null)return;await FocusAsync();_camera=await JS.InvokeAsync<IJSObjectReference>("import","/kiosk-camera.js");_self=DotNetObjectReference.Create(this);var status=await _camera.InvokeAsync<string>("start",_video,_canvas,Token,_self);_cameraMessage=status=="ok"?"Camera QR scanner ready":status switch{"insecure"=>"Camera needs HTTPS or localhost","denied"=>"Camera permission denied","nocamera"=>"No camera found","inuse"=>"Camera is already in use",_=>"Camera unavailable"};StateHasChanged();}
  private async Task KeyDown(KeyboardEventArgs e){if(e.Key!="Enter")return;var scanned=_scan;_scan="";_result=await KioskService.ScanAsync(Token,scanned);await FocusAsync();}
  [JSInvokable] public async Task OnCameraScan(string scanned){_result=await KioskService.ScanAsync(Token,scanned);await InvokeAsync(StateHasChanged);}
- private async Task FocusAsync()=>await _input.FocusAsync();
+ @* The input only exists once a station resolved; focusing a default
+    ElementReference throws and takes the circuit down with it, which is how
+    a bad token turned into a dead screen rather than "Station unavailable". *@
+ private async Task FocusAsync(){if(_station is null)return;await _input.FocusAsync();}
  private async Task TickAsync(){try{while(_timer is not null&&await _timer.WaitForNextTickAsync(_cts!.Token)){_now=Clock.Now;await InvokeAsync(StateHasChanged);}}catch(OperationCanceledException){}}
  public void Dispose(){_cts?.Cancel();_timer?.Dispose();_cts?.Dispose();_self?.Dispose();if(_camera is not null)_= _camera.InvokeVoidAsync("stop",_video);}
 }

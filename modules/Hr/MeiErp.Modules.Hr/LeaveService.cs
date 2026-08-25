@@ -1,3 +1,4 @@
+using MeiErp.Platform.Identity;
 using MeiErp.Platform.Kernel;
 using MeiErp.Platform.Workflow;
 using Microsoft.EntityFrameworkCore;
@@ -31,6 +32,7 @@ public sealed record LeaveRequestInput(
 
 public sealed class LeaveService(
     HrDbContext db,
+    PlatformDbContext platformDb,
     IApprovalEngine approvals,
     ICurrentUser currentUser,
     IClock clock) : ILeaveService
@@ -211,8 +213,23 @@ public sealed class LeaveService(
 
         var employee = await db.Employees
             .Where(e => e.Id == request.EmployeeId)
-            .Select(e => new { e.DepartmentId, e.FullName })
-            .FirstAsync(ct);
+            .Select(e => new { e.DepartmentId, e.FullName, e.UserId })
+            .FirstOrDefaultAsync(ct);
+
+        if (employee is null)
+            return Result.Fail<LeaveRequest>("That employee no longer exists.", "leave.no-employee");
+
+        // Employees created before the department picker have no department of
+        // their own. Their login usually does, and routing to the head of a
+        // department they are recorded as being in beats refusing outright.
+        var departmentId = employee.DepartmentId;
+        if (departmentId is null && employee.UserId is not null)
+        {
+            departmentId = await platformDb.Users
+                .Where(u => u.Id == employee.UserId)
+                .Select(u => u.DepartmentId)
+                .FirstOrDefaultAsync(ct);
+        }
 
         var submitted = await approvals.SubmitAsync(new SubmitApproval(
             ModuleKey: HrModule.Key,
@@ -223,7 +240,7 @@ public sealed class LeaveService(
                      $"{request.FromDate:d MMM} to {request.ToDate:d MMM yyyy}",
             DocumentUrl: $"/hr/leave/{request.Id}",
             Amount: null,               // leave routes on no amount
-            DepartmentId: employee.DepartmentId), ct);
+            DepartmentId: departmentId), ct);
 
         if (submitted.Failed)
             return Result.Fail<LeaveRequest>(submitted.Error!, submitted.Code);
