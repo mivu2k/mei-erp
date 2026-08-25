@@ -100,9 +100,42 @@
 
             <FormSection Title="Account and notes" Icon="@Icons.Material.Outlined.NoteAlt">
                 <div class="app-form-grid">
-                    <MudTextField @bind-Value="_model.UserId" Label="Linked login (user id)"
-                                  Variant="Variant.Outlined" Class="app-form-wide"
-                                  HelperText="Leave blank if they do not sign in. Links their leave to their account." />
+                    <div class="app-form-wide">
+                        @if (EmployeeId is null)
+                        {
+                            <MudAlert Severity="Severity.Info" Dense="true">
+                                Save this employee first, then come back to link their login.
+                            </MudAlert>
+                        }
+                        else if (_linkedLogin is not null)
+                        {
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                <MudIcon Icon="@Icons.Material.Outlined.Link" Color="Color.Success" />
+                                <MudText>
+                                    Linked to <b>@_linkedLogin.FullName</b>
+                                    @if (!string.IsNullOrWhiteSpace(_linkedLogin.Email)) { <span>(@_linkedLogin.Email)</span> }
+                                </MudText>
+                                <MudButton Variant="Variant.Text" Color="Color.Error" Size="Size.Small"
+                                           Disabled="_linkBusy" OnClick="UnlinkLoginAsync">Unlink</MudButton>
+                            </MudStack>
+                        }
+                        else
+                        {
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                <MudAutocomplete T="LoginCandidate" Label="Link a login"
+                                                 Value="_selectedCandidate" ValueChanged="SelectCandidateAsync"
+                                                 SearchFunc="SearchCandidatesAsync"
+                                                 ToStringFunc="@(c => c is null ? "" : $"{c.FullName}{(string.IsNullOrWhiteSpace(c.Email) ? "" : $" ({c.Email})")}")"
+                                                 Variant="Variant.Outlined" Class="app-form-wide"
+                                                 HelperText="Leave unlinked if they do not sign in. Links their leave to their account."
+                                                 ResetValueOnEmptyText="true" CoerceText="true" />
+                            </MudStack>
+                        }
+                        @if (_linkError is not null)
+                        {
+                            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@_linkError</MudAlert>
+                        }
+                    </div>
                     <MudTextField @bind-Value="_model.Notes" Label="Notes" Lines="3"
                                   Variant="Variant.Outlined" Class="app-form-wide" />
                 </div>
@@ -134,10 +167,18 @@
     private string? _error;
     private bool _busy;
 
+    private LinkedLogin? _linkedLogin;
+    private LoginCandidate? _selectedCandidate;
+    private string? _linkError;
+    private bool _linkBusy;
+
     protected override async Task OnInitializedAsync()
     {
         if (EmployeeId is not null)
+        {
             _model = await Employees.GetAsync(EmployeeId.Value) ?? new Employee();
+            _linkedLogin = await Employees.LinkedLoginAsync(EmployeeId.Value);
+        }
         else
             _model = new Employee { JoinedOn = Clock.Today, Status = EmploymentStatus.Active };
 
@@ -146,6 +187,45 @@
             : _model.JoinedOn.ToDateTime(TimeOnly.MinValue);
         _dateOfBirth = _model.DateOfBirth?.ToDateTime(TimeOnly.MinValue);
         _confirmedOn = _model.ConfirmedOn?.ToDateTime(TimeOnly.MinValue);
+    }
+
+    private async Task<IEnumerable<LoginCandidate>> SearchCandidatesAsync(string? search, CancellationToken ct) =>
+        EmployeeId is null ? [] : await Employees.SearchLoginCandidatesAsync(search, EmployeeId.Value, ct);
+
+    private async Task SelectCandidateAsync(LoginCandidate? candidate)
+    {
+        _selectedCandidate = candidate;
+        if (candidate is null || EmployeeId is null) return;
+
+        _linkError = null;
+        _linkBusy = true;
+        try
+        {
+            var result = await Employees.LinkLoginAsync(EmployeeId.Value, candidate.UserId);
+            if (result.Failed) { _linkError = result.Error; _selectedCandidate = null; return; }
+
+            _linkedLogin = new LinkedLogin(candidate.UserId, candidate.FullName, candidate.Email);
+            _selectedCandidate = null;
+            Snackbar.Add("Login linked.", Severity.Success);
+        }
+        finally { _linkBusy = false; }
+    }
+
+    private async Task UnlinkLoginAsync()
+    {
+        if (EmployeeId is null) return;
+
+        _linkError = null;
+        _linkBusy = true;
+        try
+        {
+            var result = await Employees.UnlinkLoginAsync(EmployeeId.Value);
+            if (result.Failed) { _linkError = result.Error; return; }
+
+            _linkedLogin = null;
+            Snackbar.Add("Login unlinked.", Severity.Success);
+        }
+        finally { _linkBusy = false; }
     }
 
     private async Task SaveAsync()

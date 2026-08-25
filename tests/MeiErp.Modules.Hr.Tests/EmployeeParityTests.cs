@@ -1,4 +1,5 @@
 using MeiErp.Modules.Hr;
+using MeiErp.Platform.Identity;
 using MeiErp.Platform.Kernel;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -19,6 +20,9 @@ public sealed class EmployeeParityTests : IAsyncLifetime
     private HrDbContext NewDb() => new(
         new DbContextOptionsBuilder<HrDbContext>().UseNpgsql(Connection).Options,
         new TestUser(), _clock);
+
+    private PlatformDbContext NewPlatformDb() => new(
+        new DbContextOptionsBuilder<PlatformDbContext>().UseNpgsql(Connection).Options);
 
     public async Task InitializeAsync()
     {
@@ -48,7 +52,8 @@ public sealed class EmployeeParityTests : IAsyncLifetime
     {
         Skip.IfNot(_available, "No PostgreSQL available.");
         await using var db = NewDb();
-        var saved = await new EmployeeService(db, _clock).SaveAsync(new Employee
+        await using var platformDb = NewPlatformDb();
+        var saved = await new EmployeeService(db, platformDb, _clock).SaveAsync(new Employee
         {
             Code = "EMP-DETAIL",
             FullName = "Ayesha Khan",
@@ -73,7 +78,7 @@ public sealed class EmployeeParityTests : IAsyncLifetime
         });
 
         db.ChangeTracker.Clear();
-        var found = await new EmployeeService(db, _clock).GetAsync(saved.Value.Id);
+        var found = await new EmployeeService(db, platformDb, _clock).GetAsync(saved.Value.Id);
 
         Assert.Equal("Nadeem Khan", found!.FatherName);
         Assert.Equal(new DateOnly(1992, 4, 12), found.DateOfBirth);

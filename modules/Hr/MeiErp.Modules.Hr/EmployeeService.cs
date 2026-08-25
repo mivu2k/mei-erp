@@ -1,7 +1,15 @@
+using MeiErp.Platform.Identity;
 using MeiErp.Platform.Kernel;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace MeiErp.Modules.Hr;
+
+/// <summary>A user account eligible to be linked to an employee as their login.</summary>
+public sealed record LoginCandidate(string UserId, string FullName, string? Email);
+
+/// <summary>The login currently linked to an employee, if any.</summary>
+public sealed record LinkedLogin(string UserId, string FullName, string? Email);
 
 public interface IEmployeeService
 {
@@ -12,9 +20,26 @@ public interface IEmployeeService
 
     Task<IReadOnlyList<LeaveType>> LeaveTypesAsync(CancellationToken ct = default);
     Task<Result> SaveLeaveTypeAsync(LeaveType type, CancellationToken ct = default);
+
+    /// <summary>The employee's currently linked login, if any.</summary>
+    Task<LinkedLogin?> LinkedLoginAsync(int employeeId, CancellationToken ct = default);
+
+    /// <summary>Active users who do not already have an employee linked to them.</summary>
+    Task<IReadOnlyList<LoginCandidate>> SearchLoginCandidatesAsync(
+        string? search, int employeeId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Links an employee to a login atomically: sets <see cref="Employee.UserId"/>
+    /// and the user's <c>EmployeeCode</c> together, so the two records cannot
+    /// drift out of sync the way setting them from two separate admin screens can.
+    /// </summary>
+    Task<Result> LinkLoginAsync(int employeeId, string userId, CancellationToken ct = default);
+
+    /// <summary>Undoes <see cref="LinkLoginAsync"/>, clearing both sides together.</summary>
+    Task<Result> UnlinkLoginAsync(int employeeId, CancellationToken ct = default);
 }
 
-public sealed class EmployeeService(HrDbContext db, IClock clock) : IEmployeeService
+public sealed class EmployeeService(HrDbContext db, PlatformDbContext platformDb, IClock clock) : IEmployeeService
 {
     public async Task<IReadOnlyList<Employee>> ListAsync(
         string? search, bool includeLeavers, CancellationToken ct = default)
@@ -149,6 +174,121 @@ public sealed class EmployeeService(HrDbContext db, IClock clock) : IEmployeeSer
         }
 
         await db.SaveChangesAsync(ct);
+        return Result.Success();
+    }
+
+    public async Task<LinkedLogin?> LinkedLoginAsync(int employeeId, CancellationToken ct = default)
+    {
+        var userId = await db.Employees
+            .Where(e => e.Id == employeeId)
+            .Select(e => e.UserId)
+            .FirstOrDefaultAsync(ct);
+
+        if (userId is null) return null;
+
+        return await platformDb.Users.AsNoTracking()
+            .Where(u => u.Id == userId)
+            .Select(u => new LinkedLogin(u.Id, u.FullName, u.Email))
+            .FirstOrDefaultAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<LoginCandidate>> SearchLoginCandidatesAsync(
+        string? search, int employeeId, CancellationToken ct = default)
+    {
+        var linkedElsewhere = await db.Employees
+            .Where(e => e.UserId != null && e.Id != employeeId)
+            .Select(e => e.UserId!)
+            .ToListAsync(ct);
+
+        var query = platformDb.Users.AsNoTracking()
+            .Where(u => u.IsActive && !linkedElsewhere.Contains(u.Id));
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var pattern = $"%{search.Trim()}%";
+            query = query.Where(u =>
+                EF.Functions.ILike(u.FullName, pattern) ||
+                (u.Email != null && EF.Functions.ILike(u.Email, pattern)));
+        }
+
+        return await query
+            .OrderBy(u => u.FullName)
+            .Take(20)
+            .Select(u => new LoginCandidate(u.Id, u.FullName, u.Email))
+            .ToListAsync(ct);
+    }
+
+    public async Task<Result> LinkLoginAsync(int employeeId, string userId, CancellationToken ct = default)
+    {
+        var employee = await db.Employees.FirstOrDefaultAsync(e => e.Id == employeeId, ct);
+        if (employee is null) return Result.Fail("That employee no longer exists.", "employee.not-found");
+
+        var loginTaken = await db.Employees
+            .AnyAsync(e => e.UserId == userId && e.Id != employeeId, ct);
+
+        if (loginTaken)
+        {
+            return Result.Fail(
+                "That login is already linked to another employee, which would make " +
+                "\"my leave\" ambiguous for them.",
+                "employee.duplicate-login");
+        }
+
+        var userExists = await platformDb.Users.AnyAsync(u => u.Id == userId, ct);
+        if (!userExists) return Result.Fail("That user no longer exists.", "employee.login-not-found");
+
+        await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        {
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+            employee.UserId = userId;
+            await db.SaveChangesAsync(ct);
+
+            // The user row is written on HR's own connection so it lands in the
+            // same transaction. Two contexts mean two connections, which cannot
+            // share one - and half a link is exactly what this feature exists to
+            // prevent. Same database, so the platform schema is reachable here,
+            // as it already is for the shared audit table.
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"""UPDATE platform."AspNetUsers" SET "EmployeeCode" = {employee.Code} WHERE "Id" = {userId}""",
+                ct);
+
+            await tx.CommitAsync(ct);
+        });
+
+        return Result.Success();
+    }
+
+    public async Task<Result> UnlinkLoginAsync(int employeeId, CancellationToken ct = default)
+    {
+        var employee = await db.Employees.FirstOrDefaultAsync(e => e.Id == employeeId, ct);
+        if (employee is null) return Result.Fail("That employee no longer exists.", "employee.not-found");
+
+        if (employee.UserId is null) return Result.Success();
+
+        var userId = employee.UserId;
+        var code = employee.Code;
+
+        await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        {
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+            employee.UserId = null;
+            await db.SaveChangesAsync(ct);
+
+            // Only cleared if it still matches this employee - an administrator
+            // may have since pointed the account at a different staff number
+            // from the user screen, and that is not ours to discard.
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"""
+                 UPDATE platform."AspNetUsers" SET "EmployeeCode" = NULL
+                 WHERE "Id" = {userId} AND "EmployeeCode" = {code}
+                 """,
+                ct);
+
+            await tx.CommitAsync(ct);
+        });
+
         return Result.Success();
     }
 }
