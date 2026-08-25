@@ -263,6 +263,13 @@ read-only apart from `ReadWritePaths=/opt/mei-erp/current/logs`, plus
 `NoNewPrivileges` and `PrivateTmp`. Anything else the app needs to write must
 be added to `ReadWritePaths` explicitly.
 
+`current` is a symlink that repoints to a fresh, empty release directory on
+every deploy, so `deploy.sh` symlinks each new release's `logs/` to one
+persistent `/opt/mei-erp/shared/logs` directory — the path the unit's
+`ReadWritePaths` actually needs to exist. Without that symlink, systemd
+refuses to even start the process (`status=226/NAMESPACE`, "Failed to set up
+mount namespacing") because `.../current/logs` doesn't exist yet.
+
 Deploy:
 
 ```bash
@@ -454,6 +461,7 @@ takes no view on this, so it is on you to know which kind of change you shipped.
 | `NETSDK1064: Package ... was not found` or `Permission denied` on a file under `obj/` | A previous `dotnet` command was run as `root` (or another user), leaving `obj`/`bin` owned by that user. Clean and restore as `meierp` — see the recovery snippet in step 5 |
 | Installed SDK doesn't satisfy `global.json` (`SDK ... not found`) | The pinned SDK isn't installed on this machine. Install the matching `dotnet-sdk-10.0` package (step 3) — `global.json`'s `rollForward: latestFeature` accepts any `10.0.3xx` |
 | Build succeeds, then `Failed to restart mei-erp.service: Access denied` | `meierp` isn't allowed to restart the unit. Add the sudoers rule in step 7 |
+| `status=226/NAMESPACE`, "Failed to set up mount namespacing: .../logs: No such file or directory" | The release's `logs/` symlink is missing (e.g. deploy.sh predates this fix, or `/opt/mei-erp/shared/logs` was deleted). Run `mkdir -p /opt/mei-erp/shared/logs && chown meierp:meierp /opt/mei-erp/shared/logs`, then redeploy so `deploy.sh` re-links `current/logs` to it |
 
 ---
 

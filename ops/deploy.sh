@@ -3,6 +3,7 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; deploy_root="${MEIERP_DEPLOY_ROOT:-/opt/mei-erp}"
 service="${MEIERP_SERVICE:-mei-erp.service}"; release="$deploy_root/releases/$(date -u +%Y%m%dT%H%M%S%N)"
 mkdir -p "$release"; dotnet publish "$root/host/MeiErp.Host/MeiErp.Host.csproj" -c Release --no-restore --nologo -o "$release"
+mkdir -p "$deploy_root/shared/logs"; ln -sfn "$deploy_root/shared/logs" "$release/logs"
 previous="$(readlink -f "$deploy_root/current" 2>/dev/null || true)"
 ln -sfn "$release" "$deploy_root/current.new"; mv -Tf "$deploy_root/current.new" "$deploy_root/current"
 printf '%s\n' "$previous" > "$deploy_root/previous"
