@@ -54,6 +54,12 @@ public static class FileRegistryRules
     {
         if (a == FileMovementAction.Issued && f.Status == PhysicalFileStatus.Issued) return Result.Fail($"Already out with {f.HolderName}.", "file.already-out");
         if (a == FileMovementAction.Issued && f.Status == PhysicalFileStatus.Lost) return Result.Fail("Mark the file found before issuing it.", "file.lost");
+        // Without this an archived file could be issued straight back out,
+        // quietly reopening something that was closed without ever passing
+        // through Reopened - so the register shows it live and the closing
+        // date still stands.
+        if (a == FileMovementAction.Issued && f.Status == PhysicalFileStatus.Archived) return Result.Fail("Reopen the file before issuing it.", "file.archived");
+        if (a == FileMovementAction.MarkedLost && f.Status == PhysicalFileStatus.Lost) return Result.Fail("This file is already marked lost.", "file.already-lost");
         if (a is FileMovementAction.Issued or FileMovementAction.Transferred && string.IsNullOrWhiteSpace(i.HolderName)) return Result.Fail("Say who is taking the file.", "file.no-holder");
         if (a == FileMovementAction.Transferred && f.Status != PhysicalFileStatus.Issued) return Result.Fail("Only a file that is out can be handed on.", "file.not-out");
         if (a == FileMovementAction.Returned && f.Status != PhysicalFileStatus.Issued) return Result.Fail("The file is not currently out.", "file.not-out");

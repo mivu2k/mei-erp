@@ -1,0 +1,12 @@
+@page "/finance/money-requests/new"
+@attribute [Authorize(Policy = FinanceModule.RequestsRaise)]
+@rendermode InteractiveServer
+
+@* The full-page host for the editor. Same component the list opens in a
+   dialog, so a deep link and a click from the list show the same screen. *@
+
+<MoneyRequestEditor AsDialog="false" DirectorMode="Director" />
+
+@code {
+    [SupplyParameterFromQuery(Name = "director")] public bool Director { get; set; }
+}

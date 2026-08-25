@@ -5,13 +5,13 @@
 @inject IDialogService Dialogs
 @inject NavigationManager Nav
 
-<ListShell Title="Salary advances"
+<ListShell Title="Advances"
            Subtitle="Money lent against salary and taken back in monthly instalments."
            Icon="@Icons.Material.Outlined.CreditScore"
            Loading="_loading"
            IsEmpty="@(_rows.Count == 0)"
            EmptyIcon="@Icons.Material.Outlined.CreditScore"
-           EmptyTitle="No salary advances yet"
+           EmptyTitle="No advances yet"
            EmptyHint="Request one here; it is recovered automatically from the next payroll runs.">
     <Actions>
         <MudButton Variant="Variant.Filled" Color="Color.Primary"

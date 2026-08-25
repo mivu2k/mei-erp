@@ -1,4 +1,5 @@
 @inject IEmployeeAdvanceService Advances
+@inject ICurrentUser User
 @inject IClock Clock
 @inject ISnackbar Snackbar
 
@@ -8,6 +9,31 @@
     </TitleContent>
 
     <DialogContent>
+        @* What they already owe, before another is added to it. An approver
+           should not be the first person to work this out. *@
+        @if (_standing is not null)
+        {
+            <MudAlert Severity="@(Stretched ? Severity.Warning : Severity.Info)"
+                      Variant="Variant.Outlined" Dense="true" Class="mb-4">
+                @if (_standing.OpenAdvances == 0)
+                {
+                    <text>Nothing outstanding@(_standing.MonthlyPay is null ? "" : $" against pay of {_standing.MonthlyPay:N2}").</text>
+                }
+                else
+                {
+                    <text>
+                        @_standing.Outstanding.ToString("N2") still owed on
+                        @_standing.OpenAdvances advance@(_standing.OpenAdvances == 1 ? "" : "s"),
+                        @_standing.CommittedMonthly.ToString("N2") a month already
+                        @if (_standing.CommittedShare is { } share)
+                        {
+                            <text>— @share.ToString("P0") of pay</text>
+                        }
+                    </text>
+                }
+            </MudAlert>
+        }
+
         <MudForm @ref="_form">
             <MudNumericField T="decimal" @bind-Value="_amount" Label="Amount" Required="true"
                              RequiredError="How much do you need?"
@@ -27,6 +53,12 @@
                the only number most people actually decide on. *@
             <MudText Typo="Typo.body2" Class="mt-4">
                 Monthly deduction: <b>@Monthly.ToString("N2")</b>
+                @if (TotalMonthly is { } total && _standing?.MonthlyPay is { } pay && pay > 0)
+                {
+                    <span class="mud-text-secondary">
+                        — @((total / pay).ToString("P0")) of pay once this is added
+                    </span>
+                }
             </MudText>
 
             @if (_error is not null)
@@ -54,7 +86,22 @@
     private string? _error;
     private bool _busy;
 
+    private AdvanceStanding? _standing;
+
     private decimal Monthly => RepaymentSchedule.Monthly(_amount, _months);
+
+    /// <summary>Everything coming off their pay each month if this is granted.</summary>
+    private decimal? TotalMonthly =>
+        _standing is null ? null : _standing.CommittedMonthly + Monthly;
+
+    /// <summary>More than half their pay already committed to repayments.</summary>
+    private bool Stretched =>
+        _standing?.CommittedShare is { } share && share > 0.5m;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (User.UserId is { } me) _standing = await Advances.StandingAsync(me);
+    }
 
     private async Task SubmitAsync()
     {

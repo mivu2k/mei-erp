@@ -39,6 +39,25 @@
                 </div>
             </FormSection>
 
+            @if (_model.Type is AccountType.Expense)
+            {
+                @* Untagged heads are offered to nobody, which keeps the
+                   requester's category list to the handful that apply rather
+                   than the whole chart. *@
+                <FormSection Title="Offered as a spending category to"
+                             Icon="@Icons.Material.Outlined.Category"
+                             Hint="Who sees this head when raising a request. Leave both off to keep it out of the picker.">
+                    <div class="app-form-grid">
+                        <MudSwitch T="bool" Value="@Offers(ExpenseAudience.Staff)"
+                                   ValueChanged="@(v => Offer(ExpenseAudience.Staff, v))"
+                                   Color="Color.Primary" Label="Staff" />
+                        <MudSwitch T="bool" Value="@Offers(ExpenseAudience.Director)"
+                                   ValueChanged="@(v => Offer(ExpenseAudience.Director, v))"
+                                   Color="Color.Primary" Label="Directors" />
+                    </div>
+                </FormSection>
+            }
+
             <FormSection Title="In use" Icon="@Icons.Material.Outlined.ToggleOn"
                          Hint="An account with entries can never be deleted, only deactivated.">
                 <div class="app-form-grid">
@@ -56,6 +75,11 @@
 </DocumentShell>
 
 @code {
+    private bool Offers(ExpenseAudience audience) => (_model.Audience & audience) != 0;
+
+    private void Offer(ExpenseAudience audience, bool on) =>
+        _model.Audience = on ? _model.Audience | audience : _model.Audience & ~audience;
+
     [Parameter] public bool AsDialog { get; set; }
     [Parameter] public int? AccountId { get; set; }
     [Parameter] public EventCallback Saved { get; set; }

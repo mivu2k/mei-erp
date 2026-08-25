@@ -103,7 +103,7 @@ public static class FinanceModule
 
             new("Money requests",    "/finance/money-requests", "RequestQuote", RequestsRaise, "Spending"),
             new("Director funds",    "/finance/money-requests?director=true", "AccountBalanceWallet", DirectorFundsView, "Spending"),
-            new("Salary advances",   "/finance/salary-advances", "CreditScore", AdvancesRaise, "Spending"),
+            new("Advances",          "/finance/salary-advances", "CreditScore", AdvancesRaise, "Spending"),
             new("Petty cash",        "/finance/petty-cash", "Savings", PettyCashManage, "Spending"),
             new("Utilities",         "/finance/utilities", "Bolt", UtilitiesManage, "Spending"),
 
@@ -184,6 +184,20 @@ public sealed class FinanceSeeder(FinanceDbContext db, IClock clock)
         await SeedFiscalYearAsync(ct);
     }
 
+    /// <summary>
+    /// Which seeded heads appear in the requester's category picker.
+    ///
+    /// The chart already separates director spend into its own sub-tree, so the
+    /// split falls out of the codes rather than needing a second list to keep
+    /// in step.
+    /// </summary>
+    private static ExpenseAudience DefaultAudience(string code) => code switch
+    {
+        "5220" or "5230" or "5530" or "5540" or "5600" or "5900" => ExpenseAudience.Staff,
+        "5410" or "5420" => ExpenseAudience.Director,
+        _ => ExpenseAudience.None
+    };
+
     private async Task SeedChartAsync(CancellationToken ct)
     {
         var existing = await db.Accounts.Select(a => a.Code).ToListAsync(ct);
@@ -261,7 +275,12 @@ public sealed class FinanceSeeder(FinanceDbContext db, IClock clock)
                     // Seeded heads are depended on by code and by reports, so
                     // they cannot be deleted out from under either.
                     IsSystem = true,
-                    IsActive = true
+                    IsActive = true,
+
+                    // What a requester is offered as a category. Only the heads
+                    // somebody would actually claim against - salaries and cost
+                    // of sales are not spending categories.
+                    Audience = DefaultAudience(row.Code)
                 };
                 db.Accounts.Add(account);
                 await db.SaveChangesAsync(ct);

@@ -1,6 +1,6 @@
-@page "/finance/money-requests/new"
-@attribute [Authorize(Policy = FinanceModule.RequestsRaise)]
-@rendermode InteractiveServer
+@* Routeless: hosted by MoneyRequestEditorPage as a full page, or shown in a
+   dialog straight from the list. The same markup either way, so the two
+   cannot drift apart. *@
 @inject IPaymentRequestService Requests
 @inject IAdvanceService Advances
 @inject IAccountService Chart
@@ -9,8 +9,11 @@
 @inject ISnackbar Snackbar
 @inject NavigationManager Nav
 
-<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
-    <MudText Typo="Typo.h5">New Money Request</MudText>
+<MudContainer MaxWidth="@(AsDialog ? MaxWidth.False : MaxWidth.Large)" Class="@(AsDialog ? "" : "mt-4")">
+    @if (!AsDialog)
+    {
+        <MudText Typo="Typo.h5">New Money Request</MudText>
+    }
     <MudText Typo="Typo.body2" Color="Color.Primary" Class="mb-4">
         Describe what you need money for. After approval, the accounts team classifies
         and pays it — you don't need to know any account codes.
@@ -84,9 +87,19 @@
                 {
                     <MudPaper Class="pa-3 mb-2" Outlined="true">
                         <div class="d-flex gap-3 align-center flex-wrap">
-                            <MudTextField @bind-Value="line.Category" Label="Category" Required="true"
-                                          RequiredError="What kind of cost is this?"
-                                          Variant="Variant.Text" Style="min-width:12rem" />
+                            @* A head from the chart, but shown as the plain
+                               name somebody would actually say out loud. The
+                               list is only what applies to them. *@
+                            <MudSelect T="int?" Value="line.ExpenseAccountId"
+                                       ValueChanged="@(v => CategoryChanged(line, v))"
+                                       Label="Category" Required="true"
+                                       RequiredError="What kind of cost is this?"
+                                       Variant="Variant.Text" Style="min-width:14rem">
+                                @foreach (var c in _categories)
+                                {
+                                    <MudSelectItem T="int?" Value="@c.Id">@c.Name</MudSelectItem>
+                                }
+                            </MudSelect>
 
                             <MudNumericField T="decimal" @bind-Value="line.Amount" Label="Amount"
                                              Required="true" Variant="Variant.Text"
@@ -138,9 +151,7 @@
         }
 
         <div class="d-flex justify-space-between align-center">
-            <MudButton Variant="Variant.Text" OnClick="@(() => Nav.NavigateTo("/finance/money-requests"))">
-                Cancel
-            </MudButton>
+            <MudButton Variant="Variant.Text" OnClick="CancelAsync">Cancel</MudButton>
             <div class="d-flex gap-3">
                 <MudButton Variant="Variant.Outlined" Color="Color.Primary"
                            Disabled="_busy" OnClick="@(() => SaveAsync(false))">
@@ -156,6 +167,13 @@
 </MudContainer>
 
 @code {
+    [Parameter] public bool AsDialog { get; set; }
+    [Parameter] public bool DirectorMode { get; set; }
+
+    /// <summary>Raised after a successful save, so a list behind a dialog reloads.</summary>
+    [Parameter] public EventCallback Saved { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
+
     private MudForm? _form;
     private PaymentRequestKind _kind = PaymentRequestKind.Itemized;
 
@@ -168,6 +186,7 @@
     private List<DraftLine> _lines = [new()];
 
     private IReadOnlyList<DepartmentOption> _departments = [];
+    private IReadOnlyList<Account> _categories = [];
     private IReadOnlyList<ProjectOption> _projects = [];
     private string? _error;
     private bool _busy;
@@ -181,8 +200,22 @@
     protected override async Task OnInitializedAsync()
     {
         _departments = await Projects.DepartmentsAsync();
+
+        // Director funds charge to a different set of heads than staff claims.
+        _categories = await Chart.CategoriesAsync(
+            DirectorMode ? ExpenseAudience.Director : ExpenseAudience.Staff);
         _projects = await Projects.ActiveProjectsAsync();
         _neededBy = Clock.Today.AddDays(7).ToDateTime(TimeOnly.MinValue);
+    }
+
+    /// <summary>
+    /// Keeps the head and the label people read together. The name is stored on
+    /// the line so a later rename cannot rewrite what an approved claim said.
+    /// </summary>
+    private void CategoryChanged(DraftLine line, int? accountId)
+    {
+        line.ExpenseAccountId = accountId;
+        line.Category = _categories.FirstOrDefault(c => c.Id == accountId)?.Name;
     }
 
     private void ProjectChanged(string? projectId)
@@ -218,6 +251,12 @@
         line.AttachmentContentType = null;
     }
 
+    private async Task CancelAsync()
+    {
+        if (Closed.HasDelegate) { await Closed.InvokeAsync(); return; }
+        Nav.NavigateTo("/finance/money-requests");
+    }
+
     private async Task SaveAsync(bool submit)
     {
         _error = null;
@@ -251,12 +290,12 @@
 
                 Snackbar.Add(submit ? $"{saved.Value.Reference} sent for approval." : "Draft saved.",
                     Severity.Success);
-                Nav.NavigateTo($"/finance/advances/{saved.Value.Id}");
+                await DoneAsync($"/finance/advances/{saved.Value.Id}");
             }
             else
             {
                 var lines = _lines.Select(l => new PaymentRequestLineInput(
-                    l.Category, l.Amount, l.Reason, l.Description, null,
+                    l.Category, l.Amount, l.Reason, l.Description, l.ExpenseAccountId,
                     l.Attachment, l.AttachmentName, l.AttachmentContentType)).ToList();
 
                 var saved = await Requests.SaveDraftAsync(new PaymentRequestInput(
@@ -273,15 +312,28 @@
 
                 Snackbar.Add(submit ? $"{saved.Value.Reference} sent for approval." : "Draft saved.",
                     Severity.Success);
-                Nav.NavigateTo($"/finance/requests/{saved.Value.Id}");
+                await DoneAsync($"/finance/requests/{saved.Value.Id}");
             }
         }
         finally { _busy = false; }
     }
 
+    /// <summary>
+    /// A dialog hands back to the list it was opened from; a page goes on to
+    /// the document, which is where somebody who navigated here expects to end
+    /// up.
+    /// </summary>
+    private async Task DoneAsync(string documentUrl)
+    {
+        if (Saved.HasDelegate) await Saved.InvokeAsync();
+        if (Closed.HasDelegate) { await Closed.InvokeAsync(); return; }
+        Nav.NavigateTo(documentUrl);
+    }
+
     private sealed class DraftLine
     {
         public string? Category { get; set; }
+        public int? ExpenseAccountId { get; set; }
         public decimal Amount { get; set; }
         public string? Reason { get; set; }
         public string? Description { get; set; }

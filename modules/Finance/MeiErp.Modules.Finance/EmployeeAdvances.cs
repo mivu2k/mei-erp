@@ -145,6 +145,29 @@ public interface IEmployeeAdvanceService
 
     /// <summary>Everyone still owing something, for the outstanding view.</summary>
     Task<IReadOnlyList<EmployeeAdvance>> OutstandingAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// What is already owed and what they earn, so whoever is asking can see
+    /// whether another advance is sensible before raising it rather than after
+    /// an approver has to work it out.
+    /// </summary>
+    Task<AdvanceStanding> StandingAsync(string personId, CancellationToken ct = default);
+}
+
+/// <param name="MonthlyPay">Null when this person has no salary structure on file.</param>
+public sealed record AdvanceStanding(
+    string PersonId,
+    decimal Outstanding,
+    decimal CommittedMonthly,
+    int OpenAdvances,
+    decimal? MonthlyPay)
+{
+    /// <summary>
+    /// What is already coming off their pay each month, as a share of it.
+    /// Null when there is no salary to compare against.
+    /// </summary>
+    public decimal? CommittedShare =>
+        MonthlyPay is null or 0 ? null : CommittedMonthly / MonthlyPay.Value;
 }
 
 /// <summary>
@@ -494,6 +517,39 @@ public sealed class EmployeeAdvanceService(
                      || a.Status == EmployeeAdvanceStatus.Repaying)
             .OrderBy(a => a.PersonName)
             .ToListAsync(ct);
+
+    public async Task<AdvanceStanding> StandingAsync(string personId, CancellationToken ct = default)
+    {
+        var open = await db.EmployeeAdvances.AsNoTracking()
+            .Where(a => a.PersonId == personId
+                     && (a.Status == EmployeeAdvanceStatus.Disbursed
+                      || a.Status == EmployeeAdvanceStatus.Repaying))
+            .Select(a => new { a.Amount, a.RepaidAmount, a.MonthlyDeduction })
+            .ToListAsync(ct);
+
+        var employee = await db.PayrollEmployees.AsNoTracking()
+            .FirstOrDefaultAsync(e => e.UserId == personId, ct);
+
+        decimal? monthlyPay = null;
+
+        if (employee is not null)
+        {
+            monthlyPay = await db.SalaryStructures.AsNoTracking()
+                .Where(s => s.EmployeeId == employee.Id
+                         && s.EffectiveFrom <= clock.Today
+                         && (s.EffectiveTo == null || s.EffectiveTo >= clock.Today))
+                .OrderByDescending(s => s.EffectiveFrom)
+                .Select(s => (decimal?)s.BasicSalary)
+                .FirstOrDefaultAsync(ct);
+        }
+
+        return new AdvanceStanding(
+            personId,
+            open.Sum(a => a.Amount - a.RepaidAmount),
+            open.Sum(a => a.MonthlyDeduction),
+            open.Count,
+            monthlyPay);
+    }
 
     /// <summary>
     /// This person's own advance head, shared with trip advances: one place

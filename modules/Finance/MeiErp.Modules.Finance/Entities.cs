@@ -48,12 +48,35 @@ public class Account : AuditableEntity, IConcurrencyChecked
     public string? PersonId { get; set; }
 
     /// <summary>
+    /// Who may charge spend to this head when raising a request.
+    ///
+    /// A person claiming a taxi fare should be offered the handful of heads
+    /// that apply to them, not the whole chart - and a director's categories
+    /// are not the same list. Untagged heads are offered to nobody, so the
+    /// picker stays short until somebody decides a head belongs on it.
+    /// </summary>
+    public ExpenseAudience Audience { get; set; } = ExpenseAudience.None;
+
+    /// <summary>
     /// Which way a balance on this account normally sits. Assets and expenses
     /// are debit-natured; liabilities, equity and income are credit-natured.
     /// Used to present a balance as a positive number on the side it belongs.
     /// </summary>
     public bool IsDebitNatured =>
         Type is AccountType.Asset or AccountType.Expense;
+}
+
+/// <summary>Who is offered a head as a spending category. Flags, so one head can serve both.</summary>
+[Flags]
+public enum ExpenseAudience
+{
+    /// <summary>Not offered as a category. The default, so the chart stays out of the picker until tagged.</summary>
+    None = 0,
+
+    Staff = 1,
+    Director = 2,
+
+    Everyone = Staff | Director
 }
 
 public enum AccountType

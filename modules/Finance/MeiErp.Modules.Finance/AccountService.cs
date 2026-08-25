@@ -19,6 +19,15 @@ public interface IAccountService
 
     /// <summary>This account's balance plus every account beneath it.</summary>
     Task<decimal> BalanceWithChildrenAsync(int accountId, DateOnly? asAt = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// The spending categories offered to this audience, by name.
+    ///
+    /// What a requester picks from. Codes are deliberately not part of it -
+    /// somebody claiming a taxi fare knows "Travel", not 5220.
+    /// </summary>
+    Task<IReadOnlyList<Account>> CategoriesAsync(
+        ExpenseAudience audience, CancellationToken ct = default);
 }
 
 public sealed class AccountService(FinanceDbContext db) : IAccountService
@@ -150,6 +159,16 @@ public sealed class AccountService(FinanceDbContext db) : IAccountService
         // every account row of the chart, and at year five that is a lot of rows.
         return await query.SumAsync(l => l.Debit - l.Credit, ct);
     }
+
+    public async Task<IReadOnlyList<Account>> CategoriesAsync(
+        ExpenseAudience audience, CancellationToken ct = default) =>
+        await db.Accounts.AsNoTracking()
+            .Where(a => a.IsActive
+                     && a.IsPostable
+                     && a.Type == AccountType.Expense
+                     && (a.Audience & audience) != 0)
+            .OrderBy(a => a.Name)
+            .ToListAsync(ct);
 
     public async Task<decimal> BalanceWithChildrenAsync(
         int accountId, DateOnly? asAt = null, CancellationToken ct = default)

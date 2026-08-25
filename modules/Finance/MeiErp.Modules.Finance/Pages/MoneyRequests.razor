@@ -4,6 +4,7 @@
 @inject IPaymentRequestService Requests
 @inject IApprovalEngine Approvals
 @inject IClock Clock
+@inject IDialogService Dialogs
 @inject NavigationManager Nav
 
 <ListShell Title="Money requests"
@@ -16,16 +17,18 @@
            EmptyHint="Raise a request to get spend approved before it is paid.">
     <Actions>
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                   StartIcon="@Icons.Material.Filled.Add"
-                   Href="/finance/money-requests/new">
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="NewAsync">
             New request
         </MudButton>
+        <MudTooltip Text="Open as a full page instead">
+            <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew"
+                           Href="@($"/finance/money-requests/new{(DirectorOnly ? "?director=true" : "")}")" />
+        </MudTooltip>
     </Actions>
 
     <EmptyAction>
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                   StartIcon="@Icons.Material.Filled.Add"
-                   Href="/finance/money-requests/new">
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="NewAsync">
             New request
         </MudButton>
     </EmptyAction>
@@ -201,6 +204,22 @@
 
         _positions = merged;
         _loading = false;
+    }
+
+    private async Task NewAsync()
+    {
+        var parameters = new DialogParameters<MoneyRequestEditor>
+        {
+            { x => x.AsDialog, true },
+            { x => x.DirectorMode, DirectorOnly }
+        };
+
+        var dialog = await Dialogs.ShowAsync<MoneyRequestEditor>(
+            "New money request", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true });
+
+        var result = await dialog.Result;
+        if (result is { Canceled: false }) await LoadAsync();
     }
 
     private void Open(PaymentRequest request) =>

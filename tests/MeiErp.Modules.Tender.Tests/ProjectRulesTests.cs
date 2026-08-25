@@ -218,6 +218,30 @@ public class ProjectRulesTests
     }
 
     [Fact]
+    public void An_archived_file_has_to_be_reopened_before_it_goes_out_again()
+    {
+        var file = new PhysicalFile { Status = PhysicalFileStatus.Archived };
+
+        // Otherwise it goes straight back out and the register shows it live
+        // while its closing date still stands.
+        var result = FileRegistryRules.Validate(
+            file, FileMovementAction.Issued, new(HolderName: "Sara"));
+
+        Assert.True(result.Failed);
+        Assert.Equal("file.archived", result.Code);
+    }
+
+    [Fact]
+    public void A_file_already_lost_is_not_marked_lost_twice()
+    {
+        var result = FileRegistryRules.Validate(
+            new PhysicalFile { Status = PhysicalFileStatus.Lost },
+            FileMovementAction.MarkedLost, new());
+
+        Assert.Equal("file.already-lost", result.Code);
+    }
+
+    [Fact]
     public void A_file_can_only_be_transferred_while_out()
     {
         var result = FileRegistryRules.Validate(new PhysicalFile { Status = PhysicalFileStatus.InRegistry }, FileMovementAction.Transferred, new(HolderName: "Sara"));

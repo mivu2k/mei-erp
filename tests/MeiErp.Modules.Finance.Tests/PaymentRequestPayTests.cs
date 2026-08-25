@@ -93,6 +93,44 @@ public sealed class PaymentRequestPayTests : IAsyncLifetime
     }
 
     [SkippableFact]
+    public async Task A_requester_is_offered_only_the_categories_tagged_for_them()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+
+        await using var db = NewDb();
+
+        db.Accounts.AddRange(
+            new Account { Code = "5410", Name = "Director travel", Type = AccountType.Expense, IsPostable = true, Audience = ExpenseAudience.Director },
+            new Account { Code = "5530", Name = "Stationery", Type = AccountType.Expense, IsPostable = true, Audience = ExpenseAudience.Everyone },
+            new Account { Code = "5215", Name = "Salaries", Type = AccountType.Expense, IsPostable = true },
+            new Account { Code = "5001", Name = "All expenses", Type = AccountType.Expense, IsPostable = false, Audience = ExpenseAudience.Everyone });
+
+        await db.SaveChangesAsync();
+
+        var accounts = new AccountService(db);
+
+        var staff = (await accounts.CategoriesAsync(ExpenseAudience.Staff))
+            .Select(a => a.Name).ToList();
+        var director = (await accounts.CategoriesAsync(ExpenseAudience.Director))
+            .Select(a => a.Name).ToList();
+
+        // Anything tagged for everyone reaches both.
+        Assert.Contains("Stationery", staff);
+        Assert.Contains("Stationery", director);
+
+        // ...and a director head is never offered to staff.
+        Assert.Contains("Director travel", director);
+        Assert.DoesNotContain("Director travel", staff);
+
+        // An untagged head is nobody's category, so the picker stays short.
+        Assert.DoesNotContain("Salaries", staff);
+        Assert.DoesNotContain("Salaries", director);
+
+        // A heading cannot be posted to, so it cannot be a category either.
+        Assert.DoesNotContain("All expenses", staff);
+    }
+
+    [SkippableFact]
     public async Task The_accountant_can_choose_the_head_the_raiser_left_blank()
     {
         Skip.IfNot(_available, "No PostgreSQL available.");

@@ -1,4 +1,5 @@
 @inject IModuleCatalog Catalog
+@inject ICurrentUser User
 @inject NavigationManager Nav
 @implements IDisposable
 
@@ -70,7 +71,8 @@
                            are on is always visible in the nav. *@
                         <MudNavGroup Title="@module.Name" Icon="@ResolveIcon(module.Icon)"
                                      Expanded="@IsInside(module.BasePath)">
-                            @foreach (var group in module.Nav.GroupBy(n => n.Group))
+                            @foreach (var group in module.Nav.GroupBy(n => n.Group)
+                                                        .Where(g => g.Any(Visible)))
                             {
                                 @if (group.Key is not null)
                                 {
@@ -80,7 +82,7 @@
                                     </MudText>
                                 }
 
-                                @foreach (var item in group)
+                                @foreach (var item in group.Where(Visible))
                                 {
                                     @if (item.Permission is null)
                                     {
@@ -109,8 +111,11 @@
         }
     }
 
-    <MudDivider Class="my-2" />
-    <MudText Typo="Typo.overline" Class="px-4 mud-text-secondary">Administration</MudText>
+    @if (CanAdminister)
+    {
+        <MudDivider Class="my-2" />
+        <MudText Typo="Typo.overline" Class="px-4 mud-text-secondary">Administration</MudText>
+    }
 
     <AuthorizeView Policy="@PlatformPermissions.UsersManage" Context="admin">
         <Authorized>
@@ -161,6 +166,24 @@
 </MudNavMenu>
 
 @code {
+    /// <summary>
+    /// Whether this person can open a nav entry at all. The permission checks
+    /// on each link are declarative, which cannot answer "is this whole group
+    /// empty?" - so headings need the question asked directly.
+    /// </summary>
+    private bool Visible(NavItem item) =>
+        item.Permission is null || User.Can(item.Permission);
+
+    /// <summary>True when at least one administration entry is open to them.</summary>
+    private bool CanAdminister =>
+        User.Can(PlatformPermissions.UsersManage)
+        || User.Can(PlatformPermissions.RolesManage)
+        || User.Can(PlatformPermissions.WorkflowsManage)
+        || User.Can(PlatformPermissions.CompanyManage)
+        || User.Can(PlatformPermissions.LabelsManage)
+        || User.Can(PlatformPermissions.OutboxManage)
+        || User.Can(PlatformPermissions.AuditView);
+
     protected override void OnInitialized() =>
         Nav.LocationChanged += OnLocationChanged;
 
