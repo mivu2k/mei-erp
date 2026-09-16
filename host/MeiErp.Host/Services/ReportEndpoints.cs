@@ -33,7 +33,7 @@ public static class ReportEndpoints
             if (!user.Can(report.Permission)) return Results.Forbid();
 
             var request = ReadRequest(http.Request.Query);
-            var result = await report.Run(request, ct);
+            var result = ReportRenderer.Apply(await report.Run(request, ct), request);
 
             var profile = await company.GetAsync(ct);
             var branding = ToBranding(profile);
@@ -71,7 +71,11 @@ public static class ReportEndpoints
         PartyId = ParseInt(query["partyId"]),
         ProjectId = ParseInt(query["projectId"]),
         AccountId = ParseInt(query["accountId"]),
-        ItemId = ParseInt(query["itemId"])
+        ItemId = ParseInt(query["itemId"]),
+        GroupBy = Trim(query["groupBy"]),
+        SortBy = Trim(query["sortBy"]),
+        SortDescending = bool.TryParse(query["sortDescending"], out var descending) && descending,
+        SelectedColumns = query["columns"].ToString().Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
     };
 
     private static DateOnly? ParseDate(string? value) =>
@@ -97,6 +101,13 @@ public static class ReportEndpoints
         TaxNumber = profile.TaxNumber,
         FooterNote = profile.FooterNote,
         Logo = profile.Logo,
-        Currency = profile.Currency
+        Currency = profile.Currency,
+        DefaultPageSize = profile.PrintPageSize.Equals("Letter", StringComparison.OrdinalIgnoreCase)
+            ? PageSize.Letter : PageSize.A4,
+        Landscape = profile.PrintLandscape,
+        MarginMm = (float)profile.PrintMarginMm,
+        ShowLogo = profile.PrintShowLogo,
+        ShowCompanyDetails = profile.PrintShowCompanyDetails,
+        ShowFooter = profile.PrintShowFooter
     };
 }

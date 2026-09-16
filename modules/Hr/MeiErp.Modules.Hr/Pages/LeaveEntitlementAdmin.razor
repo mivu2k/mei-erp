@@ -1,0 +1,40 @@
+@inject ILeaveService Leaves
+@inject IDialogService Dialogs
+
+<ListShell Title="Leave entitlements" Subtitle="Set each employee's paid, unpaid and other leave allocation for the selected year."
+           Icon="@Icons.Material.Outlined.EventAvailable" Loading="_loading" IsEmpty="@(!_loading&&_rows.Count==0)"
+           EmptyTitle="No employee entitlements" EmptyHint="Add active employees and leave types before allocating leave.">
+    <Actions>
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Settings" OnClick="ManageTypes">Leave types</MudButton>
+    </Actions>
+    <Toolbar>
+        <MudNumericField T="int" @bind-Value="_year" @bind-Value:after="LoadAsync" Label="Year" Min="2000" Max="2200" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:130px" />
+        <MudTextField @bind-Value="_search" @bind-Value:after="LoadAsync" Placeholder="Search employee or department" DebounceInterval="300"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search" Variant="Variant.Text" Margin="Margin.Dense" />
+    </Toolbar>
+    <ChildContent>
+        <MudDataGrid T="LeaveEntitlementRow" Items="_rows" Dense="true" Hover="true" Elevation="0" RowsPerPage="25" Filterable="false">
+            <Columns>
+                <TemplateColumn Title="Employee" SortBy="@(x=>x.EmployeeName)"><CellTemplate><b>@context.Item.EmployeeName</b><br/><small>@context.Item.EmployeeCode · @(context.Item.Department??"No department")</small></CellTemplate></TemplateColumn>
+                <TemplateColumn Title="Leave type" SortBy="@(x=>x.LeaveTypeName)"><CellTemplate>@context.Item.LeaveTypeName <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@(context.Item.IsPaid?Color.Success:Color.Default)">@(context.Item.IsPaid?"Paid":"Unpaid")</MudChip></CellTemplate></TemplateColumn>
+                <TemplateColumn Title="Allocated"><CellTemplate>@(context.Item.IsUnlimited?"Unlimited":context.Item.Entitled.ToString("0.#"))</CellTemplate></TemplateColumn>
+                <PropertyColumn Property="@(x=>x.CarriedForward)" Title="Carried" Format="0.#" />
+                <PropertyColumn Property="@(x=>x.Taken)" Title="Taken" Format="0.#" />
+                <PropertyColumn Property="@(x=>x.Pending)" Title="Pending" Format="0.#" />
+                <TemplateColumn Title="Available"><CellTemplate><b>@(context.Item.IsUnlimited?"Unlimited":context.Item.Available.ToString("0.#"))</b></CellTemplate></TemplateColumn>
+                <TemplateColumn Title="" Sortable="false"><CellTemplate><MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.Edit" OnClick="@(()=>Edit(context.Item))">Set allowance</MudButton></CellTemplate></TemplateColumn>
+            </Columns>
+        </MudDataGrid>
+    </ChildContent>
+</ListShell>
+
+@code {
+    private IReadOnlyList<LeaveEntitlementRow> _rows=[];
+    private int _year;
+    private string? _search;
+    private bool _loading=true;
+    protected override Task OnInitializedAsync(){_year=Clock.Today.Year;return LoadAsync();}
+    private async Task LoadAsync(){_loading=true;_rows=await Leaves.EntitlementsAsync(_year,_search);_loading=false;}
+    private async Task Edit(LeaveEntitlementRow row){var p=new DialogParameters<LeaveEntitlementDialog>{{x=>x.Row,row}};var d=await Dialogs.ShowAsync<LeaveEntitlementDialog>($"{row.EmployeeName} — {row.LeaveTypeName}",p,new DialogOptions{MaxWidth=MaxWidth.ExtraSmall,FullWidth=true});if(!(await d.Result)!.Canceled)await LoadAsync();}
+    private async Task ManageTypes(){var d=await Dialogs.ShowAsync<LeaveTypeAdminDialog>("Leave types",options:new DialogOptions{MaxWidth=MaxWidth.Medium,FullWidth=true});await d.Result;await LoadAsync();}
+}

@@ -38,7 +38,14 @@
             <FormSection Title="The job" Icon="@Icons.Material.Outlined.WorkOutline"
                          Hint="Joining date drives leave entitlement; status decides whether they appear on the active roll.">
                 <div class="app-form-grid">
-                    <MudTextField @bind-Value="_model.Designation" Label="Designation" Variant="Variant.Outlined" />
+                    <MudSelect T="string" @bind-Value="_model.Designation" Label="Designation"
+                               Variant="Variant.Outlined" Clearable="true"
+                               HelperText="Managed by Administration.">
+                        @foreach (var designation in _designations)
+                        {
+                            <MudSelectItem T="string" Value="@designation.Name">@designation.Name</MudSelectItem>
+                        }
+                    </MudSelect>
                     @* Bound to the real department id, not free text: approval
                        routing resolves the department head from it, and a typed
                        name matches nothing. *@
@@ -183,6 +190,7 @@
     private string? _linkError;
     private bool _linkBusy;
     private IReadOnlyList<Department> _departments = [];
+    private IReadOnlyList<Designation> _designations = [];
 
     /// <summary>
     /// The name is stored alongside the id so lists and reports can print a
@@ -198,6 +206,7 @@
     protected override async Task OnInitializedAsync()
     {
         _departments = await Admin.DepartmentsAsync();
+        _designations = await Admin.DesignationsAsync();
 
         if (EmployeeId is not null)
         {

@@ -1,0 +1,38 @@
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+
+<MudMenu Icon="@Icons.Material.Outlined.Print"
+         Color="Color.Inherit"
+         AnchorOrigin="Origin.BottomRight"
+         TransformOrigin="Origin.TopRight"
+         aria-label="Print and export this page">
+    <MudMenuItem Icon="@Icons.Material.Outlined.PictureAsPdf" OnClick="DownloadPdf">
+        Download branded PDF
+    </MudMenuItem>
+    <MudMenuItem Icon="@Icons.Material.Outlined.TableView" OnClick="ExportExcel">
+        Export tables to Excel
+    </MudMenuItem>
+</MudMenu>
+
+@code {
+    private async Task DownloadPdf()
+    {
+        try
+        {
+            var exported = await JS.InvokeAsync<bool>("meiPageOutput.pdf");
+            if (!exported)
+                Snackbar.Add("This page has no printable fields or tables.", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"PDF could not be generated: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ExportExcel()
+    {
+        var exported = await JS.InvokeAsync<bool>("meiPageOutput.excel");
+        if (!exported)
+            Snackbar.Add("This page has no visible table to export. You can still use Print / PDF.", Severity.Info);
+    }
+}

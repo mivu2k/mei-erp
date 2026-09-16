@@ -6,6 +6,7 @@
 @inject ISnackbar Snackbar
 
 <ListShell Title="Employees"
+           PreferenceKey="hr-employees" @bind-ViewMode="_viewMode"
            Subtitle="Staff records. An employee is separate from a login - plenty of staff never sign in."
            Icon="@Icons.Material.Outlined.Badge"
            Loading="_loading"
@@ -49,7 +50,8 @@
     </Toolbar>
 
     <ChildContent>
-    <MudDataGrid T="Employee" Items="_rows" Dense="true" Hover="true" Elevation="0"
+    <ResponsiveDataView TItem="Employee" Items="_rows" Mode="_viewMode">
+    <ListContent><MudDataGrid T="Employee" Items="_rows" Dense="true" Hover="true" Elevation="0"
                  Filterable="false" RowsPerPage="25">
         <Columns>
             <PropertyColumn Property="@(e => e.Code)" Title="Staff no." />
@@ -105,7 +107,24 @@
                 </CellTemplate>
             </TemplateColumn>
         </Columns>
-    </MudDataGrid>
+    </MudDataGrid></ListContent>
+    <CardTemplate Context="employee">
+        <EntityCard Reference="@employee.Code" Title="@employee.FullName" Subtitle="@employee.Designation">
+            <Status><MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@StatusColour(employee.Status)">@employee.Status</MudChip></Status>
+            <Body>
+                <div class="app-entity-fact"><small>Department</small><strong>@(employee.DepartmentName??"Not assigned")</strong></div>
+                <div class="app-entity-fact"><small>Joined</small><span>@employee.JoinedOn.ToString("d MMM yyyy")</span></div>
+                <div class="app-entity-fact"><small>Login</small><span>@(employee.UserId is null?"No account":"Linked")</span></div>
+                <div class="app-entity-fact"><small>Contact</small><span>@(employee.Phone??employee.Email??"—")</span></div>
+            </Body>
+            <Actions>
+                <MudIconButton Icon="@Icons.Material.Outlined.Print" Size="Size.Small" Href="@($"/print/hr/employee/{employee.Id}")" Target="_blank"/>
+                <AuthorizeView Policy="@HrModule.DocumentsView"><Authorized><MudIconButton Icon="@Icons.Material.Outlined.AttachFile" Size="Size.Small" Href="@($"/hr/employees/{employee.Id}/documents")"/></Authorized></AuthorizeView>
+                <AuthorizeView Policy="@HrModule.EmployeesManage"><Authorized><MudButton Size="Size.Small" OnClick="@(()=>Edit(employee))">Edit</MudButton><MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small" Href="@($"/hr/employees/{employee.Id}")"/></Authorized></AuthorizeView>
+            </Actions>
+        </EntityCard>
+    </CardTemplate>
+    </ResponsiveDataView>
     </ChildContent>
 </ListShell>
 
@@ -120,6 +139,7 @@
     private string? _search;
     private bool _includeLeavers;
     private bool _loading = true;
+    private EntityViewMode _viewMode;
     private bool _editing;
     private int? _editingId;
 

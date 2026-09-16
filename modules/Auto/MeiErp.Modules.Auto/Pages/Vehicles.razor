@@ -47,6 +47,35 @@
     </Toolbar>
 
     <ChildContent>
+    @if (_overview is not null)
+    {
+        <MudGrid Class="pa-3 pb-0">
+            <MudItem xs="6" md="3">
+                <MudPaper Outlined="true" Class="pa-3">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Active vehicles</MudText>
+                    <MudText Typo="Typo.h5">@_overview.ActiveVehicles</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="6" md="3">
+                <MudPaper Outlined="true" Class="pa-3">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Under repair</MudText>
+                    <MudText Typo="Typo.h5">@_overview.UnderRepairVehicles</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="6" md="3">
+                <MudPaper Outlined="true" Class="pa-3">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Attention due</MudText>
+                    <MudText Typo="Typo.h5">@(_overview.DocumentsDue + _overview.MaintenanceDue)</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="6" md="3">
+                <MudPaper Outlined="true" Class="pa-3">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Spend this month</MudText>
+                    <MudText Typo="Typo.h5">@_overview.SpendThisMonth.ToString("N2")</MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    }
     @if (_expiring.Count > 0)
     {
         @* Surfaced rather than buried in a report: an expired registration is a
@@ -59,13 +88,14 @@
         </MudAlert>
     }
 
-    @if (_upcomingServices.Count > 0)
+    @if (_maintenanceDue.Count > 0)
     {
         <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="ma-3">
-            <b>@_upcomingServices.Count</b>
-            @(_upcomingServices.Count == 1 ? "service is" : "services are")
-            due within 30 days:
-            @string.Join(", ", _upcomingServices.Select(s => $"{s.VehicleRegistration} ({s.NextDueDate:yyyy-MM-dd})"))
+            <b>@_maintenanceDue.Count</b>
+            @(_maintenanceDue.Count == 1 ? "maintenance item needs" : "maintenance items need")
+            attention by date or odometer:
+            @string.Join(", ", _maintenanceDue.Take(5).Select(DueLabel))
+            @if (_maintenanceDue.Count > 5) { <span> and @(_maintenanceDue.Count - 5) more</span> }
         </MudAlert>
     }
 
@@ -158,7 +188,8 @@
 @code {
     private IReadOnlyList<Vehicle> _rows = [];
     private IReadOnlyList<Vehicle> _expiring = [];
-    private IReadOnlyList<VehicleService> _upcomingServices = [];
+    private IReadOnlyList<MaintenanceDue> _maintenanceDue = [];
+    private FleetOverview? _overview;
     private bool _includeDisposed;
     private bool _loading = true;
 
@@ -169,8 +200,17 @@
         _loading = true;
         _rows = await Fleet.ListAsync(_includeDisposed);
         _expiring = await Fleet.ExpiringAsync();
-        _upcomingServices = await Fleet.UpcomingServicesAsync();
+        _maintenanceDue = await Fleet.MaintenanceDueAsync();
+        _overview = await Fleet.OverviewAsync();
         _loading = false;
+    }
+
+    private static string DueLabel(MaintenanceDue due)
+    {
+        var target = due.DueDate is { } date
+            ? date.ToString("yyyy-MM-dd")
+            : $"{due.DueOdometer:N0} km";
+        return $"{due.Registration} {due.Kind} ({target}{(due.IsOverdue ? ", overdue" : "")})";
     }
 
     private bool _editing;

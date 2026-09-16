@@ -33,20 +33,44 @@
     </Toolbar>
 
     <ChildContent>
-    <MudTable Items="_rows" Dense="true" Hover="true">
+    <MudGrid Spacing="2" Class="mb-3">
+        <MudItem xs="12" sm="4">
+            <MudPaper Outlined="true" Elevation="0" Class="pa-3 h-100">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">Receipts shown</MudText>
+                <MudText Typo="Typo.h6">@_rows.Count</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="4">
+            <MudPaper Outlined="true" Elevation="0" Class="pa-3 h-100">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">Parts received</MudText>
+                <MudText Typo="Typo.h6">@_rows.Sum(x => x.Lines.Count)</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="4">
+            <MudPaper Outlined="true" Elevation="0" Class="pa-3 h-100">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">Total purchase value</MudText>
+                <MudText Typo="Typo.h6" Color="Color.Primary">@_rows.Sum(x => x.Total).ToString("N2")</MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <MudPaper Outlined="true" Elevation="0" Class="overflow-hidden">
+    <MudTable Items="_rows" Hover="true" Breakpoint="Breakpoint.Md" RowsPerPage="25">
         <HeaderContent>
             <MudTh>Number</MudTh><MudTh>Date</MudTh><MudTh>Supplier</MudTh><MudTh>Invoice</MudTh><MudTh>Lines</MudTh><MudTh>Total</MudTh><MudTh/>
         </HeaderContent>
         <RowTemplate>
-            <MudTd>@context.Number</MudTd>
-            <MudTd>@context.PurchasedOn.ToString("d MMM yyyy")</MudTd>
-            <MudTd>@context.PartyName</MudTd>
-            <MudTd>@context.SupplierInvoiceNumber</MudTd>
-            <MudTd>@context.Lines.Count</MudTd>
-            <MudTd>@context.Total.ToString("N2")</MudTd>
-            <MudTd><MudIconButton Href="@($"/print/purchase/part-purchase/{context.Id}")" Target="_blank" Icon="@Icons.Material.Outlined.Print" /></MudTd>
+            <MudTd DataLabel="Number"><MudText Typo="Typo.body2"><strong>@context.Number</strong></MudText></MudTd>
+            <MudTd DataLabel="Date">@context.PurchasedOn.ToString("d MMM yyyy")</MudTd>
+            <MudTd DataLabel="Supplier">@context.PartyName</MudTd>
+            <MudTd DataLabel="Invoice">@(string.IsNullOrWhiteSpace(context.SupplierInvoiceNumber) ? "—" : context.SupplierInvoiceNumber)</MudTd>
+            <MudTd DataLabel="Lines"><MudChip T="int" Size="Size.Small" Variant="Variant.Outlined">@context.Lines.Count</MudChip></MudTd>
+            <MudTd DataLabel="Total"><strong>@context.Total.ToString("N2")</strong></MudTd>
+            <MudTd><MudTooltip Text="Print purchase receipt"><MudIconButton Href="@($"/print/purchase/part-purchase/{context.Id}")" Target="_blank" Icon="@Icons.Material.Outlined.Print" /></MudTooltip></MudTd>
         </RowTemplate>
+        <PagerContent><MudTablePager PageSizeOptions="@(new[]{10,25,50,100})" /></PagerContent>
     </MudTable>
+    </MudPaper>
     </ChildContent>
 </ListShell>
 

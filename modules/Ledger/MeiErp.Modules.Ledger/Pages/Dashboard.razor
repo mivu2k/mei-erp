@@ -3,86 +3,124 @@
 @rendermode InteractiveServer
 @inject IServiceScopeFactory ScopeFactory
 
-<PageTitle>Plain Ledger</PageTitle>
+<ListShell Title="Plain Ledger"
+           Subtitle="Track money given and taken through nested hand-ledger books."
+           Icon="@Icons.Material.Outlined.AccountTree"
+           Loading="_loading"
+           IsEmpty="@(_roots.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.MenuBook"
+           EmptyTitle="No ledgers yet"
+           EmptyHint="Open a main ledger for money you have taken or given, then add sub-ledgers as it moves.">
+    <Actions>
+        <AuthorizeView Policy="@LedgerPermissions.Manage">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add" Href="/ledger/ledgers/new">
+                New ledger
+            </MudButton>
+        </AuthorizeView>
+    </Actions>
 
-<MudText Typo="Typo.h5" Class="mb-4">Plain Ledger</MudText>
+    <Stats>
+        <StatTile Label="Main ledgers" Value="@_mainCount.ToString()" Caption="Top-level books" />
+        <StatTile Label="Sub-ledgers" Value="@_subCount.ToString()" Caption="Nested books" />
+        <StatTile Label="They owe you" Value="@_receivable.ToString("N2")"
+                  Colour="Color.Success" Caption="Open receivables" />
+        <StatTile Label="You owe them" Value="@_payable.ToString("N2")"
+                  Colour="Color.Error" Caption="Open payables" />
+    </Stats>
 
-<MudGrid Spacing="3">
-    <MudItem xs="12" sm="6" md="3">
-        <MudPaper Class="pa-4">
-            <MudText Typo="Typo.overline" Class="mud-text-secondary">Main ledgers</MudText>
-            <MudText Typo="Typo.h4">@_mainCount</MudText>
-        </MudPaper>
-    </MudItem>
-    <MudItem xs="12" sm="6" md="3">
-        <MudPaper Class="pa-4">
-            <MudText Typo="Typo.overline" Class="mud-text-secondary">Sub-ledgers</MudText>
-            <MudText Typo="Typo.h4">@_subCount</MudText>
-        </MudPaper>
-    </MudItem>
-    <MudItem xs="12" sm="6" md="3">
-        <MudPaper Class="pa-4">
-            <MudText Typo="Typo.overline" Class="mud-text-secondary">They owe you</MudText>
-            <MudText Typo="Typo.h5" Color="Color.Success">@_receivable.ToString("N2")</MudText>
-        </MudPaper>
-    </MudItem>
-    <MudItem xs="12" sm="6" md="3">
-        <MudPaper Class="pa-4">
-            <MudText Typo="Typo.overline" Class="mud-text-secondary">You owe them</MudText>
-            <MudText Typo="Typo.h5" Color="Color.Error">@_payable.ToString("N2")</MudText>
-        </MudPaper>
-    </MudItem>
+    <Toolbar>
+        <MudTextField @bind-Value="_search" Placeholder="Search ledgers or counterparties"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true"
+                      Style="min-width:280px" />
+        <MudSpacer />
+        <MudButton Size="Size.Small" Variant="Variant.Text" Href="/ledger/ledgers"
+                   StartIcon="@Icons.Material.Outlined.List">All ledgers</MudButton>
+        <MudButton Size="Size.Small" Variant="Variant.Text" Href="/ledger/tree"
+                   StartIcon="@Icons.Material.Outlined.AccountTree">Tree view</MudButton>
+        <AuthorizeView Policy="@LedgerPermissions.ReportsView">
+            <MudButton Size="Size.Small" Variant="Variant.Text" Href="/ledger/reports"
+                       StartIcon="@Icons.Material.Outlined.Assessment">Reports</MudButton>
+        </AuthorizeView>
+    </Toolbar>
 
-    <MudItem xs="12">
-        <MudPaper Class="pa-4">
-            <div class="d-flex align-center mb-2">
-                <MudText Typo="Typo.subtitle1">Main ledgers</MudText>
-                <MudSpacer />
-                <MudButton Size="Size.Small" Variant="Variant.Text" Href="/ledger/tree"
-                           EndIcon="@Icons.Material.Filled.ChevronRight">Full tree</MudButton>
-            </div>
-            <MudSimpleTable Dense="true" Hover="true">
-                <thead>
-                    <tr>
-                        <th>Ledger</th><th>Counterparty</th><th>Type</th><th>Subs</th>
-                        <th style="text-align:right">Unallocated</th>
-                        <th style="text-align:right">Whole tree</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var n in _roots)
-                    {
-                        <tr>
-                            <td><MudLink Href="@($"/ledger/ledgers/{n.Ledger.Id}")">@n.Ledger.Name</MudLink></td>
-                            <td>@n.Ledger.CounterpartyName</td>
-                            <td>
-                                <MudChip T="string" Size="Size.Small"
-                                         Color="@(n.Ledger.Nature == LedgerNature.Payable ? Color.Error : Color.Success)">
-                                    @n.Ledger.Nature
+    <EmptyAction>
+        <AuthorizeView Policy="@LedgerPermissions.Manage">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add" Href="/ledger/ledgers/new">
+                Open first ledger
+            </MudButton>
+        </AuthorizeView>
+    </EmptyAction>
+
+    <ChildContent>
+        @if (VisibleRoots.Count == 0)
+        {
+            <MudPaper Outlined="true" Elevation="0" Class="pa-8 text-center">
+                <MudIcon Icon="@Icons.Material.Outlined.SearchOff" Size="Size.Large" Class="mud-text-secondary" />
+                <MudText Typo="Typo.body2" Class="mud-text-secondary mt-2">No ledgers match your search.</MudText>
+            </MudPaper>
+        }
+        else
+        {
+            <MudGrid Spacing="2">
+                @foreach (var node in VisibleRoots)
+                {
+                    <MudItem xs="12" sm="6" lg="4">
+                        <MudPaper Outlined="true" Elevation="0" Class="pa-4 h-100">
+                            <div class="d-flex align-start gap-2">
+                                <MudAvatar Color="@(node.Ledger.Nature == LedgerNature.Payable ? Color.Error : Color.Success)"
+                                           Variant="Variant.Outlined" Size="Size.Medium">
+                                    <MudIcon Icon="@(node.Ledger.Nature == LedgerNature.Payable ? Icons.Material.Outlined.NorthEast : Icons.Material.Outlined.SouthWest)" />
+                                </MudAvatar>
+                                <div style="min-width:0">
+                                    <MudText Typo="Typo.subtitle1"><b>@node.Ledger.Name</b></MudText>
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">@(string.IsNullOrWhiteSpace(node.Ledger.CounterpartyName) ? "No counterparty" : node.Ledger.CounterpartyName)</MudText>
+                                </div>
+                                <MudSpacer />
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                         Color="@(node.Ledger.Nature == LedgerNature.Payable ? Color.Error : Color.Success)">
+                                    @(node.Ledger.Nature == LedgerNature.Payable ? "You owe" : "They owe")
                                 </MudChip>
-                            </td>
-                            <td>@n.Children.Count</td>
-                            <td style="text-align:right">@n.Balance.Own.ToString("N2")</td>
-                            <td style="text-align:right"><b>@n.Balance.Rollup.ToString("N2")</b></td>
-                        </tr>
-                    }
-                    @if (_roots.Count == 0)
-                    {
-                        <tr><td colspan="6" class="mud-text-secondary pa-4">
-                            No ledgers yet. Open a main ledger for money you have taken or given,
-                            then add sub-ledgers under it as you pass it on.
-                        </td></tr>
-                    }
-                </tbody>
-            </MudSimpleTable>
-        </MudPaper>
-    </MudItem>
-</MudGrid>
+                            </div>
+                            <MudGrid Spacing="1" Class="mt-3">
+                                <MudItem xs="6">
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">This ledger</MudText>
+                                    <MudText Typo="Typo.h6" Style="font-variant-numeric:tabular-nums">@node.Balance.Own.ToString("N2")</MudText>
+                                </MudItem>
+                                <MudItem xs="6">
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Whole tree</MudText>
+                                    <MudText Typo="Typo.h6" Style="font-variant-numeric:tabular-nums">@node.Balance.Rollup.ToString("N2")</MudText>
+                                </MudItem>
+                            </MudGrid>
+                            <MudDivider Class="my-3" />
+                            <div class="d-flex align-center">
+                                <MudIcon Icon="@Icons.Material.Outlined.AccountTree" Size="Size.Small" Class="mud-text-secondary mr-1" />
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">@CountDescendants(node) sub-ledger(s)</MudText>
+                                <MudSpacer />
+                                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                                           EndIcon="@Icons.Material.Outlined.ChevronRight"
+                                           Href="@($"/ledger/ledgers/{node.Ledger.Id}")">Open statement</MudButton>
+                            </div>
+                        </MudPaper>
+                    </MudItem>
+                }
+            </MudGrid>
+        }
+    </ChildContent>
+</ListShell>
 
 @code {
     private List<LedgerNode> _roots = [];
     private int _mainCount, _subCount;
     private decimal _receivable, _payable;
+    private bool _loading = true;
+    private string? _search;
+
+    private IReadOnlyList<LedgerNode> VisibleRoots =>
+        [.. _roots.Where(node => string.IsNullOrWhiteSpace(_search)
+            || Contains(node, _search.Trim()))];
 
     protected override async Task OnInitializedAsync()
     {
@@ -102,8 +140,14 @@
             if (l.Nature == LedgerNature.Receivable && own > 0) _receivable += own;
             if (l.Nature == LedgerNature.Payable && own > 0) _payable += own;
         }
+        _loading = false;
     }
 
     private static int CountDescendants(LedgerNode n) =>
         n.Children.Count + n.Children.Sum(CountDescendants);
+
+    private static bool Contains(LedgerNode node, string search) =>
+        node.Ledger.Name.Contains(search, StringComparison.OrdinalIgnoreCase)
+        || (node.Ledger.CounterpartyName?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false)
+        || node.Children.Any(child => Contains(child, search));
 }

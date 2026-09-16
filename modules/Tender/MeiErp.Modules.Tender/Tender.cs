@@ -891,7 +891,7 @@ public static class TenderModule
         RoleTemplates =
         [
             new("Bid Manager", "Runs tenders and the guarantees lodged against them.",
-                [TendersView, TendersManage, GuaranteesManage, ReportsView]),
+                [TendersView, TendersManage, GuaranteesManage, FilesView, ReportsView]),
 
             new("Project Manager", "Runs projects and their task boards.",
                 [ProjectsView, ProjectsManage, TasksManage, MilestonesManage, FilesView]),

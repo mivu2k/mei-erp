@@ -10,6 +10,8 @@ public interface ILeaveService
     Task<IReadOnlyList<LeaveRequest>> ListAsync(int? employeeId, LeaveStatus? status, CancellationToken ct = default);
     Task<LeaveRequest?> GetAsync(int id, CancellationToken ct = default);
     Task<IReadOnlyList<LeaveBalance>> BalancesAsync(int employeeId, int year, CancellationToken ct = default);
+    Task<IReadOnlyList<LeaveEntitlementRow>> EntitlementsAsync(int year, string? search = null, CancellationToken ct = default);
+    Task<Result> SaveEntitlementAsync(LeaveEntitlementInput input, CancellationToken ct = default);
 
     /// <summary>Working days between two dates, excluding weekends and holidays.</summary>
     Task<decimal> WorkingDaysAsync(DateOnly from, DateOnly to, CancellationToken ct = default);
@@ -24,6 +26,18 @@ public interface ILeaveService
     /// <summary>The employee record for the signed-in person, if they have one.</summary>
     Task<Employee?> MeAsync(CancellationToken ct = default);
 }
+
+public sealed record LeaveEntitlementRow(
+    int EmployeeId, string EmployeeCode, string EmployeeName, string? Department,
+    int LeaveTypeId, string LeaveTypeName, bool IsPaid, bool IsUnlimited,
+    int Year, decimal DefaultEntitlement, decimal Entitled, decimal CarriedForward,
+    decimal Taken, decimal Pending)
+{
+    public decimal Available => IsUnlimited ? 0 : Entitled + CarriedForward - Taken - Pending;
+}
+
+public sealed record LeaveEntitlementInput(
+    int EmployeeId, int LeaveTypeId, int Year, decimal Entitled, decimal CarriedForward);
 
 public sealed record LeaveRequestInput(
     int? Id, int EmployeeId, int LeaveTypeId,
@@ -61,12 +75,80 @@ public sealed class LeaveService(
           .FirstOrDefaultAsync(r => r.Id == id, ct);
 
     public async Task<IReadOnlyList<LeaveBalance>> BalancesAsync(
-        int employeeId, int year, CancellationToken ct = default) =>
-        await db.LeaveBalances
+        int employeeId, int year, CancellationToken ct = default)
+    {
+        var types = await db.LeaveTypes.AsNoTracking().Where(x => x.IsActive).OrderBy(x => x.Name).ToListAsync(ct);
+        var balances = await db.LeaveBalances
             .AsNoTracking()
             .Include(b => b.LeaveType)
             .Where(b => b.EmployeeId == employeeId && b.Year == year)
             .ToListAsync(ct);
+        var byType = balances.ToDictionary(x => x.LeaveTypeId);
+        return types.Select(type => byType.GetValueOrDefault(type.Id) ?? new LeaveBalance
+        {
+            EmployeeId = employeeId, LeaveTypeId = type.Id, LeaveType = type,
+            Year = year, Entitled = type.AnnualEntitlement
+        }).ToList();
+    }
+
+    public async Task<IReadOnlyList<LeaveEntitlementRow>> EntitlementsAsync(
+        int year, string? search = null, CancellationToken ct = default)
+    {
+        var employeesQuery = db.Employees.AsNoTracking()
+            .Where(x => x.Status == EmploymentStatus.Active || x.Status == EmploymentStatus.OnLeave);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var pattern = $"%{search.Trim()}%";
+            employeesQuery = employeesQuery.Where(x => EF.Functions.ILike(x.FullName, pattern)
+                || EF.Functions.ILike(x.Code, pattern)
+                || (x.DepartmentName != null && EF.Functions.ILike(x.DepartmentName, pattern)));
+        }
+
+        var employees = await employeesQuery.OrderBy(x => x.FullName)
+            .Select(x => new { x.Id, x.Code, x.FullName, x.DepartmentName }).ToListAsync(ct);
+        var types = await db.LeaveTypes.AsNoTracking().Where(x => x.IsActive).OrderBy(x => x.Name).ToListAsync(ct);
+        var employeeIds = employees.Select(x => x.Id).ToList();
+        var balances = await db.LeaveBalances.AsNoTracking()
+            .Where(x => x.Year == year && employeeIds.Contains(x.EmployeeId)).ToListAsync(ct);
+        var byKey = balances.ToDictionary(x => (x.EmployeeId, x.LeaveTypeId));
+
+        return [.. employees.SelectMany(employee => types.Select(type =>
+        {
+            byKey.TryGetValue((employee.Id, type.Id), out var balance);
+            return new LeaveEntitlementRow(employee.Id, employee.Code, employee.FullName, employee.DepartmentName,
+                type.Id, type.Name, type.IsPaid, type.AnnualEntitlement == 0, year, type.AnnualEntitlement,
+                balance?.Entitled ?? type.AnnualEntitlement, balance?.CarriedForward ?? 0,
+                balance?.Taken ?? 0, balance?.Pending ?? 0);
+        }))];
+    }
+
+    public async Task<Result> SaveEntitlementAsync(LeaveEntitlementInput input, CancellationToken ct = default)
+    {
+        if (!currentUser.Can(HrModule.LeaveTypesManage) && !currentUser.Can(HrModule.AttendanceSetup))
+            return Result.Fail("You do not have permission to manage leave entitlements.", "leave-entitlement.forbidden");
+        if (input.Year is < 2000 or > 2200)
+            return Result.Fail("Choose a valid entitlement year.", "leave-entitlement.bad-year");
+        if (input.Entitled < 0 || input.CarriedForward < 0)
+            return Result.Fail("Leave days cannot be negative.", "leave-entitlement.negative");
+        if (!await db.Employees.AnyAsync(x => x.Id == input.EmployeeId, ct)
+            || !await db.LeaveTypes.AnyAsync(x => x.Id == input.LeaveTypeId && x.IsActive, ct))
+            return Result.Fail("The employee or leave type no longer exists.", "leave-entitlement.not-found");
+
+        var balance = await db.LeaveBalances.FirstOrDefaultAsync(x => x.EmployeeId == input.EmployeeId
+            && x.LeaveTypeId == input.LeaveTypeId && x.Year == input.Year, ct);
+        if (balance is null)
+        {
+            balance = new LeaveBalance { EmployeeId = input.EmployeeId, LeaveTypeId = input.LeaveTypeId, Year = input.Year };
+            db.LeaveBalances.Add(balance);
+        }
+        if (input.Entitled + input.CarriedForward < balance.Taken + balance.Pending)
+            return Result.Fail($"The allocation cannot be below {balance.Taken + balance.Pending:0.#} days already taken or pending.", "leave-entitlement.below-used");
+
+        balance.Entitled = input.Entitled;
+        balance.CarriedForward = input.CarriedForward;
+        await db.SaveChangesAsync(ct);
+        return Result.Success();
+    }
 
     public async Task<decimal> WorkingDaysAsync(
         DateOnly from, DateOnly to, CancellationToken ct = default)

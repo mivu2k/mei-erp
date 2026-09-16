@@ -1,3 +1,4 @@
+@page "/admin/departments"
 @page "/hr/departments"
 @attribute [Authorize(Policy = PlatformPermissions.DepartmentsManage)]
 @rendermode InteractiveServer
@@ -28,7 +29,7 @@
             New department
         </MudButton>
         <MudTooltip Text="Open as a full page instead">
-            <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Href="/hr/departments/new" />
+            <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Href="/admin/departments/new" />
         </MudTooltip>
     </Actions>
 
@@ -52,7 +53,7 @@
     </EmptyAction>
 
     <ChildContent>
-        <MudTable T="Row" Items="_tree" Dense="true" Hover="true" Elevation="0">
+        <MudTable T="Row" Items="_tree" Dense="true" Hover="true" Elevation="0" RowsPerPage="25">
             <HeaderContent>
                 <MudTh>Department</MudTh>
                 <MudTh Style="width:120px">Code</MudTh>
@@ -105,7 +106,7 @@
                 <MudTd>
                     <div class="d-flex justify-end gap-1">
                         <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small"
-                                       Href="@($"/hr/departments/{context.Department.Id}")"
+                                       Href="@($"/admin/departments/{context.Department.Id}")"
                                        title="Open as a page" />
                         <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small"
                                        OnClick="@(() => Edit(context.Department))" />
@@ -114,6 +115,7 @@
                     </div>
                 </MudTd>
             </RowTemplate>
+            <PagerContent><MudTablePager PageSizeOptions="@(new[]{10,25,50,100})" /></PagerContent>
         </MudTable>
     </ChildContent>
 </ListShell>

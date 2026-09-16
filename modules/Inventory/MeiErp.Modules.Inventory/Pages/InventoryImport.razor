@@ -1,0 +1,43 @@
+@page "/inventory/items/import"
+@attribute [Authorize(Policy = InventoryModule.ItemsManage)]
+@rendermode InteractiveServer
+@inject IInventoryImportService Importer
+@inject IStockDomainService Domains
+@inject StockBookContext Book
+@inject NavigationManager Nav
+
+<DocumentShell Title="Import inventory" Error="_error" OnClose="Close">
+    <Body>
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4">
+            Upload CSV or Excel (.xlsx). Required columns: <b>code, name</b>. Optional catalog columns:
+            unit, barcode, selling_price, reorder_level, reorder_quantity, serialized, batch_tracked.
+            Opening-stock columns: opening_quantity, opening_unit_cost, batch_number, expiry_date,
+            serial_numbers (separate serials with semicolons).
+        </MudAlert>
+        <MudSelect T="int" @bind-Value="_domain" Label="Stock book" Variant="Variant.Outlined" Class="mb-4">
+            @foreach (var book in _books) { <MudSelectItem Value="@book.Id">@book.Name</MudSelectItem> }
+        </MudSelect>
+        <MudButton HtmlTag="label" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.UploadFile">
+            @(_file?.Name ?? "Choose CSV or Excel file")
+            <InputFile OnChange="Select" accept=".csv,.xlsx" hidden />
+        </MudButton>
+        <a href="data:text/csv;charset=utf-8,code%2Cname%2Cunit%2Cbarcode%2Cselling_price%2Creorder_level%2Creorder_quantity%2Cserialized%2Cbatch_tracked%2Copening_quantity%2Copening_unit_cost%2Cbatch_number%2Cexpiry_date%2Cserial_numbers%0AITEM-001%2CExample%20item%2Ceach%2C%2C0%2C0%2C0%2Cfalse%2Cfalse%2C0%2C0%2C%2C%2C"
+           download="inventory-import-template.csv" class="d-block mt-3">Download CSV template</a>
+        @if (_result is not null)
+        {
+            <MudAlert Severity="@(_result.Errors.Count == 0 ? Severity.Success : Severity.Warning)" Class="mt-4">
+                Imported @_result.Imported item(s); posted @_result.OpeningBalances opening balance(s).
+            </MudAlert>
+            @foreach (var error in _result.Errors.Take(20)) { <MudText Typo="Typo.caption" Color="Color.Error" Class="d-block">@error</MudText> }
+        }
+    </Body>
+    <Buttons><MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_file is null || _busy)" OnClick="Run">@(_busy ? "Importing…" : "Import")</MudButton></Buttons>
+</DocumentShell>
+
+@code {
+    private IReadOnlyList<StockDomain> _books=[]; private int _domain; private IBrowserFile? _file; private bool _busy; private string? _error; private InventoryImportResult? _result;
+    protected override async Task OnInitializedAsync(){_books=await Domains.ListAsync();_domain=await Book.EnsureAsync(Domains);}
+    private void Select(InputFileChangeEventArgs e){_file=e.File;_result=null;_error=null;}
+    private async Task Run(){if(_file is null)return;_busy=true;_error=null;try{await using var stream=_file.OpenReadStream(20*1024*1024);_result=await Importer.ImportAsync(stream,_file.Name,_domain);}catch(Exception ex){_error=ex.Message;}finally{_busy=false;}}
+    private Task Close(){Nav.NavigateTo("/inventory/items");return Task.CompletedTask;}
+}

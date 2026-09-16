@@ -10,7 +10,7 @@
 
 <MudText Typo="Typo.h5">My approvals</MudText>
 <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
-    Everything waiting on you, across every module. One queue, not one per app.
+    Requests waiting for your decision, separated by business category.
 </MudText>
 
 @if (_loading)
@@ -27,9 +27,61 @@ else if (_items.Count == 0)
 }
 else
 {
-    @foreach (var item in _items)
+    <MudGrid Spacing="2" Class="mb-4">
+        @foreach (var category in Categories)
+        {
+            <MudItem xs="12" sm="6" md="4" lg="3">
+                <MudPaper Outlined="true" Elevation="0" Class="pa-3 h-100"
+                          Style="@(_selectedModule == category.Key ? "border-color:var(--mud-palette-primary);border-width:2px" : "cursor:pointer")"
+                          @onclick="@(() => _selectedModule = category.Key)">
+                    <div class="d-flex align-center">
+                        <MudAvatar Color="Color.Primary" Variant="Variant.Outlined" Size="Size.Small">
+                            <MudIcon Icon="@Icons.Material.Outlined.Folder" Size="Size.Small" />
+                        </MudAvatar>
+                        <MudText Typo="Typo.subtitle2" Class="ml-2">@category.Name</MudText>
+                        <MudSpacer />
+                        <MudChip T="string" Size="Size.Small" Color="Color.Primary">@category.Count</MudChip>
+                    </div>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2">
+                        @category.Types document type(s)
+                        @if (category.Overdue > 0) { <text> · @category.Overdue overdue</text> }
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+        }
+    </MudGrid>
+
+    <MudPaper Outlined="true" Elevation="0" Class="pa-3 mb-4">
+        <MudGrid Spacing="2" Class="align-center">
+            <MudItem xs="12" md="7">
+                <MudText Typo="Typo.h6">@SelectedCategoryName</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">Only this category is shown below.</MudText>
+            </MudItem>
+            <MudItem xs="12" md="5">
+                <MudTextField @bind-Value="_search" Placeholder="Search reference, requester or summary"
+                              Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" />
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    @if (FilteredItems.Count == 0)
     {
-        <MudPaper Outlined="true" Elevation="0" Class="pa-4 mb-3">
+        <MudPaper Outlined="true" Elevation="0" Class="pa-8 text-center">
+            <MudIcon Icon="@Icons.Material.Outlined.SearchOff" Size="Size.Large" Class="mud-text-secondary" />
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mt-2">No requests match in this category.</MudText>
+        </MudPaper>
+    }
+
+    @foreach (var group in FilteredItems.GroupBy(x => x.CategoryName))
+    {
+        <div class="d-flex align-center mt-4 mb-2">
+            <MudText Typo="Typo.subtitle1"><b>@group.Key</b></MudText>
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ml-2">@group.Count()</MudChip>
+        </div>
+        @foreach (var item in group)
+        {
+        <MudPaper Outlined="true" Elevation="0" Class="pa-4 mb-2">
             <div class="d-flex align-start">
                 <div class="flex-grow-1">
                     <div class="d-flex align-center gap-2 mb-1">
@@ -68,7 +120,7 @@ else
                     </MudText>
                 </div>
 
-                <div class="d-flex gap-1">
+                <div class="d-flex flex-wrap gap-1 justify-end">
                     <MudButton Size="Size.Small" Variant="Variant.Text" Href="@item.DocumentUrl">
                         Open
                     </MudButton>
@@ -81,12 +133,30 @@ else
                 </div>
             </div>
         </MudPaper>
+        }
     }
 }
 
 @code {
     private IReadOnlyList<ApprovalInboxItem> _items = [];
     private bool _loading = true;
+    private string? _selectedModule;
+    private string? _search;
+
+    private IReadOnlyList<ApprovalCategory> Categories =>
+        [.. _items.GroupBy(x => new { x.ModuleKey, x.ModuleName })
+            .Select(group => new ApprovalCategory(group.Key.ModuleKey, group.Key.ModuleName,
+                group.Count(), group.Select(x => x.CategoryName).Distinct().Count(), group.Count(x => x.IsOverdue)))
+            .OrderBy(x => x.Name)];
+
+    private IReadOnlyList<ApprovalInboxItem> FilteredItems =>
+        [.. _items.Where(x => x.ModuleKey == _selectedModule)
+            .Where(x => string.IsNullOrWhiteSpace(_search)
+                || x.DocumentReference.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                || x.Summary.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                || x.RequestedByName.Contains(_search, StringComparison.OrdinalIgnoreCase))];
+
+    private string SelectedCategoryName => Categories.FirstOrDefault(x => x.Key == _selectedModule)?.Name ?? "Approvals";
 
     protected override Task OnInitializedAsync() => LoadAsync();
 
@@ -94,6 +164,8 @@ else
     {
         _loading = true;
         _items = await Engine.InboxAsync();
+        if (_selectedModule is null || !_items.Any(x => x.ModuleKey == _selectedModule))
+            _selectedModule = Categories.FirstOrDefault()?.Key;
         _loading = false;
     }
 
@@ -144,4 +216,6 @@ else
 
         await LoadAsync();
     }
+
+    private sealed record ApprovalCategory(string Key, string Name, int Count, int Types, int Overdue);
 }

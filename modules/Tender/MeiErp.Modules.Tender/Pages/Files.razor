@@ -2,8 +2,68 @@
 @attribute [Authorize(Policy=TenderModule.FilesView)]
 @rendermode InteractiveServer
 @inject IFileRegistryService Registry
-<PageTitle>Physical file registry</PageTitle>
-<div class="d-flex align-center"><div><MudText Typo="Typo.h5">Physical file registry</MudText><MudText Typo="Typo.body2" Class="mud-text-secondary">One traceable folder per tender or project.</MudText></div><MudSpacer/><MudButton Href="/tender/files/scan" StartIcon="@Icons.Material.Filled.QrCodeScanner">Find / scan</MudButton></div>
-<div class="d-flex gap-3 mt-4"><MudTextField @bind-Value="_search" Label="Search number, owner, holder or location" Immediate Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"/><MudSelect T="PhysicalFileStatus?" @bind-Value="_status" Label="Status" Clearable><MudSelectItem T="PhysicalFileStatus?" Value="@((PhysicalFileStatus?)null)">All</MudSelectItem>@foreach(var s in Enum.GetValues<PhysicalFileStatus>()){<MudSelectItem T="PhysicalFileStatus?" Value="@((PhysicalFileStatus?)s)">@s</MudSelectItem>}</MudSelect><MudCheckBox @bind-Value="_overdue" Label="Overdue only"/><MudButton OnClick="Load">Apply</MudButton></div>
-<MudTable Items="_rows" Dense Hover Class="mt-4"><HeaderContent><MudTh>File</MudTh><MudTh>Owner</MudTh><MudTh>Status</MudTh><MudTh>Holder / location</MudTh><MudTh>Opened</MudTh><MudTh></MudTh></HeaderContent><RowTemplate><MudTd><b>@context.FileNumber</b></MudTd><MudTd>@context.OwnerReference<br/><small>@context.OwnerTitle</small></MudTd><MudTd><MudChip T="string" Size="Size.Small">@context.Status</MudChip></MudTd><MudTd>@(context.HolderName??context.Location??"—")</MudTd><MudTd>@context.OpenedOn.ToString("d MMM yyyy")</MudTd><MudTd><MudButton Size="Size.Small" Href="@($"/tender/files/{context.Id}")">Open</MudButton></MudTd></RowTemplate><NoRecordsContent><MudText Class="pa-6">No files match this filter. Open a tender or project file from its record first.</MudText></NoRecordsContent></MudTable>
-@code{IReadOnlyList<PhysicalFile> _rows=[];string? _search;PhysicalFileStatus? _status;bool _overdue;protected override Task OnInitializedAsync()=>Load();async Task Load()=>_rows=await Registry.ListAsync(new(_search,_status,null,_overdue));}
+@inject IDialogService Dialogs
+@inject NavigationManager Nav
+@inject IClock Clock
+
+<ListShell Title="Physical file registry" Subtitle="Full custody, storage and movement control for every tender and project folder."
+           PreferenceKey="tender-files" @bind-ViewMode="_viewMode"
+           Icon="@Icons.Material.Outlined.Folder" Loading="_loading" IsEmpty="@(_rows.Count==0)"
+           EmptyIcon="@Icons.Material.Outlined.FolderOff" EmptyTitle="No registered files"
+           EmptyHint="Open a file for a tender or project to begin its custody record.">
+    <Actions>
+        <AuthorizeView Policy="@TenderModule.FilesManage"><Authorized><MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CreateNewFolder" OnClick="OpenFile">Open file</MudButton></Authorized></AuthorizeView>
+        <MudButton Href="/tender/files/scan" StartIcon="@Icons.Material.Filled.QrCodeScanner">Find / scan</MudButton>
+    </Actions>
+    <Stats>
+        <StatTile Label="In registry" Value="@_all.Count(x=>x.Status==PhysicalFileStatus.InRegistry).ToString()" Colour="Color.Success" />
+        <StatTile Label="Issued" Value="@_all.Count(x=>x.Status==PhysicalFileStatus.Issued).ToString()" Colour="Color.Warning" />
+        <StatTile Label="Overdue" Value="@OverdueCount.ToString()" Colour="Color.Error" />
+        <StatTile Label="Archived" Value="@_all.Count(x=>x.Status==PhysicalFileStatus.Archived).ToString()" />
+    </Stats>
+    <Toolbar>
+        <MudTextField @bind-Value="_search" Label="Search file, owner, holder or location" Immediate="true" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        <MudSelect T="PhysicalFileStatus?" @bind-Value="_status" Label="Status" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense">@foreach(var s in Enum.GetValues<PhysicalFileStatus>()){<MudSelectItem T="PhysicalFileStatus?" Value="@((PhysicalFileStatus?)s)">@s</MudSelectItem>}</MudSelect>
+        <MudSelect T="FileOwnerType?" @bind-Value="_ownerType" Label="Record type" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense"><MudSelectItem T="FileOwnerType?" Value="@FileOwnerType.Tender">Tender</MudSelectItem><MudSelectItem T="FileOwnerType?" Value="@FileOwnerType.Project">Project</MudSelectItem></MudSelect>
+        <MudCheckBox @bind-Value="_overdue" Label="Overdue only"/><MudButton OnClick="Load">Apply</MudButton>
+    </Toolbar>
+    <EmptyAction><AuthorizeView Policy="@TenderModule.FilesManage"><Authorized><MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="OpenFile">Open file</MudButton></Authorized></AuthorizeView></EmptyAction>
+    <ChildContent>
+        <ResponsiveDataView TItem="PhysicalFile" Items="_rows" Mode="_viewMode">
+        <ListContent><MudDataGrid T="PhysicalFile" Items="_rows" Dense="true" Hover="true" Elevation="0" RowsPerPage="25">
+            <Columns>
+                <TemplateColumn Title="File"><CellTemplate><MudLink Href="@($"/tender/files/{context.Item.Id}")"><b>@context.Item.FileNumber</b></MudLink><br/><small>@context.Item.OwnerType</small></CellTemplate></TemplateColumn>
+                <TemplateColumn Title="Tender / project"><CellTemplate>@context.Item.OwnerReference<br/><small>@context.Item.OwnerTitle</small></CellTemplate></TemplateColumn>
+                <TemplateColumn Title="Status"><CellTemplate><MudChip T="string" Size="Size.Small" Color="@StatusColour(context.Item.Status)">@context.Item.Status</MudChip>@if(IsOverdue(context.Item)){<MudChip T="string" Size="Size.Small" Color="Color.Error" Class="ml-1">overdue</MudChip>}</CellTemplate></TemplateColumn>
+                <TemplateColumn Title="Custody / storage"><CellTemplate>@if(context.Item.Status==PhysicalFileStatus.Issued){<b>@context.Item.HolderName</b><br/><small>@(CurrentIssue(context.Item)?.Purpose??"Purpose not recorded")</small>}else{<span>@(context.Item.Location??"Location not set")</span><br/><small>@context.Item.VolumeNumber</small>}</CellTemplate></TemplateColumn>
+                <TemplateColumn Title="Due back"><CellTemplate>@(CurrentIssue(context.Item)?.DueBack?.ToString("d MMM yyyy")??"—")</CellTemplate></TemplateColumn>
+                <TemplateColumn Title="Opened"><CellTemplate>@context.Item.OpenedOn.ToString("d MMM yyyy")</CellTemplate></TemplateColumn>
+                <TemplateColumn Title="" Sortable="false"><CellTemplate><MudButton Size="Size.Small" Href="@($"/tender/files/{context.Item.Id}")">Manage</MudButton></CellTemplate></TemplateColumn>
+            </Columns>
+        </MudDataGrid></ListContent>
+        <CardTemplate Context="file">
+            <EntityCard Reference="@file.FileNumber" Title="@file.OwnerTitle" Subtitle="@($"{file.OwnerType} · {file.OwnerReference}")">
+                <Status><MudChip T="string" Size="Size.Small" Color="@StatusColour(file.Status)">@file.Status</MudChip></Status>
+                <Body>
+                    <div class="app-entity-fact"><small>Custody / storage</small><strong>@(file.Status==PhysicalFileStatus.Issued ? file.HolderName : file.Location ?? "Location not set")</strong></div>
+                    <div class="app-entity-fact"><small>Due back</small><span>@(CurrentIssue(file)?.DueBack?.ToString("d MMM yyyy")??"—")</span></div>
+                    <div class="app-entity-fact"><small>Volume</small><span>@(file.VolumeNumber??"—")</span></div>
+                    <div class="app-entity-fact"><small>Opened</small><span>@file.OpenedOn.ToString("d MMM yyyy")</span></div>
+                </Body>
+                <Actions><MudButton Size="Size.Small" Href="@($"/tender/files/{file.Id}")" EndIcon="@Icons.Material.Outlined.ChevronRight">Open file</MudButton></Actions>
+            </EntityCard>
+        </CardTemplate>
+        </ResponsiveDataView>
+    </ChildContent>
+</ListShell>
+
+@code{
+    private IReadOnlyList<PhysicalFile> _rows=[],_all=[];private string? _search;private PhysicalFileStatus? _status;private FileOwnerType? _ownerType;private bool _overdue,_loading=true;private EntityViewMode _viewMode;
+    private int OverdueCount=>_all.Count(IsOverdue);
+    protected override async Task OnInitializedAsync(){_all=await Registry.ListAsync();await Load();}
+    private async Task Load(){_loading=true;_rows=await Registry.ListAsync(new(_search,_status,_ownerType,_overdue));_loading=false;}
+    private FileMovement? CurrentIssue(PhysicalFile f)=>f.Movements.Where(x=>x.Action is FileMovementAction.Issued or FileMovementAction.Transferred).OrderByDescending(x=>x.MovedOn).ThenByDescending(x=>x.Id).FirstOrDefault();
+    private bool IsOverdue(PhysicalFile f)=>f.Status==PhysicalFileStatus.Issued&&CurrentIssue(f)?.DueBack<Clock.Today;
+    private static Color StatusColour(PhysicalFileStatus s)=>s switch{PhysicalFileStatus.InRegistry=>Color.Success,PhysicalFileStatus.Issued=>Color.Warning,PhysicalFileStatus.Lost=>Color.Error,_=>Color.Default};
+    private async Task OpenFile(){var dialog=await Dialogs.ShowAsync<FileOpenDialog>("Open physical file",options:new DialogOptions{MaxWidth=MaxWidth.Medium,FullWidth=true});var result=await dialog.Result;if(result is {Canceled:false,Data:int id})Nav.NavigateTo($"/tender/files/{id}");}
+}

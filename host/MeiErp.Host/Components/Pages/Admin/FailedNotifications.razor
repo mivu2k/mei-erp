@@ -4,30 +4,10 @@
 @inject INotificationManagementService Notifications
 @inject ISnackbar Snackbar
 
-<PageTitle>Failed notifications</PageTitle>
-
-<div class="d-flex align-center mb-4">
-    <div>
-        <MudText Typo="Typo.h5">Failed notifications</MudText>
-        <MudText Typo="Typo.body2" Class="mud-text-secondary">
-            Deliveries that exhausted automatic retries. Review the error before placing one back in the queue.
-        </MudText>
-    </div>
-    <MudSpacer />
-    <MudIconButton Icon="@Icons.Material.Outlined.Refresh" OnClick="LoadAsync" Disabled="_loading" />
-</div>
-
-@if (_loading)
-{
-    <MudProgressLinear Indeterminate="true" />
-}
-else if (_dead.Count == 0)
-{
-    <MudAlert Severity="Severity.Success" Variant="Variant.Outlined">No failed notifications.</MudAlert>
-}
-else
-{
-    <MudTable Items="@_dead" Hover="true" Outlined="true" Elevation="0">
+<ListShell Title="Failed notifications" Subtitle="Deliveries that exhausted automatic retries. Review the error before placing one back in the queue."
+           Icon="@Icons.Material.Outlined.MarkEmailUnread" Loading="_loading" IsEmpty="@(!_loading&&_dead.Count==0)" EmptyTitle="No failed notifications" EmptyHint="All notification deliveries are healthy.">
+ <Actions><MudIconButton Icon="@Icons.Material.Outlined.Refresh" OnClick="LoadAsync" Disabled="_loading" /></Actions>
+ <ChildContent><MudTable Items="@_dead" Hover="true" Outlined="true" Elevation="0" RowsPerPage="25">
         <HeaderContent>
             <MudTh>Message</MudTh><MudTh>Channel</MudTh><MudTh>Destination</MudTh>
             <MudTh>Attempts</MudTh><MudTh>Error</MudTh><MudTh></MudTh>
@@ -47,8 +27,9 @@ else
                            OnClick="@(() => RetryAsync(context.DeliveryId))">Retry</MudButton>
             </MudTd>
         </RowTemplate>
-    </MudTable>
-}
+        <PagerContent><MudTablePager PageSizeOptions="@(new[]{10,25,50,100})" /></PagerContent>
+    </MudTable></ChildContent>
+</ListShell>
 
 @code {
     private bool _loading = true;

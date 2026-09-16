@@ -1,0 +1,46 @@
+@inject IRepairService Workshop
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+@if (_job is not null)
+{
+    <MudPaper Outlined="true" Class="pa-3 mb-3">
+        <div class="d-flex align-center"><MudText Typo="Typo.subtitle1">Repair lifecycle</MudText><MudSpacer/><MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">@_job.Status</MudChip></div>
+        <div class="d-flex flex-wrap gap-2 mt-3">
+            @foreach (var stage in Stages)
+            {
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@(stage == _job.Status ? Color.Primary : (stage < _job.Status ? Color.Success : Color.Default))">@Label(stage)</MudChip>
+            }
+        </div>
+        <div class="d-flex flex-wrap gap-2 mt-3">
+            @if (_job.Status == JobStatus.Received)
+            { <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@(() => Move(JobStatus.Diagnosing, "Diagnosis started"))">Start diagnosis</MudButton> }
+            @if (_job.Status == JobStatus.Diagnosing)
+            { <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.RequestQuote" OnClick="Quote">Send customer quotation</MudButton> }
+            @if (_job.Status == JobStatus.AwaitingApproval)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="@(() => Move(JobStatus.InProgress, "Customer approved quotation"))">Customer approved</MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="@(() => Move(JobStatus.Cancelled, "Customer declined; return unrepaired"))">Declined / return item</MudButton>
+            }
+            @if (_job.Status == JobStatus.InProgress)
+            { <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="@(() => Move(JobStatus.Completed, "Repair completed"))">Mark repair completed</MudButton> }
+            @if (_job.Status == JobStatus.Completed)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Success" Href="@($"/repair/jobs/{JobId}/deliver")" StartIcon="@Icons.Material.Outlined.LocalShipping">Deliver item</MudButton>
+                <MudButton Href="/sales/invoices/new" StartIcon="@Icons.Material.Outlined.ReceiptLong">Create invoice</MudButton>
+            }
+        </div>
+        @if (_job.IntakeId is not null)
+        { <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2">This decision applies only to this device. Other items in the same intake can follow a different outcome.</MudText> }
+    </MudPaper>
+}
+
+@code {
+    [Parameter] public int JobId { get; set; }
+    private Job? _job;
+    private static readonly JobStatus[] Stages = [JobStatus.Received,JobStatus.Diagnosing,JobStatus.AwaitingApproval,JobStatus.InProgress,JobStatus.Completed,JobStatus.Delivered];
+    protected override async Task OnParametersSetAsync() => _job = await Workshop.GetAsync(JobId);
+    private async Task Move(JobStatus status,string note){var r=await Workshop.MoveAsync(JobId,status,note);Snackbar.Add(r.Ok?"Repair stage updated.":r.Error!,r.Ok?Severity.Success:Severity.Error);if(r.Ok)_job=await Workshop.GetAsync(JobId);}
+    private async Task Quote(){var r=await Workshop.MoveAsync(JobId,JobStatus.AwaitingApproval,"Quotation prepared for customer");if(r.Failed){Snackbar.Add(r.Error!,Severity.Error);return;}Nav.NavigateTo($"/sales/quotations/new?jobId={JobId}");}
+    private static string Label(JobStatus status)=>status switch{JobStatus.Received=>"Intake",JobStatus.Diagnosing=>"Diagnosis",JobStatus.AwaitingApproval=>"Quotation approval",JobStatus.InProgress=>"Repair",JobStatus.Completed=>"Ready",JobStatus.Delivered=>"Delivered",_=>status.ToString()};
+}

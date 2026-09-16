@@ -5,13 +5,14 @@
 @inject AuthenticationStateProvider Authentication
 @inject ISnackbar Snackbar
 
-<PageTitle>Label templates</PageTitle>
-<div class="d-flex align-center mb-4"><MudText Typo="Typo.h5">Label templates</MudText><MudSpacer/><MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="New">New template</MudButton></div>
-<MudAlert Severity="Severity.Info" Class="mb-4">Set the printer stock size and choose which device fields appear. The default is used by Repair label buttons; a specific template can be selected with <code>?template=id</code>.</MudAlert>
-<MudTable Items="_rows" Dense Hover>
+<ListShell Title="Label templates" Subtitle="Set printer stock size and choose which fields appear on operational labels." Icon="@Icons.Material.Outlined.Label" IsEmpty="@(_rows.Count==0)" EmptyTitle="No label templates">
+ <Actions><MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="New">New template</MudButton></Actions>
+ <ChildContent><MudTable Items="_rows" Dense Hover RowsPerPage="25">
  <HeaderContent><MudTh>Name</MudTh><MudTh>Size (mm)</MudTh><MudTh>Fields</MudTh><MudTh>Codes</MudTh><MudTh>Default</MudTh><MudTh></MudTh></HeaderContent>
  <RowTemplate><MudTd>@context.Name</MudTd><MudTd>@context.WidthMm × @(context.HeightMm?.ToString("0.##")??"continuous")</MudTd><MudTd>@string.Join(", ",context.SelectedFields())</MudTd><MudTd>@(context.ShowBarcode?"Barcode ":"")@(context.ShowQrCode?"QR":"")</MudTd><MudTd>@(context.IsDefault?"Yes":"—")</MudTd><MudTd><MudIconButton Icon="@Icons.Material.Filled.Edit" OnClick="@(()=>Edit(context))"/><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(()=>Delete(context.Id))"/></MudTd></RowTemplate>
-</MudTable>
+ <PagerContent><MudTablePager PageSizeOptions="@(new[]{10,25,50,100})" /></PagerContent>
+</MudTable></ChildContent>
+</ListShell>
 @if(_edit is not null)
 {
  <MudPaper Class="pa-4 mt-4"><MudText Typo="Typo.h6">@(_edit.Id==0?"New label template":"Edit label template")</MudText>

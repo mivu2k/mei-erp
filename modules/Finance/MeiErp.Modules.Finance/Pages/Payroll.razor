@@ -7,17 +7,9 @@
 @inject ISnackbar Snackbar
 @inject IDialogService Dialogs
 
-<PageTitle>Payroll</PageTitle>
-
-<div class="app-page-header d-flex flex-wrap align-center gap-3 mb-4">
-    <div>
-        <MudText Typo="Typo.h5">Payroll</MudText>
-        <MudText Typo="Typo.body2" Class="mud-text-secondary">
-            A run is built from current salaries, approved, then posted as one voucher.
-        </MudText>
-    </div>
-    <MudSpacer />
-    <MudButton Variant="Variant.Text" Href="/finance/payroll/setup" Class="mr-2">
+<ListShell Title="Payroll" Subtitle="A run is built from current salaries, approved, then posted as one voucher."
+           Icon="@Icons.Material.Outlined.Payments" Loading="_loading" IsEmpty="@(!_loading&&_runs.Count==0)" EmptyTitle="No payroll runs yet" EmptyHint="Set salaries first, then build a month.">
+ <Actions><MudButton Variant="Variant.Text" Href="/finance/payroll/setup" Class="mr-2">
         Salaries &amp; components
     </MudButton>
     <AuthorizeView Policy="@FinanceModule.PayrollManage" Context="perms">
@@ -27,11 +19,8 @@
                 Build a month
             </MudButton>
         </Authorized>
-    </AuthorizeView>
-</div>
-
-<MudPaper Outlined="true" Elevation="0" Class="app-list-surface overflow-hidden">
-    <MudDataGrid T="PayrollRun" Items="_runs" Dense="true" Hover="true" Elevation="0"
+    </AuthorizeView></Actions>
+ <ChildContent><MudDataGrid T="PayrollRun" Items="_runs" Dense="true" Hover="true" Elevation="0"
                  Loading="_loading" Filterable="false" RowsPerPage="24">
         <Columns>
             <TemplateColumn Title="Month">
@@ -101,8 +90,8 @@
                 No payroll runs yet. Set salaries first, then build a month.
             </MudText>
         </NoRecordsContent>
-    </MudDataGrid>
-</MudPaper>
+    </MudDataGrid></ChildContent>
+</ListShell>
 
 @code {
     private IReadOnlyList<PayrollRun> _runs = [];

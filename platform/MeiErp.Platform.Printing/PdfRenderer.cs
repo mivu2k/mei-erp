@@ -33,7 +33,7 @@ public sealed class PrintService : IPrintService
         {
             container.Page(page =>
             {
-                ConfigurePage(page, document.Size);
+                ConfigurePage(page, document.Size, branding);
 
                 page.Header().Element(h => Header(h, document, branding));
                 page.Content().Element(c => Content(c, document));
@@ -67,7 +67,7 @@ public sealed class PrintService : IPrintService
             });
         }).GeneratePdf();
 
-    private static void ConfigurePage(PageDescriptor page, PageSize size)
+    private static void ConfigurePage(PageDescriptor page, PageSize size, Branding branding)
     {
         switch (size)
         {
@@ -86,8 +86,9 @@ public sealed class PrintService : IPrintService
                 break;
 
             default:
-                page.Size(PageSizes.A4);
-                page.Margin(14, Unit.Millimetre);
+                var paper = branding.DefaultPageSize == PageSize.Letter ? PageSizes.Letter : PageSizes.A4;
+                page.Size(branding.Landscape ? paper.Landscape() : paper);
+                page.Margin(Math.Clamp(branding.MarginMm, 5, 30), Unit.Millimetre);
                 page.DefaultTextStyle(t => t.FontSize(9).FontColor(Ink));
                 break;
         }
@@ -101,7 +102,7 @@ public sealed class PrintService : IPrintService
         {
             column.Item().Row(row =>
             {
-                if (branding.Logo is { Length: > 0 })
+                if (branding.ShowLogo && branding.Logo is { Length: > 0 })
                 {
                     row.ConstantItem(narrow ? 40 : 90)
                        .AlignMiddle()
@@ -111,15 +112,15 @@ public sealed class PrintService : IPrintService
 
                 row.RelativeItem().Column(c =>
                 {
-                    if (!string.IsNullOrWhiteSpace(branding.Name))
+                    if (branding.ShowCompanyDetails && !string.IsNullOrWhiteSpace(branding.Name))
                         c.Item().Text(branding.Name).FontSize(narrow ? 11 : 15).Bold();
 
-                    foreach (var line in new[]
+                    foreach (var line in (branding.ShowCompanyDetails ? new[]
                              {
                                  branding.AddressLine1, branding.AddressLine2,
                                  Join(branding.Phone, branding.Email),
                                  branding.TaxNumber is null ? null : $"NTN {branding.TaxNumber}"
-                             }.Where(l => !string.IsNullOrWhiteSpace(l)))
+                             } : []).Where(l => !string.IsNullOrWhiteSpace(l)))
                     {
                         c.Item().Text(line).FontSize(narrow ? 6.5f : 8).FontColor(Muted);
                     }
@@ -317,8 +318,10 @@ public sealed class PrintService : IPrintService
 
                         if (col.AlignRight) cell = cell.AlignRight();
 
+                        // Thermal printers reproduce grey as dense dithering. Keep
+                        // roll receipts plain black-on-white with rules only.
                         cell.Text(col.Header)
-                            .FontSize(narrow ? 6.5f : 8).Bold().FontColor(Muted);
+                            .FontSize(narrow ? 6.5f : 8).Bold().FontColor(narrow ? Ink : Muted);
                     }
                 });
 
@@ -330,7 +333,7 @@ public sealed class PrintService : IPrintService
                         var alignRight = table.Columns[i].AlignRight;
 
                         var cell = grid.Cell()
-                            .BorderBottom(0.5f).BorderColor(Rule)
+                            .BorderBottom(narrow ? 0.25f : 0.5f).BorderColor(narrow ? "#B8B8B8" : Rule)
                             .PaddingVertical(2.5f).PaddingHorizontal(2);
 
                         if (alignRight) cell = cell.AlignRight();
@@ -361,6 +364,7 @@ public sealed class PrintService : IPrintService
 
     private static void Footer(IContainer container, Branding branding, PageSize size)
     {
+        if (!branding.ShowFooter) return;
         if (size is not PageSize.A4)
         {
             if (!string.IsNullOrWhiteSpace(branding.FooterNote))

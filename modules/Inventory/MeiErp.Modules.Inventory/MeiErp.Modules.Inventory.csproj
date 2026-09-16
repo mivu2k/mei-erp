@@ -19,5 +19,6 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="MudBlazor" />
+    <PackageReference Include="ClosedXML" />
   </ItemGroup>
 </Project>

@@ -1,0 +1,41 @@
+@typeparam TItem
+
+<div class="app-responsive-data @(Mode == EntityViewMode.Grid ? "app-view-grid" : "app-view-list")">
+    <div class="app-data-list">@ListContent</div>
+    <div class="app-data-cards">
+        @foreach (var item in VisibleCards)
+        {
+            @CardTemplate(item)
+        }
+    </div>
+    @if (Mode == EntityViewMode.Grid && _items.Count > PageSize)
+    {
+        <div class="app-grid-pagination">
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                @FirstItem–@LastItem of @_items.Count
+            </MudText>
+            <MudPagination Count="TotalPages" @bind-Selected="_page" BoundaryCount="1" MiddleCount="1" />
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public EntityViewMode Mode { get; set; }
+    [Parameter, EditorRequired] public IEnumerable<TItem> Items { get; set; } = [];
+    [Parameter, EditorRequired] public RenderFragment? ListContent { get; set; }
+    [Parameter, EditorRequired] public RenderFragment<TItem> CardTemplate { get; set; } = default!;
+    [Parameter] public int PageSize { get; set; } = 25;
+
+    private IReadOnlyList<TItem> _items = [];
+    private int _page = 1;
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(_items.Count / (double)Math.Max(1, PageSize)));
+    private int FirstItem => _items.Count == 0 ? 0 : ((_page - 1) * PageSize) + 1;
+    private int LastItem => Math.Min(_page * PageSize, _items.Count);
+    private IEnumerable<TItem> VisibleCards => _items.Skip((_page - 1) * PageSize).Take(PageSize);
+
+    protected override void OnParametersSet()
+    {
+        _items = Items.ToList();
+        _page = Math.Clamp(_page, 1, TotalPages);
+    }
+}

@@ -1,0 +1,5 @@
+@page "/hr/leave/entitlements"
+@attribute [Authorize(Policy = HrModule.LeaveTypesManage)]
+@rendermode InteractiveServer
+
+<LeaveEntitlementAdmin />

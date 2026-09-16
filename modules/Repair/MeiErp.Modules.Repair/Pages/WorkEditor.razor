@@ -22,7 +22,14 @@
                           Variant="Variant.Outlined" Class="mb-4"
                           HelperText="What you found. This is narrative — it prices nothing." />
 
-            <MudText Typo="Typo.subtitle2" Class="mb-2">Parts and labour</MudText>
+            <div class="d-flex align-center mb-2">
+                <MudText Typo="Typo.subtitle2">Parts and labour</MudText>
+                <MudSpacer />
+                <MudButton Href="/repair/parts/new" Target="_blank" Size="Size.Small"
+                           Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.AddCircle">
+                    Create workshop part
+                </MudButton>
+            </div>
 
             <MudTable T="ItemRow" Items="_items" Dense="true" Elevation="0" Bordered="true">
                 <HeaderContent>

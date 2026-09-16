@@ -15,6 +15,7 @@ Built on .NET 10, Blazor Server and PostgreSQL 18.
 |---|---|
 | **Set it up on your own machine** | [`SETUP.md`](SETUP.md) |
 | **Deploy it to a server** | [`DEPLOYMENT.md`](DEPLOYMENT.md) |
+| **Deploy it in a Proxmox LXC** | [`PROXMOX-LXC.md`](PROXMOX-LXC.md) |
 | **Change the code** | [`CLAUDE.md`](CLAUDE.md) first — it is the design rationale |
 | **Run it day to day** | [`ops/RUNBOOK.md`](ops/RUNBOOK.md) |
 
@@ -30,8 +31,7 @@ cd mei-erp
 
 ## Status
 
-All seven business modules are in and the app runs, with **394 tests green** and
-no build warnings.
+All business modules are in and the app runs, with **435 tests green**.
 
 **Nothing is in the office yet.** The old platform stays live until this reaches
 parity feature by feature, module by module, with no big-bang switch.

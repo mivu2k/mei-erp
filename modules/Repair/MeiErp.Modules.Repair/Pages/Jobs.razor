@@ -7,6 +7,7 @@
 @inject IDialogService Dialogs
 
 <ListShell Title="Repair jobs"
+           PreferenceKey="repair-jobs" @bind-ViewMode="_viewMode"
            Subtitle="A job moves through the pipeline in order — it cannot be typed into any state."
            Icon="@Icons.Material.Outlined.Handyman"
            Loading="_loading"
@@ -55,7 +56,8 @@
     </Toolbar>
 
     <ChildContent>
-    <MudDataGrid T="Job" Items="_rows" Dense="true" Hover="true" Elevation="0"
+    <ResponsiveDataView TItem="Job" Items="_rows" Mode="_viewMode">
+    <ListContent><MudDataGrid T="Job" Items="_rows" Dense="true" Hover="true" Elevation="0"
                  Filterable="false" RowsPerPage="25">
         <Columns>
             <PropertyColumn Property="@(j => j.Number)" Title="Job" />
@@ -134,7 +136,25 @@
                 </CellTemplate>
             </TemplateColumn>
         </Columns>
-    </MudDataGrid>
+    </MudDataGrid></ListContent>
+    <CardTemplate Context="job">
+        <EntityCard Reference="@job.Number" Title="@($"{job.DeviceType} {job.Make} {job.Model}")" Subtitle="@job.CustomerName">
+            <Status><MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@Colour(job.Status)">@job.Status</MudChip></Status>
+            <Body>
+                <div class="app-entity-fact"><small>Received</small><span>@job.ReceivedOn.ToString("d MMM yyyy")</span></div>
+                <div class="app-entity-fact"><small>Value</small><strong>@(job.Total==0?"—":job.Total.ToString("N2"))</strong></div>
+                <div class="app-entity-fact"><small>Serial</small><span>@(job.SerialNumber??"—")</span></div>
+                <div class="app-entity-fact"><small>Problem</small><span>@job.ReportedFault</span></div>
+            </Body>
+            <Actions>
+                <MudIconButton Icon="@Icons.Material.Outlined.Visibility" Size="Size.Small" Href="@($"/repair/jobs/{job.Id}")"/>
+                <MudIconButton Icon="@Icons.Material.Outlined.Print" Size="Size.Small" Href="@($"/print/repair/job/{job.Id}")" Target="_blank"/>
+                <AuthorizeView Policy="@RepairModule.JobsManage"><Authorized><MudButton Size="Size.Small" OnClick="@(()=>Edit(job))">Edit</MudButton><MudButton Size="Size.Small" OnClick="@(()=>Work(job))">Work</MudButton></Authorized></AuthorizeView>
+                @if(job.Status==JobStatus.Completed){<AuthorizeView Policy="@RepairModule.JobsDeliver"><Authorized><MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success" OnClick="@(()=>Deliver(job))">Deliver</MudButton></Authorized></AuthorizeView>}
+            </Actions>
+        </EntityCard>
+    </CardTemplate>
+    </ResponsiveDataView>
     </ChildContent>
 </ListShell>
 
@@ -156,6 +176,7 @@
     private JobStatus? _status;
     private string? _search;
     private bool _loading = true;
+    private EntityViewMode _viewMode;
 
     protected override Task OnParametersSetAsync() { if (!string.IsNullOrWhiteSpace(Search)) _search = Search; return LoadAsync(); }
 

@@ -40,6 +40,9 @@ public class ApplicationUser : IdentityUser
     public DateTime CreatedUtc { get; set; }
     public DateTime? LastLoginUtc { get; set; }
 
+    /// <summary>Safe internal route opened after sign-in. Null uses the shared dashboard.</summary>
+    public string? PreferredHomePath { get; set; }
+
     /// <summary>Forces a password change at next sign-in - set on invitation and on admin reset.</summary>
     public bool MustChangePassword { get; set; }
 
@@ -120,6 +123,15 @@ public class Department
     public bool IsActive { get; set; } = true;
 }
 
+/// <summary>Company-controlled job title used when assigning users.</summary>
+public class Designation
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string Name { get; set; } = "";
+    public string? Code { get; set; }
+    public bool IsActive { get; set; } = true;
+}
+
 /// <summary>
 /// The company on every document in every module. One row.
 /// </summary>
@@ -146,6 +158,15 @@ public class CompanyProfile
 
     public string Currency { get; set; } = "PKR";
     public string CurrencySymbol { get; set; } = "Rs";
+
+    // Shared PDF layout. These settings apply to record documents, reports,
+    // and the universal page export so administrators get one print identity.
+    public string PrintPageSize { get; set; } = "A4";
+    public bool PrintLandscape { get; set; }
+    public decimal PrintMarginMm { get; set; } = 14;
+    public bool PrintShowLogo { get; set; } = true;
+    public bool PrintShowCompanyDetails { get; set; } = true;
+    public bool PrintShowFooter { get; set; } = true;
 
     /// <summary>
     /// A detached copy, for an edit screen to work on.

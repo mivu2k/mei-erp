@@ -10,6 +10,7 @@
 @inject IDialogService Dialogs
 
 <ListShell Title="Gate passes"
+           PreferenceKey="gate-passes" @bind-ViewMode="_viewMode"
            Subtitle="Whoever raises a pass cannot clear it through the gate. That separation is the point."
            Icon="@Icons.Material.Outlined.DirectionsCar"
            Loading="_loading"
@@ -50,8 +51,15 @@
         </AuthorizeView>
     </EmptyAction>
 
+    <Toolbar>
+        <MudSelect T="PassStatus?" @bind-Value="_status" @bind-Value:after="LoadAsync" Label="Status" Clearable="true" Variant="Variant.Text" Margin="Margin.Dense" Style="max-width:190px">
+            @foreach(var status in Enum.GetValues<PassStatus>()){<MudSelectItem T="PassStatus?" Value="@status">@status</MudSelectItem>}
+        </MudSelect>
+    </Toolbar>
+
     <ChildContent>
-    <MudDataGrid T="Pass" Items="_rows" Dense="true" Hover="true" Elevation="0"
+    <ResponsiveDataView TItem="Pass" Items="_rows" Mode="_viewMode">
+    <ListContent><MudDataGrid T="Pass" Items="_rows" Dense="true" Hover="true" Elevation="0"
                  Filterable="false" RowsPerPage="25">
         <Columns>
             <PropertyColumn Property="@(p => p.Number)" Title="Number" />
@@ -94,8 +102,8 @@
                 <CellTemplate>
                     <div class="d-flex justify-end gap-1">
                         <MudIconButton Icon="@Icons.Material.Outlined.Visibility" OnClick="@(() => View(context.Item))" />
-                        <MudIconButton Icon="@Icons.Material.Outlined.Print" Href="@($"/print/gatepass/{context.Item.Id}")" Target="_blank" />
-                        <MudIconButton Icon="@Icons.Material.Outlined.ReceiptLong" Href="@($"/print/gatepass/{context.Item.Id}?size=roll")" Target="_blank" />
+                        <MudTooltip Text="Print A4 gate pass"><MudIconButton Icon="@Icons.Material.Outlined.Print" Href="@($"/print/gatepass/{context.Item.Id}")" Target="_blank" /></MudTooltip>
+                        <MudTooltip Text="Print 80 mm POS receipt"><MudIconButton Icon="@Icons.Material.Outlined.ReceiptLong" Href="@($"/print/gatepass/{context.Item.Id}?size=roll")" Target="_blank" /></MudTooltip>
                         @if (context.Item.Status is PassStatus.Issued)
                         {
                             <AuthorizeView Policy="@GatePassModule.PassesRaise" Context="raisePerms">
@@ -129,7 +137,25 @@
                 </CellTemplate>
             </TemplateColumn>
         </Columns>
-    </MudDataGrid>
+    </MudDataGrid></ListContent>
+    <CardTemplate Context="pass">
+        <EntityCard Reference="@pass.Number" Title="@pass.PartyName" Subtitle="@pass.Direction.ToString()">
+            <Status><MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@Colour(pass.Status)">@pass.Status</MudChip></Status>
+            <Body>
+                <div class="app-entity-fact"><small>Date</small><span>@pass.Date.ToString("d MMM yyyy")</span></div>
+                <div class="app-entity-fact"><small>Items</small><strong>@pass.Items.Count</strong></div>
+                <div class="app-entity-fact"><small>Returnable</small><span>@(pass.IsReturnable?"Yes":"No")</span></div>
+                <div class="app-entity-fact"><small>Expected back</small><span>@(pass.ExpectedBack?.ToString("d MMM yyyy")??"—")</span></div>
+            </Body>
+            <Actions>
+                <MudButton Size="Size.Small" OnClick="@(()=>View(pass))">View</MudButton>
+                <MudIconButton Icon="@Icons.Material.Outlined.Print" Size="Size.Small" Href="@($"/print/gatepass/{pass.Id}")" Target="_blank"/>
+                @if(pass.Status==PassStatus.Issued){<AuthorizeView Policy="@GatePassModule.PassesRaise"><Authorized><MudButton Size="Size.Small" OnClick="@(()=>Edit(pass))">Edit</MudButton></Authorized></AuthorizeView><AuthorizeView Policy="@GatePassModule.PassesClear"><Authorized><MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success" OnClick="@(()=>Clear(pass))">Clear</MudButton></Authorized></AuthorizeView>}
+                else if(pass.IsReturnable&&pass.Status is PassStatus.Cleared or PassStatus.PartiallyReturned){<AuthorizeView Policy="@GatePassModule.PassesReturn"><Authorized><MudButton Size="Size.Small" OnClick="@(()=>Receive(pass))">Receive</MudButton></Authorized></AuthorizeView>}
+            </Actions>
+        </EntityCard>
+    </CardTemplate>
+    </ResponsiveDataView>
     </ChildContent>
 </ListShell>
 
@@ -144,6 +170,8 @@
     private IReadOnlyList<Pass> _rows = [];
     private IReadOnlyList<Pass> _overdue = [];
     private bool _loading = true;
+    private PassStatus? _status;
+    private EntityViewMode _viewMode;
     private bool _legacyOpened;
 
     protected override Task OnInitializedAsync() => LoadAsync();
@@ -161,7 +189,7 @@
     private async Task LoadAsync()
     {
         _loading = true;
-        _rows = await Gate.ListAsync(null);
+        _rows = await Gate.ListAsync(_status);
         _overdue = await Gate.OverdueAsync();
         _loading = false;
     }

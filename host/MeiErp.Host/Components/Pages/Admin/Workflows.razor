@@ -7,11 +7,42 @@
 
 <PageTitle>Approval workflows</PageTitle>
 
-<MudText Typo="Typo.h5">Approval workflows</MudText>
+<div class="d-flex align-center mb-1">
+    <MudText Typo="Typo.h5">Approval workflows</MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+               OnClick="@(() => _creating = true)">New workflow</MudButton>
+</div>
 <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
-    Who signs off what, and at which amounts. Changing a workflow never disturbs
+    Assign approval authority to module roles for each document type and amount level. A named line manager is not required. Changing a workflow never disturbs
     requests already in flight - they keep running the revision they started on.
 </MudText>
+
+@if (_creating)
+{
+    <MudPaper Outlined="true" Elevation="0" Class="pa-4 mb-4">
+        <MudText Typo="Typo.subtitle1">Create a custom workflow</MudText>
+        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+            Choose the form or transaction this workflow controls. Saving it as active replaces the current active route; requests already submitted keep their original route.
+        </MudText>
+        <div class="d-flex align-end flex-wrap gap-2 mt-3">
+            <MudSelect T="string" @bind-Value="_newDocumentType" Label="Module and document"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:320px">
+                @foreach (var module in Catalog.AllApprovables.GroupBy(x => x.Key.Split('.')[0]))
+                {
+                    <MudListSubheader>@(Catalog.Find(module.Key)?.Name ?? module.Key)</MudListSubheader>
+                    @foreach (var document in module)
+                    {
+                        <MudSelectItem T="string" Value="@document.Key">@document.Name</MudSelectItem>
+                    }
+                }
+            </MudSelect>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@string.IsNullOrWhiteSpace(_newDocumentType)"
+                       OnClick="StartNewAsync">Build workflow</MudButton>
+            <MudButton Variant="Variant.Text" OnClick="CancelNew">Cancel</MudButton>
+        </div>
+    </MudPaper>
+}
 
 @if (_list.Count == 0)
 {
@@ -30,8 +61,11 @@ else
         <MudItem xs="12" md="4">
             <MudPaper Outlined="true" Elevation="0">
                 <MudList T="string">
-                    @foreach (var w in _list)
+                    @foreach (var module in _list.GroupBy(x => x.ModuleName))
                     {
+                        <MudListSubheader>@module.Key</MudListSubheader>
+                        @foreach (var w in module)
+                        {
                         <MudListItem T="string" OnClick="@(() => SelectAsync(w.Id))"
                                      Class="@(w.Id == _current?.Id ? "mud-selected-item" : "")">
                             <MudText Typo="Typo.body2"><b>@w.DocumentName</b></MudText>
@@ -44,6 +78,7 @@ else
                                 }
                             </MudText>
                         </MudListItem>
+                        }
                     }
                 </MudList>
             </MudPaper>
@@ -59,8 +94,25 @@ else
             else
             {
                 <MudPaper Outlined="true" Elevation="0" Class="pa-4">
+                    <div class="d-flex align-center flex-wrap gap-2 mb-4">
+                        <div>
+                            <MudText Typo="Typo.h6">@DocumentName(_current.DocumentType)</MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">@_current.DocumentType · revision @_current.Revision</MudText>
+                        </div>
+                        <MudSpacer />
+                        <MudChip T="string" Size="Size.Small" Color="@(_current.IsActive ? Color.Success : Color.Default)" Variant="Variant.Outlined">
+                            @(_current.IsActive ? "Active" : "Disabled")
+                        </MudChip>
+                    </div>
+
                     <MudTextField @bind-Value="_current.Name" Label="Workflow name"
                                   Variant="Variant.Outlined" Class="mb-4" />
+                    <MudTextField @bind-Value="_current.Description" Label="Description"
+                                  Variant="Variant.Outlined" Lines="2" Class="mb-2"
+                                  HelperText="Explain when this workflow is used so another administrator can safely maintain it." />
+
+                    <MudSwitch T="bool" @bind-Value="_current.IsActive" Color="Color.Success"
+                               Label="Accept new submissions through this workflow" />
 
                     <MudSwitch T="bool" @bind-Value="_current.BlockSelfApproval" Color="Color.Primary"
                                Label="The person who raises it can never approve it" />
@@ -87,28 +139,42 @@ else
                                               Variant="Variant.Text" Margin="Margin.Dense"
                                               Class="ml-3 mt-0" />
                                 <MudSpacer />
+                                <MudTooltip Text="Move up"><MudIconButton Icon="@Icons.Material.Outlined.KeyboardArrowUp" Size="Size.Small" Disabled="@(step.Order == 1)" OnClick="@(() => MoveStep(step, -1))" /></MudTooltip>
+                                <MudTooltip Text="Move down"><MudIconButton Icon="@Icons.Material.Outlined.KeyboardArrowDown" Size="Size.Small" Disabled="@(step.Order == _current.Steps.Count)" OnClick="@(() => MoveStep(step, 1))" /></MudTooltip>
+                                <MudTooltip Text="Duplicate step"><MudIconButton Icon="@Icons.Material.Outlined.ContentCopy" Size="Size.Small" OnClick="@(() => DuplicateStep(step))" /></MudTooltip>
                                 <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small"
                                                Color="Color.Error"
                                                OnClick="@(() => RemoveStep(step))" />
                             </div>
 
-                            <div class="d-flex gap-3 mb-3">
+                            <MudGrid Spacing="2" Class="mb-3">
+                                <MudItem xs="12" md="5">
                                 <MudSelect T="ApproverRule" @bind-Value="step.Rule" Label="Approved by"
-                                           Variant="Variant.Outlined" Margin="Margin.Dense">
-                                    <MudSelectItem Value="ApproverRule.LineManager">The raiser's line manager</MudSelectItem>
+                                           Variant="Variant.Outlined" Margin="Margin.Dense" FullWidth="true">
+                                    <MudSelectItem Value="ApproverRule.Role">A business role</MudSelectItem>
                                     <MudSelectItem Value="ApproverRule.DepartmentHead">Their department head</MudSelectItem>
-                                    <MudSelectItem Value="ApproverRule.Role">Anyone with a role</MudSelectItem>
                                     <MudSelectItem Value="ApproverRule.Permission">Anyone with a permission</MudSelectItem>
-                                    <MudSelectItem Value="ApproverRule.User">One named person</MudSelectItem>
                                 </MudSelect>
+                                </MudItem>
 
-                                @if (NeedsValue(step.Rule))
+                                @if (step.Rule == ApproverRule.Role)
                                 {
-                                    <MudTextField @bind-Value="step.RuleValue"
-                                                  Label="@(step.Rule == ApproverRule.Role ? "Role name" : step.Rule == ApproverRule.Permission ? "Permission key" : "User id")"
-                                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+                                    <MudItem xs="12" md="7">
+                                    <MudSelect T="string" @bind-Value="step.RuleValue" Label="Approver role"
+                                               Variant="Variant.Outlined" Margin="Margin.Dense" FullWidth="true"
+                                               HelperText="Every active user holding this role receives the request; the signature rule below decides how many must approve.">
+                                        @foreach (var role in _roles)
+                                        {
+                                            <MudSelectItem T="string" Value="@role.Name">@role.Name</MudSelectItem>
+                                        }
+                                    </MudSelect>
+                                    </MudItem>
                                 }
-                            </div>
+                                else if (step.Rule == ApproverRule.Permission)
+                                {
+                                    <MudItem xs="12" md="7"><MudTextField @bind-Value="step.RuleValue" Label="Permission key" Variant="Variant.Outlined" Margin="Margin.Dense" FullWidth="true" /></MudItem>
+                                }
+                            </MudGrid>
 
                             <div class="d-flex gap-3 mb-3">
                                 <MudNumericField T="decimal?" @bind-Value="step.MinAmount"
@@ -134,8 +200,46 @@ else
                                     <MudSelectItem Value="StepQuorum.All">Every approver</MudSelectItem>
                                 </MudSelect>
                             </div>
+
+                            <MudGrid Spacing="2" Class="mt-1">
+                                <MudItem xs="12" md="5">
+                                    <MudSwitch T="bool" @bind-Value="step.AllowReturn" Color="Color.Primary"
+                                               Label="Approver may return it for correction" />
+                                </MudItem>
+                                <MudItem xs="12" md="7">
+                                    <MudSelect T="string" @bind-Value="step.EscalateToRole" Label="Escalate to role"
+                                               Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                                               Disabled="@(step.EscalateAfterHours is null)"
+                                               HelperText="Leave blank to escalate to the next approval stage.">
+                                        @foreach (var role in _roles)
+                                        {
+                                            <MudSelectItem T="string" Value="@role.Name">@role.Name</MudSelectItem>
+                                        }
+                                    </MudSelect>
+                                </MudItem>
+                            </MudGrid>
                         </MudPaper>
                     }
+
+                    <MudPaper Outlined="true" Elevation="0" Class="pa-3 mt-4">
+                        <MudText Typo="Typo.subtitle2">Test this route</MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">Enter a document value to see the exact approval stages that will run.</MudText>
+                        <div class="d-flex align-center flex-wrap gap-2 mt-2">
+                            <MudNumericField T="decimal?" @bind-Value="_previewAmount" Label="Test amount"
+                                             Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" />
+                            @if (_current.StepsFor(_previewAmount).Any())
+                            {
+                                @foreach (var preview in _current.StepsFor(_previewAmount))
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined">@preview.Order. @preview.Name</MudChip>
+                                }
+                            }
+                            else
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Outlined">No matching approval stage</MudChip>
+                            }
+                        </div>
+                    </MudPaper>
 
                     @if (_problems.Count > 0)
                     {
@@ -165,18 +269,58 @@ else
     private WorkflowDefinition? _current;
     private List<string> _problems = [];
     private bool _busy;
+    private decimal? _previewAmount;
+    private bool _creating;
+    private string? _newDocumentType;
+    private IReadOnlyList<ApprovalRoleOption> _roles = [];
 
     protected override Task OnInitializedAsync() => LoadAsync();
 
     private async Task LoadAsync() => _list = await Designer.ListAsync();
 
-    private static bool NeedsValue(ApproverRule rule) =>
-        rule is ApproverRule.Role or ApproverRule.Permission or ApproverRule.User;
-
     private async Task SelectAsync(int id)
     {
         _current = await Designer.GetAsync(id);
+        _roles = _current is null ? [] : await Designer.RolesAsync(_current.DocumentType);
         _problems = [];
+        _previewAmount = null;
+    }
+
+    private async Task StartNewAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newDocumentType)) return;
+        _roles = await Designer.RolesAsync(_newDocumentType);
+        var document = Catalog.AllApprovables.First(x => x.Key == _newDocumentType);
+        _current = new WorkflowDefinition
+        {
+            DocumentType = document.Key,
+            Name = $"Custom {document.Name}",
+            Description = $"Custom approval route for {document.Name}.",
+            IsActive = true,
+            BlockSelfApproval = true,
+            Steps =
+            [
+                new WorkflowStep
+                {
+                    Order = 1,
+                    Name = "Approval",
+                    Rule = ApproverRule.Role,
+                    RuleValue = _roles.FirstOrDefault()?.Name,
+                    Quorum = StepQuorum.Any,
+                    AllowReturn = true
+                }
+            ]
+        };
+        _creating = false;
+        _newDocumentType = null;
+        _previewAmount = null;
+        _problems = [];
+    }
+
+    private void CancelNew()
+    {
+        _creating = false;
+        _newDocumentType = null;
     }
 
     private void AddStep()
@@ -188,7 +332,8 @@ else
         {
             Order = next,
             Name = $"Step {next}",
-            Rule = ApproverRule.LineManager,
+            Rule = ApproverRule.Role,
+            RuleValue = _roles.FirstOrDefault()?.Name,
             Quorum = StepQuorum.Any,
             AllowReturn = true
         });
@@ -206,6 +351,41 @@ else
         foreach (var s in _current.Steps.OrderBy(s => s.Order))
             s.Order = order++;
     }
+
+    private void MoveStep(WorkflowStep step, int offset)
+    {
+        if (_current is null) return;
+        var ordered = _current.Steps.OrderBy(s => s.Order).ToList();
+        var index = ordered.IndexOf(step);
+        var target = index + offset;
+        if (index < 0 || target < 0 || target >= ordered.Count) return;
+        (ordered[index], ordered[target]) = (ordered[target], ordered[index]);
+        for (var i = 0; i < ordered.Count; i++) ordered[i].Order = i + 1;
+    }
+
+    private void DuplicateStep(WorkflowStep source)
+    {
+        if (_current is null) return;
+        var copy = new WorkflowStep
+        {
+            Order = source.Order + 1,
+            Name = $"{source.Name} copy",
+            Rule = source.Rule,
+            RuleValue = source.RuleValue,
+            Quorum = source.Quorum,
+            MinAmount = source.MinAmount,
+            MaxAmount = source.MaxAmount,
+            ReminderAfterHours = source.ReminderAfterHours,
+            EscalateAfterHours = source.EscalateAfterHours,
+            EscalateToRole = source.EscalateToRole,
+            AllowReturn = source.AllowReturn
+        };
+        foreach (var step in _current.Steps.Where(s => s.Order > source.Order)) step.Order++;
+        _current.Steps.Add(copy);
+    }
+
+    private string DocumentName(string documentType) =>
+        _list.FirstOrDefault(x => x.DocumentType == documentType)?.DocumentName ?? documentType;
 
     private Task CheckAsync()
     {

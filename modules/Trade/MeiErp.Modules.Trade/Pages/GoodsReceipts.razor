@@ -15,7 +15,7 @@
            EmptyTitle="No goods receipts yet"
            EmptyHint="A goods received note appears here once a purchase order is received.">
     <ChildContent>
-    <MudTable Items="_rows" Dense="true" Hover="true">
+    <MudTable Items="_rows" Dense="true" Hover="true" RowsPerPage="25">
         <HeaderContent>
             <MudTh>Number</MudTh><MudTh>Date</MudTh><MudTh>Supplier</MudTh><MudTh>Lines</MudTh><MudTh Style="text-align:right">Value</MudTh><MudTh/>
         </HeaderContent>
@@ -27,6 +27,7 @@
             <MudTd Style="text-align:right">@context.Total.ToString("N2")</MudTd>
             <MudTd><MudIconButton Icon="@Icons.Material.Outlined.Print" Href="@($"/print/purchase/goods-receipt/{context.Id}")" Target="_blank" /></MudTd>
         </RowTemplate>
+        <PagerContent><MudTablePager PageSizeOptions="@(new[]{10,25,50,100})" /></PagerContent>
     </MudTable>
     </ChildContent>
 </ListShell>

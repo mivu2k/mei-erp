@@ -6,6 +6,7 @@
 @inject IDialogService Dialogs
 
 <ListShell Title="Vouchers"
+           PreferenceKey="finance-vouchers" @bind-ViewMode="_viewMode"
            Subtitle="Every entry in the books. A posted voucher cannot be edited — only reversed."
            Icon="@Icons.Material.Outlined.Receipt"
            Loading="_loading"
@@ -54,7 +55,8 @@
     </Toolbar>
 
     <ChildContent>
-    <MudDataGrid T="Voucher" Items="_rows" Dense="true" Hover="true" Elevation="0"
+    <ResponsiveDataView TItem="Voucher" Items="_rows" Mode="_viewMode">
+    <ListContent><MudDataGrid T="Voucher" Items="_rows" Dense="true" Hover="true" Elevation="0"
                  Filterable="false" RowsPerPage="25">
         <Columns>
             <PropertyColumn Property="@(v => v.Number)" Title="Number" />
@@ -92,26 +94,42 @@
                 <CellTemplate>
                     <div class="d-flex justify-end gap-1">
                         <MudIconButton Icon="@Icons.Material.Outlined.Print" Href="@($"/print/finance/voucher/{context.Item.Id}")" Target="_blank" />
-                        @if (context.Item.Status == VoucherStatus.Draft)
-                        {
-                            <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small"
-                                           Href="@($"/finance/vouchers/{context.Item.Id}")"
-                                           title="Open as a page" />
-                            <MudButton Size="Size.Small" Variant="Variant.Text"
-                                       OnClick="@(() => Edit(context.Item))">Edit</MudButton>
-                            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
-                                       OnClick="@(() => Post(context.Item))">Post</MudButton>
-                        }
-                        else if (context.Item.Status == VoucherStatus.Posted)
-                        {
-                            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Warning"
-                                       OnClick="@(() => Reverse(context.Item))">Reverse</MudButton>
-                        }
+                        <AuthorizeView Policy="@FinanceModule.VouchersPost" Context="postPerms"><Authorized>
+                            @if (context.Item.Status == VoucherStatus.Draft)
+                            {
+                                <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small" Href="@($"/finance/vouchers/{context.Item.Id}")" title="Open as a page" />
+                                <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => Edit(context.Item))">Edit</MudButton>
+                                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" OnClick="@(() => Post(context.Item))">Post</MudButton>
+                            }
+                            else if (context.Item.Status == VoucherStatus.Posted)
+                            {
+                                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Warning" OnClick="@(() => Reverse(context.Item))">Reverse</MudButton>
+                            }
+                        </Authorized></AuthorizeView>
                     </div>
                 </CellTemplate>
             </TemplateColumn>
         </Columns>
-    </MudDataGrid>
+    </MudDataGrid></ListContent>
+    <CardTemplate Context="voucher">
+        <EntityCard Reference="@voucher.Number" Title="@voucher.Narration" Subtitle="@voucher.Type.ToString()">
+            <Status><MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@(voucher.Status==VoucherStatus.Posted?Color.Success:voucher.Status==VoucherStatus.Reversed?Color.Warning:Color.Default)">@voucher.Status</MudChip></Status>
+            <Body>
+                <div class="app-entity-fact"><small>Date</small><span>@voucher.Date.ToString("d MMM yyyy")</span></div>
+                <div class="app-entity-fact"><small>Amount</small><strong>@voucher.TotalDebit.ToString("N2")</strong></div>
+                <div class="app-entity-fact"><small>Source</small><span>@(voucher.SourceModule??"Manual entry")</span></div>
+                <div class="app-entity-fact"><small>Reference</small><span>@(voucher.SourceReference??"—")</span></div>
+            </Body>
+            <Actions>
+                <MudIconButton Icon="@Icons.Material.Outlined.Print" Size="Size.Small" Href="@($"/print/finance/voucher/{voucher.Id}")" Target="_blank"/>
+                <AuthorizeView Policy="@FinanceModule.VouchersPost"><Authorized>
+                    @if(voucher.Status==VoucherStatus.Draft){<MudButton Size="Size.Small" OnClick="@(()=>Edit(voucher))">Edit</MudButton><MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" OnClick="@(()=>Post(voucher))">Post</MudButton>}
+                    else if(voucher.Status==VoucherStatus.Posted){<MudButton Size="Size.Small" Color="Color.Warning" OnClick="@(()=>Reverse(voucher))">Reverse</MudButton>}
+                </Authorized></AuthorizeView>
+            </Actions>
+        </EntityCard>
+    </CardTemplate>
+    </ResponsiveDataView>
     </ChildContent>
 </ListShell>
 
@@ -126,6 +144,7 @@
     private VoucherStatus? _status;
     private string? _search;
     private bool _loading = true;
+    private EntityViewMode _viewMode;
 
     protected override Task OnInitializedAsync() => LoadAsync();
 

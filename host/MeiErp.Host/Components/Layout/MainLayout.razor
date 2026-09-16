@@ -1,5 +1,7 @@
 @inherits LayoutComponentBase
 @inject IModuleCatalog Catalog
+@inject NavigationManager Nav
+@implements IDisposable
 
 <MudThemeProvider Theme="Theme" @bind-IsDarkMode="_dark" />
 <MudPopoverProvider />
@@ -9,10 +11,11 @@
 <AuthorizeView>
     <Authorized>
         <MudLayout Class="app-shell">
+            <MudBreakpointProvider OnBreakpointChanged="BreakpointChanged" />
             <MudAppBar Elevation="0" Class="app-header border-b">
                 <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit"
                                Edge="Edge.Start" OnClick="ToggleNavigation"
-                               aria-label="Toggle navigation" />
+                               Class="app-header-menu" aria-label="Toggle navigation" />
                 <a href="/" class="app-brand" aria-label="MEI ERP home">
                     <span class="app-brand-mark">M</span>
                     <span class="app-brand-copy">
@@ -21,39 +24,44 @@
                     </span>
                 </a>
 
-                <GlobalSearch />
+                <div class="app-header-search"><GlobalSearch /></div>
 
                 <MudSpacer />
 
+                @if (!_isMobile)
+                {
+                <div class="app-header-tools">
+                <div class="app-desktop-header-action"><MudTooltip Text="Print, save PDF, or export this page"><PageOutputTools /></MudTooltip></div>
+
                 @* One inbox across every module. A manager checks one queue, not eight. *@
-                <MudTooltip Text="Approvals waiting for you">
+                <div class="app-desktop-header-action"><MudTooltip Text="Approvals waiting for you">
                     <MudIconButton Icon="@Icons.Material.Outlined.FactCheck"
                                    Color="Color.Inherit" Href="/approvals" />
-                </MudTooltip>
+                </MudTooltip></div>
 
                 @* Module-declared shortcuts - the attendance QR code being the
                    one that forced this. A module contributes them through its
                    descriptor, so this file never learns about HR. *@
-                @foreach (var action in Catalog.All.SelectMany(m => m.QuickActions))
+                @if (Catalog.All.SelectMany(m => m.QuickActions).Any())
                 {
-                    @if (action.Permission is null)
-                    {
-                        <MudTooltip Text="@action.Tooltip">
-                            <MudIconButton Icon="@ResolveIcon(action.Icon)"
-                                           Color="Color.Inherit" Href="@action.Path" />
-                        </MudTooltip>
-                    }
-                    else
-                    {
-                        <AuthorizeView Policy="@action.Permission" Context="quick">
-                            <Authorized>
-                                <MudTooltip Text="@action.Tooltip">
-                                    <MudIconButton Icon="@ResolveIcon(action.Icon)"
-                                                   Color="Color.Inherit" Href="@action.Path" />
-                                </MudTooltip>
-                            </Authorized>
-                        </AuthorizeView>
-                    }
+                    <div class="app-desktop-header-action"><MudTooltip Text="Quick actions">
+                        <MudMenu Icon="@Icons.Material.Outlined.Bolt" Color="Color.Inherit"
+                                 AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                            @foreach (var action in Catalog.All.SelectMany(m => m.QuickActions))
+                            {
+                                @if (action.Permission is null)
+                                {
+                                    <MudMenuItem Href="@action.Path" Icon="@ResolveIcon(action.Icon)">@action.Tooltip</MudMenuItem>
+                                }
+                                else
+                                {
+                                    <AuthorizeView Policy="@action.Permission" Context="quick">
+                                        <Authorized><MudMenuItem Href="@action.Path" Icon="@ResolveIcon(action.Icon)">@action.Tooltip</MudMenuItem></Authorized>
+                                    </AuthorizeView>
+                                }
+                            }
+                        </MudMenu>
+                    </MudTooltip></div>
                 }
 
                 @* The bell the approval engine finally has. Without it, someone
@@ -61,13 +69,13 @@
                    happen to open the inbox. *@
                 <NotificationBell />
 
-                <MudTooltip Text="@(_dark ? "Light mode" : "Dark mode")">
+                <div class="app-desktop-header-action"><MudTooltip Text="@(_dark ? "Light mode" : "Dark mode")">
                     <MudIconButton Color="Color.Inherit"
                                    Icon="@(_dark ? Icons.Material.Outlined.LightMode : Icons.Material.Outlined.DarkMode)"
                                    OnClick="@(() => _dark = !_dark)" />
-                </MudTooltip>
+                </MudTooltip></div>
 
-                <MudMenu Icon="@Icons.Material.Filled.AccountCircle" Color="Color.Inherit"
+                <div class="app-header-profile"><MudMenu Icon="@Icons.Material.Filled.AccountCircle" Color="Color.Inherit"
                          AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
                     <MudText Typo="Typo.body2" Class="px-4 py-2">
                         <b>@context.User.FindFirst("full_name")?.Value</b>
@@ -78,13 +86,26 @@
                     <MudMenuItem Href="/profile?tab=notifications">Notifications</MudMenuItem>
                     <MudDivider />
                     <MudMenuItem Href="/sign-out-now">Sign out</MudMenuItem>
-                </MudMenu>
+                </MudMenu></div>
+                </div>
+                }
+                else
+                {
+                    <div class="app-mobile-header-tool"><NotificationBell /></div>
+                }
             </MudAppBar>
 
             <MudDrawer @bind-Open="_navOpen" Elevation="0" ClipMode="DrawerClipMode.Always"
                        Variant="DrawerVariant.Responsive" Breakpoint="Breakpoint.Md"
-                       Class="app-navigation border-r">
+                       Width="272px" Class="app-navigation border-r">
                 <NavMenu />
+                <div class="app-mobile-drawer-settings">
+                    <MudButton FullWidth="true" Variant="Variant.Text"
+                               StartIcon="@(_dark ? Icons.Material.Outlined.LightMode : Icons.Material.Outlined.DarkMode)"
+                               OnClick="@(() => _dark = !_dark)">
+                        @(_dark ? "Use light mode" : "Use dark mode")
+                    </MudButton>
+                </div>
             </MudDrawer>
 
             <MudMainContent Class="app-content pt-16">
@@ -92,6 +113,14 @@
                     @Body
                 </MudContainer>
             </MudMainContent>
+
+            <nav class="app-mobile-nav" aria-label="Primary mobile navigation">
+                <a href="/" class="@MobileNavClass("/")"><MudIcon Icon="@Icons.Material.Outlined.Home"/><span>Home</span></a>
+                <a href="/approvals" class="@MobileNavClass("/approvals")"><MudIcon Icon="@Icons.Material.Outlined.FactCheck"/><span>Approvals</span></a>
+                <a href="/scan" class="app-mobile-nav-scan @MobileNavClass("/scan")"><span class="app-mobile-scan-icon"><MudIcon Icon="@Icons.Material.Outlined.QrCodeScanner"/></span><span>Scan</span></a>
+                <a href="/reports" class="@MobileNavClass("/reports")"><MudIcon Icon="@Icons.Material.Outlined.Assessment"/><span>Reports</span></a>
+                <button type="button" class="@(_navOpen ? "active" : null)" @onclick="ToggleNavigation"><MudIcon Icon="@Icons.Material.Outlined.Menu"/><span>Menu</span></button>
+            </nav>
         </MudLayout>
     </Authorized>
 
@@ -110,8 +139,33 @@
 @code {
     private bool _navOpen = true;
     private bool _dark;
+    private bool _isMobile;
+
+    protected override void OnInitialized() => Nav.LocationChanged += OnLocationChanged;
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
 
     private void ToggleNavigation() => _navOpen = !_navOpen;
+
+    private void BreakpointChanged(Breakpoint breakpoint)
+    {
+        _isMobile = breakpoint is Breakpoint.Xs or Breakpoint.Sm;
+        _navOpen = !_isMobile;
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs args)
+    {
+        if (_isMobile) _navOpen = false;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private string MobileNavClass(string path)
+    {
+        var current = "/" + Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].TrimEnd('/');
+        if (current == "//") current = "/";
+        var active = path == "/" ? current == "/" : current.Equals(path, StringComparison.OrdinalIgnoreCase) || current.StartsWith(path + "/", StringComparison.OrdinalIgnoreCase);
+        return active ? "active" : "";
+    }
 
     /// <summary>
     /// A module names its icon as a string, because the catalog lives in the

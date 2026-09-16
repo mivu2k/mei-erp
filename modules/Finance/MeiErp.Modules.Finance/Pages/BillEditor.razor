@@ -55,6 +55,7 @@
 @code {
     [Parameter] public bool AsDialog { get; set; }
     [Parameter] public int? BillId { get; set; }
+    [Parameter] public int? ConnectionId { get; set; }
     [Parameter] public EventCallback Saved { get; set; }
     [Parameter] public EventCallback Closed { get; set; }
 
@@ -85,7 +86,7 @@
             var lastMonth = today.AddMonths(-1);
             _model = new UtilityBill
             {
-                ConnectionId = _connections.FirstOrDefault()?.Id ?? 0,
+                ConnectionId = ConnectionId ?? _connections.FirstOrDefault()?.Id ?? 0,
                 BillingMonth = new DateOnly(lastMonth.Year, lastMonth.Month, 1),
                 IssuedOn = today,
                 DueOn = today.AddDays(14)

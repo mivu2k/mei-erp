@@ -21,6 +21,12 @@ public sealed record Branding
     public byte[]? Logo { get; init; }
 
     public string Currency { get; init; } = "PKR";
+    public PageSize DefaultPageSize { get; init; } = PageSize.A4;
+    public bool Landscape { get; init; }
+    public float MarginMm { get; init; } = 14;
+    public bool ShowLogo { get; init; } = true;
+    public bool ShowCompanyDetails { get; init; } = true;
+    public bool ShowFooter { get; init; } = true;
 
     /// <summary>A profile nobody has filled in yet. Prints without falling over.</summary>
     public static Branding Empty => new() { Name = "" };
@@ -92,4 +98,5 @@ public enum PageSize
 
     /// <summary>Label roll, 62mm — asset and device stickers.</summary>
     Label62 = 2
+    ,Letter = 3
 }

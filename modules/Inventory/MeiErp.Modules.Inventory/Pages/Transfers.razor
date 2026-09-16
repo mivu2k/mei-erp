@@ -23,7 +23,7 @@
     </EmptyAction>
 
     <ChildContent>
-    <MudTable Items="_rows" Dense Hover>
+    <MudTable Items="_rows" Dense Hover RowsPerPage="25">
         <HeaderContent>
             <MudTh>Number</MudTh><MudTh>Date</MudTh><MudTh>From</MudTh><MudTh>To</MudTh>
             <MudTh>Status</MudTh><MudTh>Lines</MudTh><MudTh></MudTh>
@@ -46,6 +46,7 @@
                 }
             </MudTd>
         </RowTemplate>
+        <PagerContent><MudTablePager PageSizeOptions="@(new[]{10,25,50,100})" /></PagerContent>
     </MudTable>
     @if(_edit)
     {

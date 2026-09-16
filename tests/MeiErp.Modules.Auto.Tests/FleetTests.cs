@@ -126,6 +126,57 @@ public sealed class FleetTests : IAsyncLifetime
         Assert.Equal("ABC-DUE", upcoming[0].VehicleRegistration);
     }
 
+    [SkippableFact]
+    public async Task Maintenance_due_uses_latest_schedule_and_odometer_threshold()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db = NewDb();
+        var fleet = new FleetService(db, _clock);
+        var vehicle = await fleet.SaveAsync(new Vehicle
+            { Registration = "ABC-SCHEDULE", Make = "Toyota", Model = "Hilux" });
+        await fleet.AddServiceAsync(new VehicleService
+        {
+            VehicleId = vehicle.Value.Id, Date = _clock.Today.AddMonths(-3),
+            Kind = ServiceKind.Routine, Description = "Old oil service", Odometer = 8_000,
+            NextDueDate = _clock.Today.AddDays(-20), NextDueOdometer = 9_000
+        });
+        await fleet.AddServiceAsync(new VehicleService
+        {
+            VehicleId = vehicle.Value.Id, Date = _clock.Today,
+            Kind = ServiceKind.Routine, Description = "Current oil service", Odometer = 10_000,
+            NextDueDate = _clock.Today.AddMonths(3), NextDueOdometer = 10_800
+        });
+
+        var due = await fleet.MaintenanceDueAsync();
+
+        var item = Assert.Single(due);
+        Assert.Equal(10_800, item.DueOdometer);
+        Assert.False(item.IsOverdue);
+    }
+
+    [SkippableFact]
+    public async Task Overview_reports_operational_counts_and_current_month_spend()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db = NewDb();
+        var fleet = new FleetService(db, _clock);
+        var active = await fleet.SaveAsync(new Vehicle
+            { Registration = "ABC-ACTIVE", Make = "Honda", Model = "City" });
+        await fleet.SaveAsync(new Vehicle
+            { Registration = "ABC-REPAIR", Make = "Honda", Model = "Civic", Status = VehicleStatus.UnderRepair });
+        await fleet.AddServiceAsync(new VehicleService
+        {
+            VehicleId = active.Value.Id, Date = _clock.Today,
+            Kind = ServiceKind.Fuel, Description = "Fuel", Cost = 12_500
+        });
+
+        var overview = await fleet.OverviewAsync();
+
+        Assert.Equal(1, overview.ActiveVehicles);
+        Assert.Equal(1, overview.UnderRepairVehicles);
+        Assert.Equal(12_500, overview.SpendThisMonth);
+    }
+
     private sealed class User : ICurrentUser
     {
         public string? UserId => "fleet-user";

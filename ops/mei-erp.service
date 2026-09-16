@@ -12,6 +12,6 @@ RestartSec=5
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=/opt/mei-erp/current/logs
+ReadWritePaths=/opt/mei-erp/current/logs /opt/mei-erp/current/App_Data /opt/mei-erp/current/backups
 [Install]
 WantedBy=multi-user.target

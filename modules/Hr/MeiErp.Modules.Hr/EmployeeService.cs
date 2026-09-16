@@ -101,6 +101,11 @@ public sealed class EmployeeService(HrDbContext db, PlatformDbContext platformDb
         if (employee.LeftOn is not null && employee.LeftOn < employee.JoinedOn)
             return Result.Fail<Employee>("The leaving date is before the joining date.", "employee.bad-dates");
 
+        if (employee.DepartmentId is not null && !await platformDb.Departments.AnyAsync(d => d.Id == employee.DepartmentId && d.IsActive, ct))
+            return Result.Fail<Employee>("Choose an active department maintained by Administration.", "employee.bad-department");
+        if (employee.Designation is not null && !await platformDb.Designations.AnyAsync(d => d.Name == employee.Designation && d.IsActive, ct))
+            return Result.Fail<Employee>("Choose an active designation maintained by Administration.", "employee.bad-designation");
+
         if (employee.Id == 0)
         {
             db.Employees.Add(employee);
@@ -114,7 +119,21 @@ public sealed class EmployeeService(HrDbContext db, PlatformDbContext platformDb
             db.Entry(existing).CurrentValues.SetValues(employee);
         }
 
-        await db.SaveChangesAsync(ct);
+        await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        {
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+            await db.SaveChangesAsync(ct);
+            if (employee.UserId is not null)
+            {
+                await db.Database.ExecuteSqlInterpolatedAsync(
+                    $"""
+                     UPDATE platform."AspNetUsers"
+                     SET "EmployeeCode" = {employee.Code}, "Designation" = {employee.Designation}, "DepartmentId" = {employee.DepartmentId}
+                     WHERE "Id" = {employee.UserId}
+                     """, ct);
+            }
+            await tx.CommitAsync(ct);
+        });
         return Result.Success(employee);
     }
 
@@ -250,7 +269,11 @@ public sealed class EmployeeService(HrDbContext db, PlatformDbContext platformDb
             // prevent. Same database, so the platform schema is reachable here,
             // as it already is for the shared audit table.
             await db.Database.ExecuteSqlInterpolatedAsync(
-                $"""UPDATE platform."AspNetUsers" SET "EmployeeCode" = {employee.Code} WHERE "Id" = {userId}""",
+                $"""
+                 UPDATE platform."AspNetUsers"
+                 SET "EmployeeCode" = {employee.Code}, "Designation" = {employee.Designation}, "DepartmentId" = {employee.DepartmentId}
+                 WHERE "Id" = {userId}
+                 """,
                 ct);
 
             await tx.CommitAsync(ct);

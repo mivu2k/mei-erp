@@ -5,9 +5,220 @@
 @inject IPartyService PartyMaster
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
+
 <PageTitle>Receive part purchase</PageTitle>
-<MudText Typo="Typo.h5">Receive part purchase</MudText>
-<MudPaper Class="pa-4 my-4" Outlined="true"><MudGrid><MudItem xs="12" md="4"><MudSelect T="int" @bind-Value="_supplier" Label="Supplier">@foreach(var s in _suppliers){<MudSelectItem Value="s.Id">@s.Name</MudSelectItem>}</MudSelect></MudItem><MudItem xs="12" md="3"><MudDatePicker @bind-Date="_date" Label="Purchase date"/></MudItem><MudItem xs="12" md="3"><MudTextField @bind-Value="_invoice" Label="Supplier invoice"/></MudItem></MudGrid></MudPaper>
-<MudTable Items="_lines" Dense="true"><HeaderContent><MudTh>Part</MudTh><MudTh>Qty</MudTh><MudTh>Unit cost</MudTh><MudTh>New selling price</MudTh><MudTh>Amount</MudTh><MudTh/></HeaderContent><RowTemplate><MudTd><MudSelect T="int" @bind-Value="context.PartId">@foreach(var p in _parts){<MudSelectItem Value="p.Id">@p.Name</MudSelectItem>}</MudSelect></MudTd><MudTd><MudNumericField @bind-Value="context.Quantity"/></MudTd><MudTd><MudNumericField @bind-Value="context.UnitCost"/></MudTd><MudTd><MudNumericField @bind-Value="context.NewSellingPrice"/></MudTd><MudTd>@((context.Quantity*context.UnitCost).ToString("N2"))</MudTd><MudTd><MudIconButton Icon="@Icons.Material.Outlined.Delete" OnClick="@(()=>_lines.Remove(context))"/></MudTd></RowTemplate></MudTable>
-<MudButton Class="my-3" OnClick="@(()=>_lines.Add(new()))">Add line</MudButton><MudGrid><MudItem xs="6" md="2"><MudNumericField @bind-Value="_discount" Label="Discount"/></MudItem><MudItem xs="6" md="2"><MudNumericField @bind-Value="_tax" Label="Tax"/></MudItem><MudItem xs="6" md="2"><MudNumericField @bind-Value="_charges" Label="Other charges"/></MudItem><MudItem xs="12" md="6"><MudTextField @bind-Value="_notes" Label="Notes"/></MudItem></MudGrid><MudButton Variant="Variant.Filled" OnClick="Save" Class="mt-4">Receive purchase</MudButton>
-@code{private IReadOnlyList<Party> _suppliers=[];private IReadOnlyList<Part> _parts=[];private List<Line> _lines=[new()];private int _supplier;private DateTime? _date;private string? _invoice,_notes;private decimal _discount,_tax,_charges;protected override async Task OnInitializedAsync(){_date=Clock.Today.ToDateTime(TimeOnly.MinValue);_suppliers=await PartyMaster.ListAsync(suppliers:true);_parts=await Procurement.PartsAsync();}private async Task Save(){var input=new PartPurchaseInput(_supplier,_invoice,DateOnly.FromDateTime(_date??Clock.Today.ToDateTime(TimeOnly.MinValue)),_tax,_discount,_charges,_notes,_lines.Select(x=>new PartPurchaseLineInput(x.PartId,x.Quantity,x.UnitCost,x.NewSellingPrice,null)).ToList());var r=await Procurement.ReceiveAsync(input);Snackbar.Add(r.Ok?"Purchase received and costs updated.":r.Error!,r.Ok?Severity.Success:Severity.Error);if(r.Ok)Nav.NavigateTo("/purchase/part-purchases");}private sealed class Line{public int PartId{get;set;}public decimal Quantity{get;set;}=1;public decimal UnitCost{get;set;}public decimal? NewSellingPrice{get;set;}}}
+
+<div class="d-flex flex-wrap align-center justify-space-between gap-3 mb-4">
+    <div class="d-flex align-center gap-2">
+        <MudIconButton Icon="@Icons.Material.Outlined.ArrowBack" Href="/purchase/part-purchases" />
+        <div>
+            <MudText Typo="Typo.h5">Receive part purchase</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">Record a supplier receipt and update workshop part costs in one step.</MudText>
+        </div>
+    </div>
+    <MudChip T="string" Icon="@Icons.Material.Outlined.Inventory2" Color="Color.Primary" Variant="Variant.Outlined">
+        @LineCount @(@LineCount == 1 ? "line" : "lines")
+    </MudChip>
+</div>
+
+<MudForm @ref="_form">
+    <MudGrid Spacing="3">
+        <MudItem xs="12" lg="8">
+            <MudPaper Outlined="true" Elevation="0" Class="pa-4 h-100">
+                <div class="d-flex align-center gap-2 mb-4">
+                    <MudAvatar Color="Color.Primary" Variant="Variant.Outlined" Size="Size.Small">
+                        <MudIcon Icon="@Icons.Material.Outlined.ReceiptLong" Size="Size.Small" />
+                    </MudAvatar>
+                    <MudText Typo="Typo.subtitle1">Purchase information</MudText>
+                </div>
+                <MudGrid Spacing="2">
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="int" @bind-Value="_supplier" Label="Supplier" Variant="Variant.Outlined"
+                                   Required="true" RequiredError="Select a supplier.">
+                            @foreach (var supplier in _suppliers)
+                            {
+                                <MudSelectItem Value="supplier.Id">@supplier.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="6" md="3">
+                        <MudDatePicker @bind-Date="_date" Label="Purchase date" Variant="Variant.Outlined"
+                                       Required="true" RequiredError="Select the purchase date." />
+                    </MudItem>
+                    <MudItem xs="12" sm="6" md="3">
+                        <MudTextField @bind-Value="_invoice" Label="Supplier invoice" Variant="Variant.Outlined" />
+                    </MudItem>
+                </MudGrid>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" lg="4">
+            <MudPaper Outlined="true" Elevation="0" Class="pa-4 h-100">
+                <div class="d-flex align-center gap-2 mb-3">
+                    <MudAvatar Color="Color.Success" Variant="Variant.Outlined" Size="Size.Small">
+                        <MudIcon Icon="@Icons.Material.Outlined.Calculate" Size="Size.Small" />
+                    </MudAvatar>
+                    <MudText Typo="Typo.subtitle1">Purchase total</MudText>
+                </div>
+                <div class="d-flex justify-space-between mb-2">
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">Subtotal</MudText>
+                    <MudText Typo="Typo.body2">@Subtotal.ToString("N2")</MudText>
+                </div>
+                <div class="d-flex justify-space-between mb-2">
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">Discount</MudText>
+                    <MudText Typo="Typo.body2">@($"-{_discount:N2}")</MudText>
+                </div>
+                <div class="d-flex justify-space-between">
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">Tax &amp; charges</MudText>
+                    <MudText Typo="Typo.body2">@((_tax + _charges).ToString("N2"))</MudText>
+                </div>
+                <MudDivider Class="my-3" />
+                <div class="d-flex justify-space-between align-center">
+                    <MudText Typo="Typo.subtitle1">Net total</MudText>
+                    <MudText Typo="Typo.h6" Color="Color.Primary">@Total.ToString("N2")</MudText>
+                </div>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <MudPaper Outlined="true" Elevation="0" Class="mt-3 overflow-hidden">
+        <div class="d-flex flex-wrap align-center justify-space-between gap-2 pa-4">
+            <div>
+                <MudText Typo="Typo.subtitle1">Parts received</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">Enter quantities and actual costs. Updating the selling price is optional.</MudText>
+            </div>
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Add" OnClick="AddLine">Add part line</MudButton>
+        </div>
+        <MudDivider />
+
+        @if (_parts.Count == 0)
+        {
+            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="ma-4">
+                No workshop parts are available. Create a part before receiving a purchase.
+                <MudButton Href="/purchase/parts/new" Target="_blank" Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" Class="ml-2">Create workshop part</MudButton>
+            </MudAlert>
+        }
+
+        <MudTable Items="_lines" Hover="true" Breakpoint="Breakpoint.Md">
+            <HeaderContent>
+                <MudTh>Part</MudTh><MudTh>Quantity</MudTh><MudTh>Unit cost</MudTh><MudTh>New selling price</MudTh><MudTh>Remarks</MudTh><MudTh Class="text-right">Amount</MudTh><MudTh />
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Part" Style="min-width:220px">
+                    <MudSelect T="int" @bind-Value="context.PartId" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true" RequiredError="Select a part.">
+                        @foreach (var part in _parts)
+                        {
+                            <MudSelectItem Value="part.Id">@PartLabel(part)</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudTd>
+                <MudTd DataLabel="Quantity" Style="min-width:120px"><MudNumericField T="decimal" @bind-Value="context.Quantity" Variant="Variant.Outlined" Margin="Margin.Dense" Min="0.01m" Required="true" /></MudTd>
+                <MudTd DataLabel="Unit cost" Style="min-width:130px"><MudNumericField T="decimal" @bind-Value="context.UnitCost" Variant="Variant.Outlined" Margin="Margin.Dense" Min="0.01m" Required="true" /></MudTd>
+                <MudTd DataLabel="New selling price" Style="min-width:150px"><MudNumericField T="decimal?" @bind-Value="context.NewSellingPrice" Variant="Variant.Outlined" Margin="Margin.Dense" Min="0" /></MudTd>
+                <MudTd DataLabel="Remarks" Style="min-width:180px"><MudTextField @bind-Value="context.Remarks" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudTd>
+                <MudTd DataLabel="Amount" Class="text-right text-no-wrap">@((context.Quantity * context.UnitCost).ToString("N2"))</MudTd>
+                <MudTd><MudIconButton Icon="@Icons.Material.Outlined.Delete" Color="Color.Error" Disabled="@(_lines.Count == 1)" OnClick="@(() => RemoveLine(context))" /></MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudPaper>
+
+    <MudGrid Spacing="3" Class="mt-0">
+        <MudItem xs="12" lg="7">
+            <MudPaper Outlined="true" Elevation="0" Class="pa-4 h-100">
+                <MudText Typo="Typo.subtitle1" Class="mb-3">Notes</MudText>
+                <MudTextField @bind-Value="_notes" Label="Internal purchase notes" Variant="Variant.Outlined" Lines="4" />
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" lg="5">
+            <MudPaper Outlined="true" Elevation="0" Class="pa-4 h-100">
+                <MudText Typo="Typo.subtitle1" Class="mb-3">Adjustments</MudText>
+                <MudGrid Spacing="2">
+                    <MudItem xs="12" sm="4" lg="12" xl="4"><MudNumericField T="decimal" @bind-Value="_discount" Label="Discount" Variant="Variant.Outlined" Min="0" /></MudItem>
+                    <MudItem xs="12" sm="4" lg="12" xl="4"><MudNumericField T="decimal" @bind-Value="_tax" Label="Tax" Variant="Variant.Outlined" Min="0" /></MudItem>
+                    <MudItem xs="12" sm="4" lg="12" xl="4"><MudNumericField T="decimal" @bind-Value="_charges" Label="Other charges" Variant="Variant.Outlined" Min="0" /></MudItem>
+                </MudGrid>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <MudPaper Outlined="true" Elevation="0" Class="pa-3 mt-3">
+        <div class="d-flex flex-wrap justify-end gap-2">
+            <MudButton Href="/purchase/part-purchases" Disabled="_saving">Cancel</MudButton>
+            <MudButton ButtonType="ButtonType.Button" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.CheckCircle"
+                       OnClick="Save" Disabled="@(_saving || _parts.Count == 0)">@(_saving ? "Receiving…" : "Receive purchase")</MudButton>
+        </div>
+    </MudPaper>
+</MudForm>
+
+@code {
+    private IReadOnlyList<Party> _suppliers = [];
+    private IReadOnlyList<Part> _parts = [];
+    private readonly List<Line> _lines = [new()];
+    private MudForm? _form;
+    private int _supplier;
+    private DateTime? _date;
+    private string? _invoice;
+    private string? _notes;
+    private decimal _discount;
+    private decimal _tax;
+    private decimal _charges;
+    private bool _saving;
+
+    private int LineCount => _lines.Count(x => x.PartId > 0);
+    private decimal Subtotal => _lines.Sum(x => x.Quantity * x.UnitCost);
+    private decimal Total => Math.Max(0, Subtotal - _discount + _tax + _charges);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _date = Clock.Today.ToDateTime(TimeOnly.MinValue);
+        _suppliers = await PartyMaster.ListAsync(suppliers: true);
+        _parts = await Procurement.PartsAsync();
+    }
+
+    private static string PartLabel(Part part) => string.IsNullOrWhiteSpace(part.Sku) ? part.Name : $"{part.Sku} — {part.Name}";
+    private void AddLine() => _lines.Add(new());
+    private void RemoveLine(Line line) { if (_lines.Count > 1) _lines.Remove(line); }
+
+    private async Task Save()
+    {
+        if (_saving) return;
+        await (_form?.Validate() ?? Task.CompletedTask);
+        if (_form is { IsValid: false })
+        {
+            Snackbar.Add("Complete the required purchase and part fields.", Severity.Warning);
+            return;
+        }
+
+        var validLines = _lines.Where(x => x.PartId > 0).ToList();
+        if (validLines.Count == 0)
+        {
+            Snackbar.Add("Add at least one part to receive.", Severity.Warning);
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            var input = new PartPurchaseInput(_supplier, _invoice,
+                DateOnly.FromDateTime(_date ?? Clock.Today.ToDateTime(TimeOnly.MinValue)),
+                _tax, _discount, _charges, _notes,
+                validLines.Select(x => new PartPurchaseLineInput(x.PartId, x.Quantity, x.UnitCost, x.NewSellingPrice, x.Remarks)).ToList());
+            var result = await Procurement.ReceiveAsync(input);
+            Snackbar.Add(result.Ok ? "Purchase received and part costs updated." : result.Error!, result.Ok ? Severity.Success : Severity.Error);
+            if (result.Ok) Nav.NavigateTo("/purchase/part-purchases", true);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Purchase could not be received: {ex.GetBaseException().Message}", Severity.Error);
+        }
+        finally { _saving = false; }
+    }
+
+    private sealed class Line
+    {
+        public int PartId { get; set; }
+        public decimal Quantity { get; set; } = 1;
+        public decimal UnitCost { get; set; }
+        public decimal? NewSellingPrice { get; set; }
+        public string? Remarks { get; set; }
+    }
+}

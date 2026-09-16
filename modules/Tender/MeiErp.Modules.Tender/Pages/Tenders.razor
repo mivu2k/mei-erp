@@ -118,7 +118,7 @@
                     <div class="d-flex justify-end gap-1">
                         <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small"
                                        Href="@($"/tender/tenders/{context.Item.Id}")" title="Open as a page" />
-                        <AuthorizeView Policy="@TenderModule.FilesView" Context="filePerms"><Authorized><MudIconButton Icon="@Icons.Material.Filled.Folder" OnClick="@(()=>OpenFile(context.Item))" /></Authorized></AuthorizeView>
+                        <AuthorizeView Policy="@TenderModule.FilesManage" Context="filePerms"><Authorized><MudIconButton Icon="@Icons.Material.Filled.Folder" OnClick="@(()=>OpenFile(context.Item))" title="Open or create physical file" /></Authorized></AuthorizeView>
                         <MudIconButton Icon="@Icons.Material.Outlined.Print" Href="@($"/print/tender/{context.Item.Id}")" Target="_blank" />
                         <AuthorizeView Policy="@TenderModule.GuaranteesManage" Context="perms">
                             <Authorized>

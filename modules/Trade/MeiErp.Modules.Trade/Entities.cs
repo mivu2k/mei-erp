@@ -173,6 +173,8 @@ public class SalesOrder : AuditableEntity, IConcurrencyChecked
     public int DomainId { get; set; }
 
     public SalesOrderStatus Status { get; set; } = SalesOrderStatus.Draft;
+    public int? ApprovalRequestId { get; set; }
+    public string? DecisionComment { get; set; }
 
     public List<SalesOrderLine> Lines { get; set; } = [];
 
@@ -189,7 +191,10 @@ public enum SalesOrderStatus
     Confirmed = 1,
     PartiallyDelivered = 2,
     Delivered = 3,
-    Cancelled = 4
+    Cancelled = 4,
+    Pending = 5,
+    Returned = 6,
+    Rejected = 7
 }
 
 public class SalesOrderLine : Entity

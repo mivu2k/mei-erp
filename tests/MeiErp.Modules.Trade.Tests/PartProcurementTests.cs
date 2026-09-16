@@ -74,6 +74,28 @@ public sealed class PartProcurementTests : IAsyncLifetime
     }
 
     [SkippableFact]
+    public async Task A_new_part_can_be_created_and_reloaded()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db = NewDb();
+        var service = new PartProcurementService(db, _clock, _user);
+
+        var saved = await service.SavePartAsync(new Part
+        {
+            Sku = "BAT-NEW",
+            Name = "Replacement battery",
+            Brand = "Acme",
+            Model = "B-12",
+            SellingPrice = 275
+        });
+
+        Assert.True(saved.Ok, saved.Error);
+        var loaded = await service.PartAsync(saved.Value.Id);
+        Assert.Equal("BAT-NEW", loaded!.Sku);
+        Assert.Equal("Replacement battery", loaded.Name);
+    }
+
+    [SkippableFact]
     public async Task Purchases_keep_quantity_weighted_average_and_newest_last_cost()
     {
         Skip.IfNot(_available, "No PostgreSQL available.");

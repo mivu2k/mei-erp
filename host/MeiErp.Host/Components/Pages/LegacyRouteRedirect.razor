@@ -5,6 +5,7 @@
 @page "/repair/orders"
 @page "/repair/orders/{Id:int}"
 @page "/repair/parts"
+@page "/repair/parts/new"
 @page "/repair/purchases"
 @page "/repair/purchases/new"
 @page "/repair/suppliers"
@@ -103,6 +104,7 @@
             var p when p.StartsWith("/repair/orders/") => "/sales/invoices",
 
             "/repair/parts" => "/purchase/parts",
+            "/repair/parts/new" => "/purchase/parts/new",
             "/repair/purchases" => "/purchase/part-purchases",
             "/repair/purchases/new" => "/purchase/part-purchases/new",
             "/repair/suppliers" => "/purchase/suppliers",

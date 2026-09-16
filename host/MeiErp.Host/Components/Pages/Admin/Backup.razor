@@ -1,0 +1,151 @@
+@page "/admin/backup"
+@using MeiErp.Host.Services
+@attribute [Authorize(Roles = PlatformPermissions.SuperAdminRole)]
+@rendermode InteractiveServer
+@inject IDatabaseRestoreService RestoreService
+@inject ISnackbar Snackbar
+
+<PageTitle>Full system backup</PageTitle>
+
+<div class="app-page-header mb-4">
+    <div class="d-flex align-center gap-2">
+        <MudIcon Icon="@Icons.Material.Outlined.Backup" Color="Color.Primary" Size="Size.Medium" />
+        <MudText Typo="Typo.h5">Full system backup</MudText>
+    </div>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">
+        Download a complete, restorable snapshot of every ERP module.
+    </MudText>
+</div>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" md="7">
+        <MudPaper Outlined="true" Elevation="0" Class="pa-5">
+            <MudText Typo="Typo.subtitle1">Create backup</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mt-2 mb-4">
+                The download contains the platform, users, permissions, finance, inventory,
+                sales, purchases, workshop, fleet, HR, tenders, ledger, audit history,
+                report settings, and uploaded binary data stored in PostgreSQL.
+            </MudText>
+
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4">
+                Backup generation can take several minutes on a large database. Keep this page
+                open until the download begins.
+            </MudAlert>
+
+            <MudButton Href="/admin/backup/download" Target="_blank"
+                       Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Outlined.Download">
+                Generate and download full backup
+            </MudButton>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="5">
+        <MudPaper Outlined="true" Elevation="0" Class="pa-5">
+            <MudText Typo="Typo.subtitle1">Recovery information</MudText>
+            <MudList T="string" Dense="true" Class="mt-2">
+                <MudListItem Icon="@Icons.Material.Outlined.Lock">Only Super Admin can access this download.</MudListItem>
+                <MudListItem Icon="@Icons.Material.Outlined.Storage">PostgreSQL custom format supports selective or complete restore.</MudListItem>
+                <MudListItem Icon="@Icons.Material.Outlined.DeleteSweep">The temporary server copy is deleted after download.</MudListItem>
+                <MudListItem Icon="@Icons.Material.Outlined.Security">Store the downloaded file in encrypted, access-controlled storage.</MudListItem>
+            </MudList>
+            <MudDivider Class="my-3" />
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                Restore with PostgreSQL <code>pg_restore</code>. Restoration replaces or merges
+                database state and should be performed by a system administrator during downtime.
+            </MudText>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+<MudPaper Outlined="true" Elevation="0" Class="pa-5 mt-4" Style="border-color:var(--mud-palette-error);">
+    <div class="d-flex align-center gap-2 mb-2">
+        <MudIcon Icon="@Icons.Material.Outlined.Restore" Color="Color.Error" />
+        <MudText Typo="Typo.h6">Restore complete database</MudText>
+    </div>
+    <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="my-4">
+        Restoring replaces the live ERP database. Ask all users to stop work first.
+        Records created after the selected backup will be lost. The system must be restarted afterward.
+    </MudAlert>
+
+    <MudGrid Spacing="3">
+        <MudItem xs="12" md="7">
+            <MudFileUpload T="IBrowserFile" FilesChanged="SelectRestoreFile" Accept=".backup,.dump">
+                <ActivatorContent>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Error" FullWidth="true"
+                               StartIcon="@Icons.Material.Outlined.UploadFile" Disabled="_restoring">
+                        @(_restoreFile?.Name ?? "Choose PostgreSQL backup file")
+                    </MudButton>
+                </ActivatorContent>
+            </MudFileUpload>
+        </MudItem>
+        <MudItem xs="12" md="5">
+            <MudTextField @bind-Value="_confirmation" Label="Type RESTORE to confirm"
+                          Variant="Variant.Outlined" Disabled="_restoring" Immediate="true" />
+        </MudItem>
+    </MudGrid>
+
+    <div class="d-flex flex-wrap align-center justify-space-between gap-3 mt-4">
+        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+            A pre-restore safety backup is automatically retained on the server.
+        </MudText>
+        <MudButton Variant="Variant.Filled" Color="Color.Error"
+                   StartIcon="@Icons.Material.Outlined.RestorePage"
+                   Disabled="@(!CanRestore)" OnClick="RestoreAsync">
+            @(_restoring ? "Restoring database…" : "Restore database")
+        </MudButton>
+    </div>
+
+    @if (_result is not null)
+    {
+        <MudAlert Severity="@(_result.Ok ? Severity.Success : Severity.Error)"
+                  Variant="Variant.Filled" Class="mt-4">
+            @_result.Message
+            @if (_result.SafetyBackupName is not null)
+            {
+                <div class="mt-1"><strong>Safety backup:</strong> @_result.SafetyBackupName</div>
+            }
+        </MudAlert>
+    }
+</MudPaper>
+
+@code {
+    private const long MaxRestoreBytes = 5L * 1024 * 1024 * 1024;
+    private IBrowserFile? _restoreFile;
+    private string? _confirmation;
+    private bool _restoring;
+    private DatabaseRestoreResult? _result;
+
+    private bool CanRestore => !_restoring && _restoreFile is not null &&
+        string.Equals(_confirmation?.Trim(), "RESTORE", StringComparison.Ordinal);
+
+    private void SelectRestoreFile(IBrowserFile? file)
+    {
+        _restoreFile = file;
+        _result = null;
+    }
+
+    private async Task RestoreAsync()
+    {
+        if (!CanRestore || _restoreFile is null) return;
+        _restoring = true;
+        _result = null;
+        try
+        {
+            await using var stream = _restoreFile.OpenReadStream(MaxRestoreBytes);
+            _result = await RestoreService.RestoreAsync(stream);
+            Snackbar.Add(_result.Message, _result.Ok ? Severity.Success : Severity.Error,
+                options => options.VisibleStateDuration = 15000);
+            if (_result.Ok)
+            {
+                _restoreFile = null;
+                _confirmation = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            _result = new(false, $"Restore could not start: {ex.GetBaseException().Message}");
+        }
+        finally { _restoring = false; }
+    }
+}

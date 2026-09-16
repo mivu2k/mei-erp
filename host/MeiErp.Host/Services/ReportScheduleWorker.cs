@@ -44,7 +44,7 @@ public sealed class ReportScheduleWorker(
                 if (!await CanRunAsync(db, owner.Id, definition, ct))
                     throw new UnauthorizedAccessException("The owner no longer has permission to run this report.");
                 var request = JsonSerializer.Deserialize<ReportRequest>(schedule.FiltersJson) ?? new ReportRequest();
-                var result = await definition.Run(request, ct);
+                var result = ReportRenderer.Apply(await definition.Run(request, ct), request);
                 schedule.LastRowCount = result.Rows.Count;
                 schedule.LastError = null;
                 await notifier.NotifyAsync(new NotificationRequest(

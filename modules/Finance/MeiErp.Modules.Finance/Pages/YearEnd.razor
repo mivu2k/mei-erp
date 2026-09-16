@@ -5,16 +5,9 @@
 @inject ISnackbar Snackbar
 @inject IDialogService Dialogs
 
-<PageTitle>Fiscal years</PageTitle>
-
-<MudText Typo="Typo.h5">Fiscal years</MudText>
-<MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
-    Closing a year sweeps income and expense into retained earnings and locks the period.
-    Nothing can be posted into a closed year afterwards.
-</MudText>
-
-<MudPaper Outlined="true" Elevation="0">
-    <MudDataGrid T="FiscalYear" Items="_years" Dense="true" Hover="true" Elevation="0"
+<ListShell Title="Fiscal years" Subtitle="Closing a year sweeps income and expense into retained earnings and locks the period. Nothing can be posted into a closed year afterwards."
+           Icon="@Icons.Material.Outlined.EventBusy" Loading="_loading" IsEmpty="@(!_loading&&_years.Count==0)" EmptyTitle="No fiscal years configured">
+ <ChildContent><MudDataGrid T="FiscalYear" Items="_years" Dense="true" Hover="true" Elevation="0"
                  Loading="_loading" Filterable="false">
         <Columns>
             <PropertyColumn Property="@(y => y.Name)" Title="Year" />
@@ -44,8 +37,8 @@
                 </CellTemplate>
             </TemplateColumn>
         </Columns>
-    </MudDataGrid>
-</MudPaper>
+    </MudDataGrid></ChildContent>
+</ListShell>
 
 @if (_error is not null)
 {

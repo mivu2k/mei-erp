@@ -11,6 +11,7 @@
 @inject IDialogService Dialogs
 
 <ListShell Title="Items"
+           PreferenceKey="inventory-items" @bind-ViewMode="_viewMode"
            Subtitle="Stock moves only through receipts, deliveries and counts — never by editing this list."
            Icon="@Icons.Material.Outlined.Inventory2"
            Loading="_loading"
@@ -25,6 +26,8 @@
                            StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">
                     New item
                 </MudButton>
+                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.UploadFile"
+                           Href="/inventory/items/import">Import</MudButton>
                 <MudTooltip Text="Open as a full page instead">
                     <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Href="/inventory/items/new" />
                 </MudTooltip>
@@ -57,7 +60,8 @@
     </Toolbar>
 
     <ChildContent>
-    <MudDataGrid T="Item" Items="_rows" Dense="true" Hover="true" Elevation="0"
+    <ResponsiveDataView TItem="Item" Items="_rows" Mode="_viewMode">
+    <ListContent><MudDataGrid T="Item" Items="_rows" Dense="true" Hover="true" Elevation="0"
                  Filterable="false" RowsPerPage="25">
         <Columns>
             <PropertyColumn Property="@(i => i.Code)" Title="Code" />
@@ -113,7 +117,23 @@
                 </CellTemplate>
             </TemplateColumn>
         </Columns>
-    </MudDataGrid>
+    </MudDataGrid></ListContent>
+    <CardTemplate Context="item">
+        <EntityCard Reference="@item.Code" Title="@item.Name" Subtitle="@item.Category?.Name">
+            <Status>@if(!item.IsActive){<MudChip T="string" Size="Size.Small">Inactive</MudChip>}else if(item.ReorderLevel>0&&item.QuantityOnHand<=item.ReorderLevel){<MudChip T="string" Size="Size.Small" Color="Color.Warning">Low stock</MudChip>}</Status>
+            <Body>
+                <div class="app-entity-fact"><small>On hand</small><strong>@item.QuantityOnHand.ToString("0.##") @item.Unit</strong></div>
+                <div class="app-entity-fact"><small>Selling price</small><span>@item.SellingPrice.ToString("N2")</span></div>
+                <div class="app-entity-fact"><small>Reorder level</small><span>@item.ReorderLevel.ToString("0.##") @item.Unit</span></div>
+                <div class="app-entity-fact"><small>Tracking</small><span>@(item.IsSerialized ? "Serial" : item.IsBatchTracked ? "Batch" : "Quantity")</span></div>
+            </Body>
+            <Actions>
+                <AuthorizeView Policy="@InventoryModule.StockAdjust"><Authorized><MudButton Size="Size.Small" OnClick="@(()=>Count(item))">Count</MudButton></Authorized></AuthorizeView>
+                <AuthorizeView Policy="@InventoryModule.ItemsManage"><Authorized><MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" OnClick="@(()=>Edit(item))"/><MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small" Href="@($"/inventory/items/{item.Id}")"/></Authorized></AuthorizeView>
+            </Actions>
+        </EntityCard>
+    </CardTemplate>
+    </ResponsiveDataView>
     </ChildContent>
 </ListShell>
 
@@ -130,6 +150,7 @@
     private string? _search;
     private bool _includeInactive;
     private bool _loading = true;
+    private EntityViewMode _viewMode;
 
     /// <summary>
     /// One sequential load. Every query in here shares this circuit's single

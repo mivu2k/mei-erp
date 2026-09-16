@@ -100,6 +100,7 @@ public static class InventoryModule
         services.AddScoped<StockBookContext>();
         services.AddScoped<IStockService, StockService>();
         services.AddScoped<ICatalogService, CatalogService>();
+        services.AddScoped<IInventoryImportService, InventoryImportService>();
         services.AddScoped<IWarehouseService, WarehouseService>();
         services.AddScoped<ITransferService, TransferService>();
         services.AddScoped<IInventoryCountService, InventoryCountService>();

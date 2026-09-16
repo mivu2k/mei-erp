@@ -5,6 +5,11 @@
 @inject IModuleCatalog Catalog
 @inject ICurrentUser User
 @inject IClock Clock
+@inject UserManager<ApplicationUser> Users
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager Nav
+@using Microsoft.AspNetCore.Identity
+@using MeiErp.Platform.Identity
 
 <PageTitle>Dashboard</PageTitle>
 
@@ -97,7 +102,17 @@ else
 
 @code {
     private DashboardSnapshot? _data;
-    protected override async Task OnInitializedAsync() => _data = await Insights.GetAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        var principal = (await AuthState.GetAuthenticationStateAsync()).User;
+        var user = await Users.GetUserAsync(principal);
+        if (!string.IsNullOrWhiteSpace(user?.PreferredHomePath) && user.PreferredHomePath != "/")
+        {
+            Nav.NavigateTo(user.PreferredHomePath);
+            return;
+        }
+        _data = await Insights.GetAsync();
+    }
     private int AttentionTotal => _data is null ? 0 : _data.OverdueApprovals + _data.OverdueReturns + _data.OverdueFiles;
 
     private string Greeting

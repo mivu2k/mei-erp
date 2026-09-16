@@ -6,7 +6,7 @@
 @inject IDialogService Dialogs
 
 <ListShell Title="Sales orders"
-           Subtitle="Confirming an order reserves nothing — stock is checked when goods actually go out."
+           Subtitle="Orders follow role-based approval by value; goods can only leave after approval."
            Icon="@Icons.Material.Outlined.ShoppingCart"
            Loading="_loading"
            IsEmpty="@(_rows.Count == 0)"
@@ -56,12 +56,12 @@
                         <MudIconButton Icon="@Icons.Material.Outlined.Print" Href="@($"/print/inventory/sales-order/{context.Item.Id}")" Target="_blank" />
                         <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small"
                                        Href="@($"/sales/orders/{context.Item.Id}")" title="Open as a page" />
-                        @if (context.Item.Status is SalesOrderStatus.Draft)
+                        @if (context.Item.Status is SalesOrderStatus.Draft or SalesOrderStatus.Returned)
                         {
                             <MudButton Size="Size.Small" Variant="Variant.Text"
                                        OnClick="@(() => Edit(context.Item))">Edit</MudButton>
                             <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
-                                       OnClick="@(() => Confirm(context.Item))">Confirm</MudButton>
+                                       OnClick="@(() => Confirm(context.Item))">Submit for approval</MudButton>
                         }
                         else if (context.Item.Status is SalesOrderStatus.Confirmed
                                                      or SalesOrderStatus.PartiallyDelivered)
@@ -106,6 +106,9 @@
         SalesOrderStatus.Delivered => Color.Success,
         SalesOrderStatus.Confirmed => Color.Info,
         SalesOrderStatus.PartiallyDelivered => Color.Info,
+        SalesOrderStatus.Pending => Color.Warning,
+        SalesOrderStatus.Returned => Color.Warning,
+        SalesOrderStatus.Rejected => Color.Error,
         SalesOrderStatus.Cancelled => Color.Error,
         _ => Color.Default
     };
@@ -120,7 +123,7 @@
     {
         var result = await Sales.ConfirmAsync(row.Id);
         if (result.Failed) Snackbar.Add(result.Error!, Severity.Error);
-        else Snackbar.Add("Order confirmed.", Severity.Success);
+        else Snackbar.Add("Order submitted for approval. Delivery stays locked until it is approved.", Severity.Success);
         await LoadAsync();
     }
 

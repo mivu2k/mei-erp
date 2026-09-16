@@ -111,6 +111,7 @@ public class TradeDbContext(
             b.Property(o => o.Number).HasMaxLength(50).IsRequired();
             b.Property(o => o.PartyName).HasMaxLength(200);
             b.Property(o => o.Notes).HasMaxLength(1000);
+            b.Property(o => o.DecisionComment).HasMaxLength(1000);
 
             b.HasIndex(o => o.Number).IsUnique().HasFilter("\"IsDeleted\" = false");
             b.HasIndex(o => o.Date);

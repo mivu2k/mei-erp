@@ -22,6 +22,7 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options)
 
     public DbSet<UserModuleAccess> ModuleAccess => Set<UserModuleAccess>();
     public DbSet<Department> Departments => Set<Department>();
+    public DbSet<Designation> Designations => Set<Designation>();
     public DbSet<CompanyProfile> CompanyProfiles => Set<CompanyProfile>();
     public DbSet<LabelTemplate> LabelTemplates => Set<LabelTemplate>();
     public DbSet<AuditLogEntry> AuditLogs => Set<AuditLogEntry>();
@@ -53,6 +54,7 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options)
         {
             b.Property(u => u.FullName).HasMaxLength(200).IsRequired();
             b.Property(u => u.EmployeeCode).HasMaxLength(50);
+            b.Property(u => u.PreferredHomePath).HasMaxLength(300);
             b.HasIndex(u => u.EmployeeCode).IsUnique()
              .HasFilter("\"EmployeeCode\" IS NOT NULL");
 
@@ -122,6 +124,19 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options)
              .WithMany()
              .HasForeignKey(d => d.HeadUserId)
              .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<Designation>(b =>
+        {
+            b.Property(d => d.Name).HasMaxLength(150).IsRequired();
+            b.Property(d => d.Code).HasMaxLength(30);
+            b.HasIndex(d => d.Name).IsUnique();
+        });
+
+        builder.Entity<CompanyProfile>(b =>
+        {
+            b.Property(x => x.PrintPageSize).HasMaxLength(20).IsRequired();
+            b.Property(x => x.PrintMarginMm).HasPrecision(5, 2);
         });
 
         builder.Entity<LabelTemplate>(b =>

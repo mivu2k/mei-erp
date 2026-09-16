@@ -105,6 +105,7 @@ builder.Services.AddScoped<ITradeStockPort, MeiErp.Host.Services.InventoryStockA
 // it. Optional by design: without this, the quote-a-job path simply is not
 // offered.
 builder.Services.AddScoped<ITradeJobSource, MeiErp.Host.Services.RepairJobSource>();
+builder.Services.AddScoped<IFileHolderDirectory, MeiErp.Host.Services.FileHolderDirectory>();
 
 // ...and lets the workshop book devices in against the one party master,
 // instead of keeping a second customer list of its own.
@@ -212,6 +213,7 @@ builder.Services.AddScoped<INotificationOutbox, NotificationOutbox>();
 // registered, so a report appears in the hub by being declared - not by anyone
 // editing the hub.
 builder.Services.AddSingleton<IPrintService, PrintService>();
+builder.Services.AddScoped<IDatabaseRestoreService, DatabaseRestoreService>();
 builder.Services.AddScoped<IReportCatalog>(sp =>
     new ReportCatalog(sp.GetServices<ReportDefinition>()));
 builder.Services.AddScoped<PlatformSeeder>();
@@ -287,6 +289,8 @@ app.MapRazorComponents<App>()
 app.MapAuthEndpoints();
 app.MapReportEndpoints();
 app.MapRecordPrintEndpoints();
+app.MapPageOutputEndpoints();
+app.MapBackupEndpoints();
 app.MapKioskEndpoints();
 
 // ---------------------------------------------------------------- start

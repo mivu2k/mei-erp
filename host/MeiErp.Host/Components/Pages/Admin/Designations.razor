@@ -1,0 +1,52 @@
+@page "/admin/designations"
+@attribute [Authorize(Policy = PlatformPermissions.DepartmentsManage)]
+@rendermode InteractiveServer
+@inject IAdminService Admin
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Designations</PageTitle>
+
+<ListShell Title="Designations" Subtitle="Maintain the approved job titles administrators can assign to users."
+           Icon="@Icons.Material.Outlined.WorkOutline" Loading="_loading" IsEmpty="@(_rows.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.WorkOutline" EmptyTitle="No designations yet"
+           EmptyHint="Add the first company job title.">
+    <Actions><MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))">New designation</MudButton></Actions>
+    <EmptyAction><MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@(() => Edit(null))">New designation</MudButton></EmptyAction>
+    <ChildContent>
+        <MudTable Items="_rows" Dense="true" Hover="true" Elevation="0" RowsPerPage="25">
+            <HeaderContent><MudTh>Designation</MudTh><MudTh>Code</MudTh><MudTh>Status</MudTh><MudTh /></HeaderContent>
+            <RowTemplate>
+                <MudTd><b>@context.Name</b></MudTd><MudTd>@context.Code</MudTd>
+                <MudTd><MudChip T="string" Size="Size.Small" Color="@(context.IsActive ? Color.Success : Color.Default)" Variant="Variant.Outlined">@(context.IsActive ? "Active" : "Inactive")</MudChip></MudTd>
+                <MudTd Class="text-right"><MudIconButton Icon="@Icons.Material.Outlined.Edit" OnClick="@(() => Edit(context))" /><MudIconButton Icon="@Icons.Material.Outlined.Delete" Color="Color.Error" OnClick="@(() => Delete(context))" /></MudTd>
+            </RowTemplate>
+            <PagerContent><MudTablePager PageSizeOptions="@(new[]{10,25,50,100})" /></PagerContent>
+        </MudTable>
+    </ChildContent>
+</ListShell>
+
+@if (_editing is not null)
+{
+    <MudPaper Outlined="true" Class="pa-4 mt-4">
+        <MudText Typo="Typo.h6">@(_isNew ? "New designation" : "Edit designation")</MudText>
+        <div class="d-flex align-center flex-wrap gap-3 mt-3">
+            <MudTextField @bind-Value="_editing.Name" Label="Designation name" Required="true" Variant="Variant.Outlined" />
+            <MudTextField @bind-Value="_editing.Code" Label="Code" Variant="Variant.Outlined" />
+            <MudSwitch T="bool" @bind-Value="_editing.IsActive" Label="Active" Color="Color.Success" />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">Save</MudButton>
+            <MudButton OnClick="@(() => _editing = null)">Cancel</MudButton>
+        </div>
+    </MudPaper>
+}
+
+@code {
+    private IReadOnlyList<Designation> _rows = [];
+    private Designation? _editing;
+    private bool _loading = true, _isNew;
+    protected override Task OnInitializedAsync() => Load();
+    private async Task Load(){_loading=true;_rows=await Admin.DesignationsAsync(true);_loading=false;}
+    private void Edit(Designation? row){_isNew=row is null;_editing=row is null?new Designation():new Designation{Id=row.Id,Name=row.Name,Code=row.Code,IsActive=row.IsActive};}
+    private async Task Save(){if(_editing is null)return;var result=await Admin.SaveDesignationAsync(_editing);if(result.Failed){Snackbar.Add(result.Error!,Severity.Error);return;}Snackbar.Add("Designation saved.",Severity.Success);_editing=null;await Load();}
+    private async Task Delete(Designation row){var ok=await Dialogs.ShowMessageBox($"Delete {row.Name}?","Users assigned this title will prevent deletion.",yesText:"Delete",cancelText:"Cancel");if(ok!=true)return;var result=await Admin.DeleteDesignationAsync(row.Id);Snackbar.Add(result.Ok?"Designation deleted.":result.Error!,result.Ok?Severity.Success:Severity.Error);if(result.Ok)await Load();}
+}

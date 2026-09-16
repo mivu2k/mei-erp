@@ -161,6 +161,16 @@ public interface IFleetService
     /// <summary>Maintenance records with a date-based next service due soon.</summary>
     Task<IReadOnlyList<VehicleService>> UpcomingServicesAsync(int withinDays = 30, CancellationToken ct = default);
 
+    /// <summary>
+    /// Current maintenance obligations. Only the latest schedule for each
+    /// vehicle and maintenance kind is actionable; older records are history.
+    /// </summary>
+    Task<IReadOnlyList<MaintenanceDue>> MaintenanceDueAsync(
+        int withinDays = 30, int withinKilometres = 1_000, CancellationToken ct = default);
+
+    /// <summary>At-a-glance operational state for the Fleet landing page.</summary>
+    Task<FleetOverview> OverviewAsync(CancellationToken ct = default);
+
     /// <summary>Total spend per vehicle over a period, for the running-cost report.</summary>
     Task<IReadOnlyList<VehicleCost>> CostsAsync(DateOnly from, DateOnly to, CancellationToken ct = default);
 }
@@ -170,6 +180,27 @@ public sealed record VehicleCost(
 {
     public decimal Total => Fuel + Maintenance + Other;
 }
+
+public sealed record MaintenanceDue(
+    int VehicleId,
+    string Registration,
+    string Vehicle,
+    ServiceKind Kind,
+    DateOnly? DueDate,
+    int? DueOdometer,
+    int? CurrentOdometer,
+    bool DateOverdue,
+    bool OdometerOverdue)
+{
+    public bool IsOverdue => DateOverdue || OdometerOverdue;
+}
+
+public sealed record FleetOverview(
+    int ActiveVehicles,
+    int UnderRepairVehicles,
+    int DocumentsDue,
+    int MaintenanceDue,
+    decimal SpendThisMonth);
 
 public sealed class FleetService(AutoDbContext db, IClock clock) : IFleetService
 {
@@ -390,6 +421,88 @@ public sealed class FleetService(AutoDbContext db, IClock clock) : IFleetService
                       || s.Vehicle.Status == VehicleStatus.UnderRepair))
             .OrderBy(s => s.NextDueDate)
             .ToListAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<MaintenanceDue>> MaintenanceDueAsync(
+        int withinDays = 30, int withinKilometres = 1_000, CancellationToken ct = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(withinDays);
+        ArgumentOutOfRangeException.ThrowIfNegative(withinKilometres);
+
+        var activeVehicles = await db.Vehicles.AsNoTracking()
+            .Where(v => v.Status == VehicleStatus.Active || v.Status == VehicleStatus.UnderRepair)
+            .Select(v => new { v.Id, v.Registration, v.Make, v.Model, v.CurrentOdometer })
+            .ToListAsync(ct);
+
+        var vehicleIds = activeVehicles.Select(v => v.Id).ToArray();
+        var scheduled = await db.Services.AsNoTracking()
+            .Where(s => vehicleIds.Contains(s.VehicleId)
+                     && (s.NextDueDate != null || s.NextDueOdometer != null)
+                     && s.Kind != ServiceKind.Fuel
+                     && s.Kind != ServiceKind.Insurance
+                     && s.Kind != ServiceKind.Registration)
+            .ToListAsync(ct);
+
+        // A later record of the same kind replaces the earlier schedule. A
+        // historical oil-change reminder must not stay red forever after the
+        // next oil change has already been logged.
+        var currentSchedules = scheduled
+            .GroupBy(s => new { s.VehicleId, s.Kind })
+            .Select(g => g.OrderByDescending(s => s.Date)
+                          .ThenByDescending(s => s.Odometer ?? -1)
+                          .ThenByDescending(s => s.Id)
+                          .First())
+            .ToList();
+
+        var cutoffDate = clock.Today.AddDays(withinDays);
+        var vehicles = activeVehicles.ToDictionary(v => v.Id);
+
+        return [.. currentSchedules
+            .Where(s => (s.NextDueDate is { } date && date <= cutoffDate)
+                     || (s.NextDueOdometer is { } due
+                      && vehicles[s.VehicleId].CurrentOdometer is { } current
+                      && due <= current + withinKilometres))
+            .Select(s =>
+            {
+                var vehicle = vehicles[s.VehicleId];
+                return new MaintenanceDue(
+                    vehicle.Id,
+                    vehicle.Registration,
+                    $"{vehicle.Make} {vehicle.Model}",
+                    s.Kind,
+                    s.NextDueDate,
+                    s.NextDueOdometer,
+                    vehicle.CurrentOdometer,
+                    s.NextDueDate is { } date && date < clock.Today,
+                    s.NextDueOdometer is { } due
+                        && vehicle.CurrentOdometer is { } current
+                        && due <= current);
+            })
+            .OrderByDescending(x => x.IsOverdue)
+            .ThenBy(x => x.DueDate ?? DateOnly.MaxValue)
+            .ThenBy(x => x.DueOdometer ?? int.MaxValue)];
+    }
+
+    public async Task<FleetOverview> OverviewAsync(CancellationToken ct = default)
+    {
+        var monthStart = new DateOnly(clock.Today.Year, clock.Today.Month, 1);
+        var nextMonth = monthStart.AddMonths(1);
+        var statuses = await db.Vehicles.AsNoTracking()
+            .GroupBy(v => v.Status)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.Status, x => x.Count, ct);
+        var documentDue = (await ExpiringAsync(30, ct)).Count;
+        var maintenanceDue = (await MaintenanceDueAsync(30, 1_000, ct)).Count;
+        var spend = await db.Services.AsNoTracking()
+            .Where(s => s.Date >= monthStart && s.Date < nextMonth)
+            .SumAsync(s => s.Cost, ct);
+
+        return new FleetOverview(
+            statuses.GetValueOrDefault(VehicleStatus.Active),
+            statuses.GetValueOrDefault(VehicleStatus.UnderRepair),
+            documentDue,
+            maintenanceDue,
+            spend);
     }
 
     public async Task<IReadOnlyList<VehicleCost>> CostsAsync(

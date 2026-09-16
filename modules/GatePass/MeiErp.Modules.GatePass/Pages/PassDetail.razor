@@ -23,7 +23,7 @@
             </MudTable>
         }
     </DialogContent>
-    <DialogActions><MudButton Href="@($"/print/gatepass/{PassId}")" Target="_blank">Print</MudButton><MudButton OnClick="@(() => Dialog.Close())">Close</MudButton></DialogActions>
+    <DialogActions><MudButton Href="@($"/print/gatepass/{PassId}")" Target="_blank" StartIcon="@Icons.Material.Outlined.Print">A4</MudButton><MudButton Href="@($"/print/gatepass/{PassId}?size=roll")" Target="_blank" StartIcon="@Icons.Material.Outlined.ReceiptLong">POS</MudButton><MudButton OnClick="@(() => Dialog.Close())">Close</MudButton></DialogActions>
 </MudDialog>
 
 @code {

@@ -1,11 +1,96 @@
 @page "/purchase/parts"
+@page "/purchase/parts/new"
 @attribute [Authorize(Policy = PurchaseModule.OrdersManage)]
 @rendermode InteractiveServer
 @inject IPartProcurementService Procurement
 @inject ISnackbar Snackbar
+@inject NavigationManager Nav
 
-<ListShell Title="Parts catalog"
-           Subtitle="Selling prices backed by purchase-cost history."
+@if (_editing is not null)
+{
+    <div class="d-flex flex-wrap align-center gap-2 mb-4">
+        <MudIconButton Icon="@Icons.Material.Outlined.ArrowBack" OnClick="CloseEditor" />
+        <div>
+            <MudText Typo="Typo.h5">@(_editing.Id == 0 ? "Create workshop part" : "Edit workshop part")</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                Keep the catalog identity and selling price here. Purchase receipts maintain cost figures automatically.
+            </MudText>
+        </div>
+    </div>
+
+    <MudForm @ref="_form">
+        <MudGrid Spacing="3">
+            <MudItem xs="12" lg="8">
+                <MudPaper Outlined="true" Elevation="0" Class="pa-4 h-100">
+                    <div class="d-flex align-center gap-2 mb-4">
+                        <MudAvatar Color="Color.Primary" Variant="Variant.Outlined" Size="Size.Small">
+                            <MudIcon Icon="@Icons.Material.Outlined.Handyman" Size="Size.Small" />
+                        </MudAvatar>
+                        <MudText Typo="Typo.subtitle1">Part details</MudText>
+                    </div>
+                    <MudGrid Spacing="2">
+                        <MudItem xs="12" md="8">
+                            <MudTextField @bind-Value="_editing.Name" Label="Part name"
+                                          Variant="Variant.Outlined" Required="true"
+                                          RequiredError="Enter a part name." Immediate="true" />
+                        </MudItem>
+                        <MudItem xs="12" md="4">
+                            <MudTextField @bind-Value="_editing.Sku" Label="SKU / part code"
+                                          Variant="Variant.Outlined" HelperText="Optional; must be unique" />
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            <MudTextField @bind-Value="_editing.Brand" Label="Brand / manufacturer"
+                                          Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            <MudTextField @bind-Value="_editing.Model" Label="Model / compatibility"
+                                          Variant="Variant.Outlined" />
+                        </MudItem>
+                    </MudGrid>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" lg="4">
+                <MudPaper Outlined="true" Elevation="0" Class="pa-4 h-100">
+                    <div class="d-flex align-center gap-2 mb-4">
+                        <MudAvatar Color="Color.Success" Variant="Variant.Outlined" Size="Size.Small">
+                            <MudIcon Icon="@Icons.Material.Outlined.Sell" Size="Size.Small" />
+                        </MudAvatar>
+                        <MudText Typo="Typo.subtitle1">Pricing</MudText>
+                    </div>
+                    <MudNumericField T="decimal" @bind-Value="_editing.SellingPrice"
+                                     Label="Selling price" Variant="Variant.Outlined" Min="0"
+                                     HelperText="The customer-facing unit price." />
+                    @if (_editing.Id > 0)
+                    {
+                        <MudDivider Class="my-4" />
+                        <div class="d-flex justify-space-between mb-2">
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">Last purchase cost</MudText>
+                            <MudText Typo="Typo.body2">@(_editing.LastPurchaseCost?.ToString("N2") ?? "Not purchased")</MudText>
+                        </div>
+                        <div class="d-flex justify-space-between">
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">Average cost</MudText>
+                            <MudText Typo="Typo.body2">@(_editing.AverageCost?.ToString("N2") ?? "Not purchased")</MudText>
+                        </div>
+                    }
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <MudPaper Outlined="true" Elevation="0" Class="pa-3 mt-3">
+            <div class="d-flex flex-wrap justify-end gap-2">
+                <MudButton ButtonType="ButtonType.Button" OnClick="CloseEditor" Disabled="_saving">Cancel</MudButton>
+                <MudButton ButtonType="ButtonType.Button" Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Outlined.Save" OnClick="Save" Disabled="_saving">
+                    @(_saving ? "Saving…" : _editing.Id == 0 ? "Create part" : "Save changes")
+                </MudButton>
+            </div>
+        </MudPaper>
+    </MudForm>
+}
+else
+{
+<ListShell Title="Workshop parts"
+           Subtitle="Create and maintain the parts used by workshop jobs; purchase receipts update their cost history."
            Icon="@Icons.Material.Outlined.Category"
            Loading="false"
            IsEmpty="@(_rows.Count == 0)"
@@ -14,14 +99,14 @@
            EmptyHint="Add a part to start recording purchase cost and selling price against it.">
     <Actions>
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                   StartIcon="@Icons.Material.Filled.Add" OnClick="New">
+                   StartIcon="@Icons.Material.Filled.Add" Href="/purchase/parts/new">
             New part
         </MudButton>
     </Actions>
 
     <EmptyAction>
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                   StartIcon="@Icons.Material.Filled.Add" OnClick="New">
+                   StartIcon="@Icons.Material.Filled.Add" Href="/purchase/parts/new">
             New part
         </MudButton>
     </EmptyAction>
@@ -34,21 +119,7 @@
     </Toolbar>
 
     <ChildContent>
-    @if (_editing is not null)
-    {
-        <MudPaper Class="pa-4 ma-3" Outlined="true">
-            <MudGrid>
-                <MudItem xs="12" md="2"><MudTextField @bind-Value="_editing.Sku" Label="SKU" /></MudItem>
-                <MudItem xs="12" md="4"><MudTextField @bind-Value="_editing.Name" Label="Name" Required="true" /></MudItem>
-                <MudItem xs="6" md="2"><MudTextField @bind-Value="_editing.Brand" Label="Brand" /></MudItem>
-                <MudItem xs="6" md="2"><MudTextField @bind-Value="_editing.Model" Label="Model" /></MudItem>
-                <MudItem xs="12" md="2"><MudNumericField @bind-Value="_editing.SellingPrice" Label="Selling price" /></MudItem>
-            </MudGrid>
-            <MudButton Variant="Variant.Filled" OnClick="Save">Save</MudButton>
-            <MudButton OnClick="@(() => _editing = null)">Cancel</MudButton>
-        </MudPaper>
-    }
-    <MudTable Items="_rows" Dense="true" Hover="true">
+    <MudTable Items="_rows" Dense="true" Hover="true" RowsPerPage="25">
         <HeaderContent>
             <MudTh>SKU</MudTh><MudTh>Part</MudTh><MudTh>Last cost</MudTh><MudTh>Average cost</MudTh><MudTh>Selling</MudTh><MudTh>Margin</MudTh><MudTh/>
         </HeaderContent>
@@ -61,34 +132,82 @@
             <MudTd>@context.MarginPercent?.ToString("N2")%</MudTd>
             <MudTd><MudIconButton Icon="@Icons.Material.Outlined.Edit" OnClick="@(() => Edit(context))" /></MudTd>
         </RowTemplate>
+        <PagerContent><MudTablePager PageSizeOptions="@(new[]{10,25,50,100})" /></PagerContent>
     </MudTable>
     </ChildContent>
 </ListShell>
+}
 
 @code {
     private IReadOnlyList<Part> _rows = [];
     private Part? _editing;
     private string? _search;
+    private bool _saving;
+    private MudForm? _form;
 
-    protected override Task OnInitializedAsync() => Load();
+    private bool IsNewRoute => Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].TrimEnd('/')
+        .Equals("purchase/parts/new", StringComparison.OrdinalIgnoreCase);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsNewRoute)
+        {
+            _editing ??= new Part();
+            return;
+        }
+
+        _editing = null;
+        await Load();
+    }
 
     private async Task Load() => _rows = await Procurement.PartsAsync(_search);
 
-    private void New() => _editing = new();
-
     private void Edit(Part x) => _editing = new()
     {
-        Id = x.Id, Sku = x.Sku, Name = x.Name, Brand = x.Brand, Model = x.Model, SellingPrice = x.SellingPrice
+        Id = x.Id, Sku = x.Sku, Name = x.Name, Brand = x.Brand, Model = x.Model,
+        SellingPrice = x.SellingPrice, LastPurchaseCost = x.LastPurchaseCost,
+        AverageCost = x.AverageCost, PurchasedQuantity = x.PurchasedQuantity,
+        LastPurchasedOn = x.LastPurchasedOn, LastSupplierId = x.LastSupplierId,
+        LastSupplierName = x.LastSupplierName, IsActive = x.IsActive
     };
+
+    private void CloseEditor()
+    {
+        if (IsNewRoute) Nav.NavigateTo("/purchase/parts");
+        else _editing = null;
+    }
 
     private async Task Save()
     {
-        var r = await Procurement.SavePartAsync(_editing!);
-        Snackbar.Add(r.Ok ? "Part saved." : r.Error!, r.Ok ? Severity.Success : Severity.Error);
-        if (r.Ok)
+        if (_editing is null || _saving) return;
+        if (_form is not null)
         {
-            _editing = null;
-            await Load();
+            await _form.Validate();
+            if (!_form.IsValid)
+            {
+                Snackbar.Add("Complete the required part fields.", Severity.Warning);
+                return;
+            }
+        }
+
+        _saving = true;
+        try
+        {
+            var r = await Procurement.SavePartAsync(_editing);
+            Snackbar.Add(r.Ok ? "Part created." : r.Error!, r.Ok ? Severity.Success : Severity.Error);
+            if (r.Ok)
+            {
+                _editing = null;
+                Nav.NavigateTo("/purchase/parts", true);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Part could not be saved: {ex.GetBaseException().Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
         }
     }
 }

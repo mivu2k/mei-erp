@@ -79,6 +79,7 @@ public sealed record ApprovalInboxItem(
     string ModuleKey,
     string ModuleName,
     string DocumentType,
+    string CategoryName,
     string DocumentReference,
     string Summary,
     string DocumentUrl,

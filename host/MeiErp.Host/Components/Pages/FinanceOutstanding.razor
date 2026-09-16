@@ -1,0 +1,55 @@
+@page "/finance/outstanding"
+@attribute [Authorize(Policy = FinanceModule.ReportsView)]
+@rendermode InteractiveServer
+@using MeiErp.Modules.Finance
+@using MeiErp.Modules.Trade
+@using Microsoft.EntityFrameworkCore
+@inject TradeDbContext Trade
+@inject IClock Clock
+
+<PageTitle>Payables and receivables</PageTitle>
+
+<ListShell Title="Payables & receivables" Subtitle="What customers owe us and what we owe suppliers, grouped by the period in which it is due."
+           Icon="@Icons.Material.Outlined.Balance" Loading="_loading" IsEmpty="@(_rows.Count == 0)"
+           EmptyIcon="@Icons.Material.Outlined.CheckCircle" EmptyTitle="Nothing outstanding"
+           EmptyHint="There are no posted invoices with an unpaid balance in this period.">
+    <Stats>
+        <StatTile Label="Receivable" Value="@Receivable.ToString("N2")" Colour="Color.Success" Caption="Customers owe us" />
+        <StatTile Label="Payable" Value="@Payable.ToString("N2")" Colour="Color.Warning" Caption="We owe suppliers" />
+        <StatTile Label="Overdue" Value="@Overdue.ToString("N2")" Colour="Color.Error" Caption="Past due on both sides" />
+        <StatTile Label="Net position" Value="@((Receivable - Payable).ToString("N2"))" />
+    </Stats>
+    <Toolbar>
+        <MudSelect T="int" Value="_months" ValueChanged="PeriodChanged" Label="Due period" Variant="Variant.Outlined" Margin="Margin.Dense" Style="width:210px">
+            <MudSelectItem Value="0">Today / overdue</MudSelectItem><MudSelectItem Value="1">Next 1 month</MudSelectItem><MudSelectItem Value="2">Next 2 months</MudSelectItem><MudSelectItem Value="3">Next 3 months</MudSelectItem><MudSelectItem Value="6">Next 6 months</MudSelectItem><MudSelectItem Value="12">Next 12 months</MudSelectItem>
+        </MudSelect>
+        <MudSelect T="TradeDirection?" @bind-Value="_side" Label="Side" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense" Style="width:180px"><MudSelectItem T="TradeDirection?" Value="@TradeDirection.Sales">Receivables</MudSelectItem><MudSelectItem T="TradeDirection?" Value="@TradeDirection.Purchase">Payables</MudSelectItem></MudSelect>
+        <MudSpacer/><MudText Typo="Typo.caption" Class="mud-text-secondary">Due through @Cutoff.ToString("d MMM yyyy")</MudText>
+    </Toolbar>
+    <ChildContent>
+        <MudDataGrid T="Invoice" Items="Filtered" Dense="true" Hover="true" RowsPerPage="25" Elevation="0">
+            <Columns>
+                <TemplateColumn Title="Side"><CellTemplate><MudChip T="string" Size="Size.Small" Color="@(context.Item.Direction==TradeDirection.Sales?Color.Success:Color.Warning)" Variant="Variant.Outlined">@(context.Item.Direction==TradeDirection.Sales?"Receivable":"Payable")</MudChip></CellTemplate></TemplateColumn>
+                <PropertyColumn Property="@(x=>x.PartyName)" Title="Customer / supplier" />
+                <TemplateColumn Title="Invoice"><CellTemplate><MudLink Href="@(context.Item.Direction==TradeDirection.Sales?$"/sales/invoices/{context.Item.Id}":$"/purchase/invoices/{context.Item.Id}")">@context.Item.Number</MudLink></CellTemplate></TemplateColumn>
+                <TemplateColumn Title="Invoice date"><CellTemplate>@context.Item.Date.ToString("d MMM yyyy")</CellTemplate></TemplateColumn>
+                <TemplateColumn Title="Due"><CellTemplate>@(context.Item.DueDate?.ToString("d MMM yyyy")??"No due date") @if(context.Item.IsOverdueOn(Clock.Today)){<MudChip T="string" Size="Size.Small" Color="Color.Error">overdue</MudChip>}</CellTemplate></TemplateColumn>
+                <TemplateColumn Title="Total" HeaderClass="text-right" CellClass="text-right"><CellTemplate>@context.Item.Total.ToString("N2")</CellTemplate></TemplateColumn>
+                <TemplateColumn Title="Settled" HeaderClass="text-right" CellClass="text-right"><CellTemplate>@context.Item.AmountSettled.ToString("N2")</CellTemplate></TemplateColumn>
+                <TemplateColumn Title="Outstanding" HeaderClass="text-right" CellClass="text-right"><CellTemplate><b>@context.Item.Balance.ToString("N2")</b></CellTemplate></TemplateColumn>
+            </Columns>
+        </MudDataGrid>
+    </ChildContent>
+</ListShell>
+
+@code {
+    private List<Invoice> _rows=[]; private bool _loading=true; private int _months; private TradeDirection? _side;
+    private DateOnly Cutoff => _months==0?Clock.Today:Clock.Today.AddMonths(_months);
+    private IEnumerable<Invoice> Filtered => _side is null?_rows:_rows.Where(x=>x.Direction==_side);
+    private decimal Receivable=>_rows.Where(x=>x.Direction==TradeDirection.Sales).Sum(x=>x.Balance);
+    private decimal Payable=>_rows.Where(x=>x.Direction==TradeDirection.Purchase).Sum(x=>x.Balance);
+    private decimal Overdue=>_rows.Where(x=>x.IsOverdueOn(Clock.Today)).Sum(x=>x.Balance);
+    protected override Task OnInitializedAsync()=>Load();
+    private async Task PeriodChanged(int value){_months=value;await Load();}
+    private async Task Load(){_loading=true;var cutoff=Cutoff;var posted=await Trade.Invoices.AsNoTracking().Include(x=>x.Lines).Where(x=>x.Status==DocumentStatus.Posted&&((x.DueDate??x.Date)<=cutoff)).OrderBy(x=>x.DueDate??x.Date).ToListAsync();_rows=posted.Where(x=>x.Balance>0).ToList();_loading=false;}
+}

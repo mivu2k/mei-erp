@@ -38,6 +38,9 @@
  <MudTabPanel Text="Employee cards">
   <div class="d-flex gap-3 my-3"><MudSelect T="int?" @bind-Value="_employeeId" Label="Employee" Variant="Variant.Outlined">@foreach (var e in _employees) { <MudSelectItem T="int?" Value="@e.Id">@e.Code — @e.FullName</MudSelectItem> }</MudSelect><MudTextField @bind-Value="_card" Label="Scan or enter card UID" Variant="Variant.Outlined"/><MudButton Variant="Variant.Filled" OnClick="SaveCardAsync">Assign</MudButton></div>
  </MudTabPanel>
+ <MudTabPanel Text="Leave & entitlements">
+  <LeaveEntitlementAdmin />
+ </MudTabPanel>
 </MudTabs>
 @code {
  private List<Shift> _shifts=[]; private List<Holiday> _holidays=[]; private List<AttendanceStation> _stations=[]; private List<Employee> _employees=[]; private Shift? _editShift; private Holiday? _editHoliday; private DateTime? _holidayDate; private AttendanceStation? _editStation; private TimeSpan? _shiftStart; private TimeSpan? _shiftEnd; private int? _employeeId; private string? _card;

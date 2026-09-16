@@ -16,6 +16,7 @@ public interface IWorkflowAdminService
 {
     Task<IReadOnlyList<WorkflowSummary>> ListAsync(CancellationToken ct = default);
     Task<WorkflowDefinition?> GetAsync(int id, CancellationToken ct = default);
+    Task<IReadOnlyList<ApprovalRoleOption>> RolesAsync(string documentType, CancellationToken ct = default);
     Task<Result<int>> SaveAsync(WorkflowDefinition definition, CancellationToken ct = default);
 
     /// <summary>Problems worth telling the designer about before they save.</summary>
@@ -23,8 +24,10 @@ public interface IWorkflowAdminService
 }
 
 public sealed record WorkflowSummary(
-    int Id, string DocumentType, string DocumentName, string Name,
+    int Id, string DocumentType, string ModuleName, string DocumentName, string Name,
     int Revision, bool IsActive, int StepCount, int OpenRequests);
+
+public sealed record ApprovalRoleOption(string Name, string? ModuleKey, string? Description);
 
 /// <inheritdoc />
 public sealed class WorkflowAdminService(
@@ -45,11 +48,24 @@ public sealed class WorkflowAdminService(
 
         return rows.Select(r => new WorkflowSummary(
             r.Id, r.DocumentType,
+            catalog.Find(r.DocumentType.Split('.')[0])?.Name ?? r.DocumentType.Split('.')[0],
             catalog.AllApprovables.FirstOrDefault(a => a.Key == r.DocumentType)?.Name
                 ?? r.DocumentType,
             r.Name, r.Revision, r.IsActive, r.StepCount, r.Open))
             .OrderBy(r => r.DocumentName)
             .ToList();
+    }
+
+    public async Task<IReadOnlyList<ApprovalRoleOption>> RolesAsync(
+        string documentType, CancellationToken ct = default)
+    {
+        var moduleKey = documentType.Split('.')[0];
+        return await db.Roles.AsNoTracking()
+            .Where(role => role.Name != null && (role.ModuleKey == null || role.ModuleKey == moduleKey))
+            .OrderBy(role => role.ModuleKey == null ? 0 : 1)
+            .ThenBy(role => role.Name)
+            .Select(role => new ApprovalRoleOption(role.Name!, role.ModuleKey, role.Description))
+            .ToListAsync(ct);
     }
 
     public Task<WorkflowDefinition?> GetAsync(int id, CancellationToken ct = default) =>
@@ -70,6 +86,15 @@ public sealed class WorkflowAdminService(
 
         if (existing is null)
         {
+            if (definition.IsActive)
+            {
+                // Creating a custom route is a replacement, not a second live
+                // route. Keep the old definition for audit/history while making
+                // selection deterministic for new submissions.
+                await db.Workflows
+                    .Where(w => w.DocumentType == definition.DocumentType && w.IsActive)
+                    .ExecuteUpdateAsync(setters => setters.SetProperty(w => w.IsActive, false), ct);
+            }
             db.Workflows.Add(definition);
             await db.SaveChangesAsync(ct);
             return Result.Success(definition.Id);
@@ -125,6 +150,10 @@ public sealed class WorkflowAdminService(
 
             if (needsValue && string.IsNullOrWhiteSpace(step.RuleValue))
                 problems.Add($"'{step.Name}' does not say who approves it.");
+
+            if (step.Rule == ApproverRule.Role && !string.IsNullOrWhiteSpace(step.RuleValue)
+                && !db.Roles.Any(role => role.Name == step.RuleValue))
+                problems.Add($"'{step.Name}' points to a role that does not exist.");
 
             if (step.MinAmount is not null && step.MaxAmount is not null
                 && step.MinAmount >= step.MaxAmount)

@@ -1,0 +1,42 @@
+@inject IJSRuntime JS
+
+<MudButtonGroup OverrideStyles="false" Class="app-view-toggle" aria-label="Display style">
+    <MudTooltip Text="Table view">
+        <MudIconButton Icon="@Icons.Material.Outlined.TableRows" Size="Size.Small"
+                       Color="@(Mode == EntityViewMode.List ? Color.Primary : Color.Default)"
+                       OnClick="@(() => SelectAsync(EntityViewMode.List))" aria-label="Table view" />
+    </MudTooltip>
+    <MudTooltip Text="Grid view">
+        <MudIconButton Icon="@Icons.Material.Outlined.GridView" Size="Size.Small"
+                       Color="@(Mode == EntityViewMode.Grid ? Color.Primary : Color.Default)"
+                       OnClick="@(() => SelectAsync(EntityViewMode.Grid))" aria-label="Grid view" />
+    </MudTooltip>
+</MudButtonGroup>
+
+@code {
+    [Parameter, EditorRequired] public string PreferenceKey { get; set; } = "";
+    [Parameter] public EntityViewMode Mode { get; set; }
+    [Parameter] public EventCallback<EntityViewMode> ModeChanged { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            var saved = await JS.InvokeAsync<string?>("localStorage.getItem", $"mei:view:{PreferenceKey}");
+            if (Enum.TryParse<EntityViewMode>(saved, true, out var mode) && mode != Mode)
+            {
+                await ModeChanged.InvokeAsync(mode);
+            }
+        }
+        catch (InvalidOperationException) { }
+    }
+
+    private async Task SelectAsync(EntityViewMode mode)
+    {
+        if (mode == Mode) return;
+        await ModeChanged.InvokeAsync(mode);
+        try { await JS.InvokeVoidAsync("localStorage.setItem", $"mei:view:{PreferenceKey}", mode.ToString()); }
+        catch (InvalidOperationException) { }
+    }
+}

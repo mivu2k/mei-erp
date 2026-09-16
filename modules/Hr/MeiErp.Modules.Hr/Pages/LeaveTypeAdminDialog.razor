@@ -1,0 +1,13 @@
+@inject IEmployeeService Staff
+@inject ISnackbar Snackbar
+<MudDialog><DialogContent>
+    <MudButton StartIcon="@Icons.Material.Filled.Add" OnClick="@(()=>Edit(null))" Class="mb-3">New leave type</MudButton>
+    @if(_edit is not null){<MudPaper Outlined Class="pa-3 mb-3"><div class="app-form-grid"><MudTextField @bind-Value="_edit.Name" Label="Name" Required/><MudTextField @bind-Value="_edit.Code" Label="Code" Required/><MudNumericField T="decimal" @bind-Value="_edit.AnnualEntitlement" Label="Default days" Min="0" HelperText="Zero means unlimited"/><MudNumericField T="decimal" @bind-Value="_edit.MaxCarryForward" Label="Maximum carry forward" Min="0"/><MudSwitch T="bool" @bind-Value="_edit.IsPaid" Label="Paid leave"/><MudSwitch T="bool" @bind-Value="_edit.RequiresApproval" Label="Requires approval"/><MudSwitch T="bool" @bind-Value="_edit.IsActive" Label="Active"/></div><div class="d-flex justify-end gap-2 mt-2"><MudButton OnClick="@(()=>_edit=null)">Cancel</MudButton><MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">Save</MudButton></div></MudPaper>}
+    <MudTable Items="_types" Dense Hover><HeaderContent><MudTh>Type</MudTh><MudTh>Default</MudTh><MudTh>Payment</MudTh><MudTh>Carry</MudTh><MudTh></MudTh></HeaderContent><RowTemplate><MudTd><b>@context.Name</b><br/><small>@context.Code</small></MudTd><MudTd>@(context.AnnualEntitlement==0?"Unlimited":$"{context.AnnualEntitlement:0.#} days")</MudTd><MudTd>@(context.IsPaid?"Paid":"Unpaid")</MudTd><MudTd>@context.MaxCarryForward.ToString("0.#")</MudTd><MudTd><MudIconButton Icon="@Icons.Material.Outlined.Edit" OnClick="@(()=>Edit(context))"/></MudTd></RowTemplate></MudTable>
+</DialogContent><DialogActions><MudButton OnClick="@(()=>Dialog.Close())">Close</MudButton></DialogActions></MudDialog>
+@code{
+    [CascadingParameter]private IMudDialogInstance Dialog{get;set;}=default!;private IReadOnlyList<LeaveType> _types=[];private LeaveType? _edit;
+    protected override Task OnInitializedAsync()=>Load();private async Task Load()=>_types=await Staff.LeaveTypesAsync();
+    private void Edit(LeaveType? x)=>_edit=x is null?new(){IsActive=true,IsPaid=true,RequiresApproval=true}:new(){Id=x.Id,Name=x.Name,Code=x.Code,AnnualEntitlement=x.AnnualEntitlement,IsPaid=x.IsPaid,MaxCarryForward=x.MaxCarryForward,RequiresApproval=x.RequiresApproval,IsActive=x.IsActive};
+    private async Task Save(){var r=await Staff.SaveLeaveTypeAsync(_edit!);if(r.Failed){Snackbar.Add(r.Error!,Severity.Error);return;}Snackbar.Add("Leave type saved.",Severity.Success);_edit=null;await Load();}
+}

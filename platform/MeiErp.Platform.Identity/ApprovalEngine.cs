@@ -439,7 +439,10 @@ public sealed class ApprovalEngine(
             items.Add(new ApprovalInboxItem(
                 request.Id, request.ModuleKey,
                 catalog.Find(request.ModuleKey)?.Name ?? request.ModuleKey,
-                request.DocumentType, request.DocumentReference, request.Summary,
+                request.DocumentType,
+                catalog.AllApprovables.FirstOrDefault(x => x.Key == request.DocumentType)?.Name
+                    ?? request.DocumentType.Split('.').Last().Replace('-', ' '),
+                request.DocumentReference, request.Summary,
                 request.DocumentUrl, request.Amount, request.Currency,
                 request.RequestedByName, request.RequestedUtc,
                 step.Name, step.Order, request.DueUtc,

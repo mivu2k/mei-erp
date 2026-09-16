@@ -46,6 +46,7 @@ public static class TradeModule
         services.AddScoped<IApprovalSink, QuotationApprovalSink>();
         services.AddScoped<IApprovalSink, InvoiceApprovalSink>();
         services.AddScoped<IApprovalSink, PurchaseOrderApprovalSink>();
+        services.AddScoped<IApprovalSink, SalesOrderApprovalSink>();
 
         // ITradeStockPort is deliberately NOT registered here. The host wires an
         // adapter over whichever module is holding the stock, so these modules
@@ -226,6 +227,7 @@ public static class SalesModule
 
         Approvables =
         [
+            new(SalesService.DocumentType, "Sales order / delivery release", "Order value"),
             new(TradeDocumentService.QuotationDocumentType, "Quotation", "Quotation value"),
             new(TradeDocumentService.InvoiceDocumentType, "Invoice", "Invoice value")
         ]

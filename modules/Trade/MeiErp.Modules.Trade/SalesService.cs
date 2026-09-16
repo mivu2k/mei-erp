@@ -1,4 +1,5 @@
 using MeiErp.Platform.Kernel;
+using MeiErp.Platform.Workflow;
 using Microsoft.EntityFrameworkCore;
 
 namespace MeiErp.Modules.Trade;
@@ -37,8 +38,10 @@ public sealed record DeliveryLineInput(
     int ItemId, decimal Quantity, IReadOnlyList<string>? SerialNumbers = null);
 
 public sealed class SalesService(
-    TradeDbContext db, ITradeStockPort stock, IClock clock) : ISalesService
+    TradeDbContext db, ITradeStockPort stock, IClock clock,
+    IApprovalEngine approvals) : ISalesService
 {
+    public const string DocumentType = "trade.sales-order";
     public async Task<IReadOnlyList<SalesOrder>> ListOrdersAsync(
         SalesOrderStatus? status, int? bookId = null, CancellationToken ct = default)
     {
@@ -138,14 +141,26 @@ public sealed class SalesService(
             .FirstOrDefaultAsync(o => o.Id == id, ct);
 
         if (order is null) return Result.Fail<SalesOrder>("That order no longer exists.", "so.not-found");
-        if (order.Status is not SalesOrderStatus.Draft)
-            return Result.Fail<SalesOrder>("This has already been confirmed.", "so.already-confirmed");
+        if (order.Status is not (SalesOrderStatus.Draft or SalesOrderStatus.Returned))
+            return Result.Fail<SalesOrder>("This has already been submitted.", "so.already-confirmed");
 
-        // Confirming reserves nothing on purpose. A soft reservation the stock
-        // figure does not honour is worse than none: two orders can still be
-        // promised the same unit while both look safe. Short lines become
-        // backorders and are caught at delivery, where stock is really checked.
-        order.Status = SalesOrderStatus.Confirmed;
+        var submitted = await approvals.SubmitAsync(new SubmitApproval(
+            ModuleKey: SalesModule.Key,
+            DocumentType: DocumentType,
+            DocumentId: order.Id,
+            DocumentReference: order.Number,
+            Summary: $"{order.PartyName} — {order.Lines.Count} " +
+                     $"{(order.Lines.Count == 1 ? "line" : "lines")}, {order.Total:N2}",
+            DocumentUrl: $"/sales/orders/{order.Id}",
+            Amount: order.Total,
+            Currency: "PKR"), ct);
+
+        if (submitted.Failed)
+            return Result.Fail<SalesOrder>(submitted.Error!, submitted.Code);
+
+        order.Status = SalesOrderStatus.Pending;
+        order.ApprovalRequestId = submitted.Value.Id;
+        order.DecisionComment = null;
 
         await db.SaveChangesAsync(ct);
         return Result.Success(order);
@@ -271,6 +286,31 @@ public sealed class SalesService(
             : await db.Deliveries.IgnoreQueryFilters().CountAsync(d => d.Number.StartsWith(stem), ct);
 
         return stem + (count + 1).ToString().PadLeft(4, '0');
+    }
+}
+
+/// <summary>Only an approved sales order can progress to physical delivery.</summary>
+public sealed class SalesOrderApprovalSink(TradeDbContext db) : IApprovalSink
+{
+    public string DocumentType => SalesService.DocumentType;
+
+    public async Task<Result> OnSettledAsync(
+        int documentId, ApprovalStatus status, ApprovalRequest request, CancellationToken ct = default)
+    {
+        var order = await db.SalesOrders.FirstOrDefaultAsync(x => x.Id == documentId, ct);
+        if (order is null) return Result.Fail("The sales order behind this approval has gone.", "so.not-found");
+
+        order.DecisionComment = request.Actions.OrderByDescending(x => x.ActedUtc)
+            .Select(x => x.Comment).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
+        order.Status = status switch
+        {
+            ApprovalStatus.Approved => SalesOrderStatus.Confirmed,
+            ApprovalStatus.Rejected => SalesOrderStatus.Rejected,
+            ApprovalStatus.Returned => SalesOrderStatus.Returned,
+            ApprovalStatus.Cancelled => SalesOrderStatus.Cancelled,
+            _ => order.Status
+        };
+        return Result.Success();
     }
 }
 

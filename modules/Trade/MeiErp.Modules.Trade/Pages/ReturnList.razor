@@ -74,6 +74,12 @@
                         <span style="font-variant-numeric:tabular-nums">@context.Item.Total.ToString("N2")</span>
                     </CellTemplate>
                 </TemplateColumn>
+                <TemplateColumn Title="Print" Sortable="false">
+                    <CellTemplate>
+                        <MudTooltip Text="Print A4 return note"><MudIconButton Icon="@Icons.Material.Outlined.Print" Href="@($"/print/inventory/return/{context.Item.Id}")" Target="_blank" /></MudTooltip>
+                        <MudTooltip Text="Print 80 mm POS receipt"><MudIconButton Icon="@Icons.Material.Outlined.ReceiptLong" Href="@($"/print/inventory/return/{context.Item.Id}?size=roll")" Target="_blank" /></MudTooltip>
+                    </CellTemplate>
+                </TemplateColumn>
             </Columns>
         </MudDataGrid>
     </ChildContent>

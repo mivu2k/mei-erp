@@ -117,10 +117,10 @@ else
             <AuthorizeView Policy="@LedgerPermissions.EntryRecord">
                 <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
                            StartIcon="@Icons.Material.Filled.Add"
-                           OnClick="OpenEntryEditor">Add entry</MudButton>
+                           OnClick="OpenEntryEditor">Add single entry</MudButton>
                 <MudButton Size="Size.Small" Variant="Variant.Outlined"
                            StartIcon="@Icons.Material.Filled.SwapHoriz"
-                           OnClick="OpenTransfer">Transfer</MudButton>
+                           OnClick="OpenTransfer">Transfer between ledgers</MudButton>
             </AuthorizeView>
         </div>
 
@@ -174,8 +174,12 @@ else
                         </td>
                         <td>
                             <MudChip T="string" Size="Size.Small"
+                                     Icon="@(e.Kind == LedgerEntryKind.Transfer
+                                         ? Icons.Material.Outlined.SyncAlt
+                                         : Icons.Material.Outlined.ReceiptLong)"
+                                     Color="@(e.Kind == LedgerEntryKind.Transfer ? Color.Info : Color.Default)"
                                      Variant="@(e.Kind == LedgerEntryKind.Transfer ? Variant.Filled : Variant.Outlined)">
-                                @e.Kind
+                                @(e.Kind == LedgerEntryKind.Transfer ? "Linked transfer" : "Single entry")
                             </MudChip>
                         </td>
                         <td>@e.Method</td>
@@ -200,8 +204,8 @@ else
                 @if (_statement.Count == 0 && _ledger.OpeningBalance == 0)
                 {
                     <tr><td colspan="10" class="mud-text-secondary pa-4">
-                        Nothing recorded yet. Add an entry for money received or paid, or transfer
-                        to a sub-ledger to pass some of it on.
+                        Nothing recorded yet. Add a single entry for external money received or paid,
+                        or use a linked transfer to move money between two ledgers.
                     </td></tr>
                 }
             </tbody>
@@ -214,12 +218,23 @@ else
 {
     <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
         <MudPaper Class="pa-6" Style="width:560px;max-width:95vw;max-height:90vh;overflow-y:auto">
-            <MudText Typo="Typo.h6" Class="mb-3">@(_entry.Id == 0 ? "Add Entry" : "Edit Entry")</MudText>
+            <MudText Typo="Typo.h6" Class="mb-3">
+                @(_entry.Kind == LedgerEntryKind.Transfer
+                    ? "Edit linked transfer"
+                    : _entry.Id == 0 ? "Add single entry" : "Edit single entry")
+            </MudText>
 
             @if (_entry.Kind == LedgerEntryKind.Transfer)
             {
                 <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
                     This is one half of a transfer. Changes apply to both sides.
+                </MudAlert>
+            }
+            else
+            {
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mb-3">
+                    A single entry records money crossing this ledger's boundary. It affects only
+                    this statement. To move money to another ledger, use a linked transfer instead.
                 </MudAlert>
             }
 
@@ -281,7 +296,11 @@ else
 {
     <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
         <MudPaper Class="pa-6" Style="width:560px;max-width:95vw">
-            <MudText Typo="Typo.h6" Class="mb-1">Transfer</MudText>
+            <MudText Typo="Typo.h6" Class="mb-1">Transfer between ledgers</MudText>
+            <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined"
+                     Icon="@Icons.Material.Outlined.SyncAlt" Class="mb-2">
+                Creates two linked entries
+            </MudChip>
             <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
                 Moves money out of @_ledger?.Name into another ledger. Both statements get a
                 matching line, so the two can never disagree.
@@ -331,7 +350,7 @@ else
             <div class="d-flex justify-end gap-2 mt-4">
                 <MudButton OnClick="@(() => _transferOpen = false)">Cancel</MudButton>
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="DoTransfer"
-                           Disabled="@(_transferTo is null)">Transfer</MudButton>
+                           Disabled="@(_transferTo is null)">Record linked transfer</MudButton>
             </div>
         </MudPaper>
     </MudOverlay>

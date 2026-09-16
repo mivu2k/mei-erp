@@ -94,7 +94,7 @@
             <TemplateColumn Title="" Sortable="false">
                 <CellTemplate>
                     <div class="d-flex justify-end gap-1">
-                        <AuthorizeView Policy="@TenderModule.FilesView" Context="filePerms"><Authorized><MudIconButton Icon="@Icons.Material.Filled.Folder" Size="Size.Small" OnClick="@(()=>OpenFile(context.Item))" /></Authorized></AuthorizeView>
+                        <AuthorizeView Policy="@TenderModule.FilesManage" Context="filePerms"><Authorized><MudIconButton Icon="@Icons.Material.Filled.Folder" Size="Size.Small" OnClick="@(()=>OpenFile(context.Item))" title="Open or create physical file" /></Authorized></AuthorizeView>
                         <AuthorizeView Policy="@TenderModule.MilestonesManage" Context="milestonePerms"><Authorized><MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(()=>OpenMilestones(context.Item))">Milestones</MudButton></Authorized></AuthorizeView>
                         <AuthorizeView Policy="@TenderModule.TasksManage" Context="perms">
                             <Authorized>

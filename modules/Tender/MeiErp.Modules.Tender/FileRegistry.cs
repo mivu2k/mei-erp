@@ -47,6 +47,14 @@ public class FileMovement : AuditableEntity
 
 public sealed record FileFilter(string? Search = null, PhysicalFileStatus? Status = null, FileOwnerType? OwnerType = null, bool OverdueOnly = false);
 public sealed record FileMoveInput(string? HolderUserId = null, string? HolderName = null, string? Location = null, string? Purpose = null, DateOnly? DueBack = null, string? Remarks = null);
+public sealed record FileOwnerOption(FileOwnerType Type, int Id, string Reference, string Title);
+public sealed record FileHolderOption(string UserId, string Name, string? Role, string? Department);
+
+/// <summary>Staff directory boundary used when issuing a physical file.</summary>
+public interface IFileHolderDirectory
+{
+    Task<IReadOnlyList<FileHolderOption>> SearchAsync(string? search, CancellationToken ct = default);
+}
 
 public static class FileRegistryRules
 {
@@ -76,6 +84,7 @@ public interface IFileRegistryService
     Task<PhysicalFile?> GetAsync(int id, CancellationToken ct = default);
     Task<PhysicalFile?> GetByNumberAsync(string number, CancellationToken ct = default);
     Task<IReadOnlyList<PhysicalFile>> ListAsync(FileFilter? filter = null, CancellationToken ct = default);
+    Task<IReadOnlyList<FileOwnerOption>> AvailableOwnersAsync(CancellationToken ct = default);
     Task<Result<PhysicalFile>> MoveAsync(int id, FileMovementAction action, FileMoveInput input, CancellationToken ct = default);
     Task<Result<PhysicalFile>> UpdateDetailsAsync(int id, string? location, string? volume, string? remarks, CancellationToken ct = default);
 }
@@ -84,6 +93,7 @@ public sealed class FileRegistryService(TenderDbContext db, IClock clock, ICurre
 {
     public async Task<Result<PhysicalFile>> EnsureAsync(FileOwnerType type, int ownerId, CancellationToken ct = default)
     {
+        if (!user.Can(TenderModule.FilesManage)) return Forbidden<PhysicalFile>();
         var existing = await db.PhysicalFiles.FirstOrDefaultAsync(x => x.OwnerType == type && x.OwnerId == ownerId, ct);
         string reference, title;
         if (type == FileOwnerType.Tender)
@@ -115,8 +125,22 @@ public sealed class FileRegistryService(TenderDbContext db, IClock clock, ICurre
         return filter.OverdueOnly ? rows.Where(IsOverdue).ToList() : rows;
     }
 
+    public async Task<IReadOnlyList<FileOwnerOption>> AvailableOwnersAsync(CancellationToken ct = default)
+    {
+        var existing = await db.PhysicalFiles.AsNoTracking()
+            .Select(x => new { x.OwnerType, x.OwnerId }).ToListAsync(ct);
+        var tenderIds = existing.Where(x => x.OwnerType == FileOwnerType.Tender).Select(x => x.OwnerId).ToHashSet();
+        var projectIds = existing.Where(x => x.OwnerType == FileOwnerType.Project).Select(x => x.OwnerId).ToHashSet();
+        var tenders = await db.Tenders.AsNoTracking().Where(x => !tenderIds.Contains(x.Id))
+            .OrderByDescending(x => x.Id).Select(x => new FileOwnerOption(FileOwnerType.Tender, x.Id, x.Reference, x.Title)).ToListAsync(ct);
+        var projects = await db.Projects.AsNoTracking().Where(x => !projectIds.Contains(x.Id))
+            .OrderByDescending(x => x.Id).Select(x => new FileOwnerOption(FileOwnerType.Project, x.Id, x.Code, x.Name)).ToListAsync(ct);
+        return [.. tenders, .. projects];
+    }
+
     public async Task<Result<PhysicalFile>> MoveAsync(int id, FileMovementAction action, FileMoveInput input, CancellationToken ct = default)
     {
+        if (!user.Can(TenderModule.FilesManage)) return Forbidden<PhysicalFile>();
         var file = await db.PhysicalFiles.FirstOrDefaultAsync(x => x.Id == id, ct); if (file is null) return Result.Fail<PhysicalFile>("File not found.", "file.not-found");
         var valid = FileRegistryRules.Validate(file, action, input); if (valid.Failed) return Result.Fail<PhysicalFile>(valid.Error!, valid.Code);
         var movement = NewMovement(file, action, input);
@@ -132,10 +156,11 @@ public sealed class FileRegistryService(TenderDbContext db, IClock clock, ICurre
     }
 
     public async Task<Result<PhysicalFile>> UpdateDetailsAsync(int id, string? location, string? volume, string? remarks, CancellationToken ct = default)
-    { var file = await db.PhysicalFiles.FindAsync([id], ct); if (file is null) return Result.Fail<PhysicalFile>("File not found.", "file.not-found"); file.Location = location; file.VolumeNumber = volume; file.Remarks = remarks; await db.SaveChangesAsync(ct); return Result.Success(file); }
+    { if (!user.Can(TenderModule.FilesManage)) return Forbidden<PhysicalFile>(); var file = await db.PhysicalFiles.FindAsync([id], ct); if (file is null) return Result.Fail<PhysicalFile>("File not found.", "file.not-found"); file.Location = location; file.VolumeNumber = volume; file.Remarks = remarks; await db.SaveChangesAsync(ct); return Result.Success(file); }
 
     private FileMovement NewMovement(PhysicalFile f, FileMovementAction a, FileMoveInput i) => new() { PhysicalFileId = f.Id, Action = a, MovedOn = clock.Today, FromHolderName = f.HolderName, FromLocation = f.Location, Remarks = i.Remarks, RecordedById = user.UserId ?? "", RecordedByName = user.Name ?? "System" };
     private bool IsOverdue(PhysicalFile f) => f.Status == PhysicalFileStatus.Issued && f.Movements.Where(x => x.Action is FileMovementAction.Issued or FileMovementAction.Transferred).OrderByDescending(x => x.MovedOn).ThenByDescending(x => x.Id).FirstOrDefault()?.DueBack < clock.Today;
     private static void ClearHolder(PhysicalFile f) { f.HolderUserId = null; f.HolderName = null; }
     private static void SetLocation(PhysicalFile f, FileMovement m, string? location) { m.ToLocation = location ?? f.Location; if (!string.IsNullOrWhiteSpace(location)) f.Location = location.Trim(); }
+    private static Result<T> Forbidden<T>() => Result.Fail<T>("You do not have permission to manage physical files.", "file.forbidden");
 }

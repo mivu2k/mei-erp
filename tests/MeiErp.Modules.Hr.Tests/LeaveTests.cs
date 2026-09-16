@@ -377,6 +377,43 @@ public sealed class LeaveTests : IAsyncLifetime
         Assert.True(result.Ok, result.Error);
     }
 
+    [SkippableFact]
+    public async Task Admin_can_override_one_employees_yearly_entitlement()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db = NewDb();
+        var service = NewService(db, new FakeApprovals());
+
+        var saved = await service.SaveEntitlementAsync(new(
+            _employeeId, _annualLeaveId, 2026, Entitled: 21, CarriedForward: 3));
+
+        Assert.True(saved.Ok, saved.Error);
+        var row = Assert.Single(await service.EntitlementsAsync(2026));
+        Assert.Equal(21, row.Entitled);
+        Assert.Equal(3, row.CarriedForward);
+        Assert.Equal(24, row.Available);
+    }
+
+    [SkippableFact]
+    public async Task Entitlement_cannot_be_reduced_below_days_already_committed()
+    {
+        Skip.IfNot(_available, "No PostgreSQL available.");
+        await using var db = NewDb();
+        db.LeaveBalances.Add(new LeaveBalance
+        {
+            EmployeeId = _employeeId, LeaveTypeId = _annualLeaveId, Year = 2026,
+            Entitled = 14, Taken = 5, Pending = 2
+        });
+        await db.SaveChangesAsync();
+        var service = NewService(db, new FakeApprovals());
+
+        var result = await service.SaveEntitlementAsync(new(
+            _employeeId, _annualLeaveId, 2026, Entitled: 4, CarriedForward: 0));
+
+        Assert.True(result.Failed);
+        Assert.Equal("leave-entitlement.below-used", result.Code);
+    }
+
     private static ApprovalRequest NewApproval(string? comment = null) => new()
     {
         Id = 1,

@@ -71,6 +71,13 @@ public sealed record ReportRequest
 
     /// <summary>Column key to group rows by at run time. Null leaves the report flat.</summary>
     public string? GroupBy { get; init; }
+
+    /// <summary>Columns to show, in display/export order. Null or empty means all columns.</summary>
+    public IReadOnlyList<string>? SelectedColumns { get; init; }
+
+    /// <summary>Column key used for the shared, deterministic result sort.</summary>
+    public string? SortBy { get; init; }
+    public bool SortDescending { get; init; }
 }
 
 /// <summary>
@@ -168,6 +175,64 @@ public sealed class ReportCatalog(IEnumerable<ReportDefinition> reports) : IRepo
 /// </summary>
 public static class ReportRenderer
 {
+    /// <summary>
+    /// Applies presentation rules shared by the screen, saved views and exports.
+    /// Module reports remain responsible for business filters; universal text
+    /// search, sorting and column selection work consistently for every module.
+    /// </summary>
+    public static ReportResult Apply(ReportResult source, ReportRequest request)
+    {
+        IEnumerable<ReportRow> rows = source.Rows;
+
+        if (!string.IsNullOrWhiteSpace(request.Search))
+        {
+            var term = request.Search.Trim();
+            rows = rows.Where(row => source.Columns.Any(column =>
+                Format(row[column.Key], column.Kind).Contains(term, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.SortBy))
+        {
+            var sortColumn = source.Columns.FirstOrDefault(c => c.Key == request.SortBy);
+            if (sortColumn is not null)
+            {
+                var comparer = Comparer<object?>.Create(CompareValues);
+                rows = request.SortDescending
+                    ? rows.OrderByDescending(r => r[sortColumn.Key], comparer)
+                    : rows.OrderBy(r => r[sortColumn.Key], comparer);
+            }
+        }
+
+        var columns = source.Columns;
+        if (request.SelectedColumns is { Count: > 0 })
+        {
+            var byKey = source.Columns.ToDictionary(c => c.Key, StringComparer.OrdinalIgnoreCase);
+            columns = [.. request.SelectedColumns
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Where(byKey.ContainsKey)
+                .Select(key => byKey[key])];
+            if (columns.Count == 0) columns = source.Columns;
+        }
+
+        var visibleKeys = columns.Select(c => c.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return source with
+        {
+            Columns = columns,
+            Rows = [.. rows],
+            Totals = [.. source.Totals.Where(t => visibleKeys.Contains(t.ColumnKey))]
+        };
+    }
+
+    private static int CompareValues(object? left, object? right)
+    {
+        if (ReferenceEquals(left, right)) return 0;
+        if (left is null) return -1;
+        if (right is null) return 1;
+        if (left is IComparable comparable && left.GetType() == right.GetType())
+            return comparable.CompareTo(right);
+        return StringComparer.OrdinalIgnoreCase.Compare(left.ToString(), right.ToString());
+    }
+
     public static string Format(object? value, ReportValueKind kind) => value switch
     {
         null => "",
@@ -263,8 +328,8 @@ public static class ReportRenderer
         if (column is null)
             return [new ReportGroup(null, result.Rows, result.Totals)];
 
-        var moneyColumns = result.Columns
-            .Where(c => c.Kind is ReportValueKind.Money)
+        var numericColumns = result.Columns
+            .Where(c => c.Kind is ReportValueKind.Money or ReportValueKind.Number)
             .Select(c => c.Key)
             .ToList();
 
@@ -274,10 +339,20 @@ public static class ReportRenderer
             .Select(g => new ReportGroup(
                 g.Key,
                 [.. g],
-                [.. moneyColumns.Select(key => new ReportTotal(
+                numericColumns.Select(key => new ReportTotal(
                     key,
-                    g.Sum(r => r[key] is decimal d ? d : 0m)))]))];
+                    g.Sum(r => ToDecimal(r[key])))).ToList()))];
     }
+
+    private static decimal ToDecimal(object? value) => value switch
+    {
+        decimal number => number,
+        int number => number,
+        long number => number,
+        double number => (decimal)number,
+        float number => (decimal)number,
+        _ => 0m
+    };
 }
 
 /// <param name="Key">Null when the report is not grouped.</param>

@@ -167,15 +167,27 @@ public sealed class PlatformSeeder(
     /// </summary>
     private async Task SeedWorkflowsAsync(CancellationToken ct)
     {
-        var existing = await db.Workflows
-            .Select(w => w.DocumentType)
-            .ToListAsync(ct);
+        var existingDefinitions = await db.Workflows.Include(w => w.Steps).ToListAsync(ct);
+        var existing = existingDefinitions.Select(w => w.DocumentType).ToList();
 
         var missing = catalog.AllApprovables
             .Where(a => !existing.Contains(a.Key, StringComparer.Ordinal))
             .ToList();
 
-        if (missing.Count == 0) return;
+        // Earlier installations defaulted to the raiser's line manager. Many
+        // businesses do not maintain that relationship per user, so only the
+        // untouched auto-generated definitions are upgraded to module roles.
+        foreach (var workflow in existingDefinitions.Where(w =>
+                     w.Description != null && w.Description.StartsWith("Created automatically") &&
+                     w.Steps.Count == 1 && w.Steps[0].Rule == ApproverRule.LineManager))
+        {
+            var role = DefaultApproverRole(workflow.DocumentType);
+            workflow.Steps[0].Rule = ApproverRule.Role;
+            workflow.Steps[0].RuleValue = role;
+            workflow.Steps[0].Name = role;
+            log.LogInformation("Upgraded default workflow {DocumentType} to role {Role}",
+                workflow.DocumentType, role);
+        }
 
         foreach (var doc in missing)
         {
@@ -194,8 +206,9 @@ public sealed class PlatformSeeder(
                     new WorkflowStep
                     {
                         Order = 1,
-                        Name = "Line manager",
-                        Rule = ApproverRule.LineManager,
+                        Name = DefaultApproverRole(doc.Key),
+                        Rule = ApproverRule.Role,
+                        RuleValue = DefaultApproverRole(doc.Key),
                         Quorum = StepQuorum.Any,
                         AllowReturn = true,
                         ReminderAfterHours = 24,
@@ -209,6 +222,19 @@ public sealed class PlatformSeeder(
 
         await db.SaveChangesAsync(ct);
     }
+
+    private static string DefaultApproverRole(string documentType) => documentType switch
+    {
+        "trade.purchase-order" => "Purchase Manager",
+        "trade.sales-order" => "Sales Manager",
+        var key when key.StartsWith("finance.", StringComparison.Ordinal) => "Finance Manager",
+        var key when key.StartsWith("hr.", StringComparison.Ordinal) => "HR Manager",
+        var key when key.StartsWith("inventory.", StringComparison.Ordinal) => "Inventory Manager",
+        var key when key.StartsWith("repair.", StringComparison.Ordinal) => "Workshop Manager",
+        var key when key.StartsWith("tender.", StringComparison.Ordinal) => "Tender Manager",
+        var key when key.StartsWith("auto.", StringComparison.Ordinal) => "Fleet Manager",
+        _ => PlatformPermissions.SuperAdminRole
+    };
 }
 
 public static class SeederExtensions

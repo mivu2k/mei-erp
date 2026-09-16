@@ -4,13 +4,14 @@
 @inject IOutboxManagementService Outbox
 @inject ISnackbar Snackbar
 
-<PageTitle>Posting failures</PageTitle>
-<MudText Typo="Typo.h5">Posting failures</MudText>
-<MudText Class="mb-4" Color="Color.Secondary">Messages appear here after five failed delivery attempts. Fix the posting rule or account, then retry.</MudText>
-<MudTable Items="_rows" Dense="true" Hover="true">
+<ListShell Title="Posting failures" Subtitle="Messages appear here after five failed delivery attempts. Fix the posting rule or account, then retry."
+           Icon="@Icons.Material.Outlined.SyncProblem" IsEmpty="@(_rows.Count==0)" EmptyTitle="No posting failures" EmptyHint="All cross-module financial messages have posted successfully.">
+ <ChildContent><MudTable Items="_rows" Dense="true" Hover="true" RowsPerPage="25">
  <HeaderContent><MudTh>Source</MudTh><MudTh>Event</MudTh><MudTh>Occurred</MudTh><MudTh>Attempts</MudTh><MudTh>Error</MudTh><MudTh /></HeaderContent>
  <RowTemplate><MudTd>@context.Source #@context.Id</MudTd><MudTd>@context.EventType</MudTd><MudTd>@context.OccurredUtc.ToLocalTime().ToString("g")</MudTd><MudTd>@context.Attempts</MudTd><MudTd>@context.LastError</MudTd><MudTd><MudButton Size="Size.Small" OnClick="@(() => RetryAsync(context))">Retry</MudButton></MudTd></RowTemplate>
-</MudTable>
+ <PagerContent><MudTablePager PageSizeOptions="@(new[]{10,25,50,100})" /></PagerContent>
+</MudTable></ChildContent>
+</ListShell>
 
 @code {
  private List<PendingOutboxMessage> _rows=[];

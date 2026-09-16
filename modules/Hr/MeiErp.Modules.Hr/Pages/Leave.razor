@@ -17,6 +17,12 @@
            EmptyTitle="No leave requests yet"
            EmptyHint="Request leave here; it is routed for approval automatically once submitted.">
     <Actions>
+        <AuthorizeView Policy="@HrModule.LeaveTypesManage" Context="entitlementAdmin">
+            <Authorized>
+                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.EventAvailable"
+                           Href="/hr/leave/entitlements">Employee entitlements</MudButton>
+            </Authorized>
+        </AuthorizeView>
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
                    StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Edit(null))"
                    Disabled="_me is null">
@@ -33,7 +39,7 @@
             @foreach (var balance in _balances)
             {
                 <StatTile Label="@balance.LeaveType?.Name"
-                          Value="@balance.Available.ToString("0.#")"
+                          Value="@(balance.LeaveType?.AnnualEntitlement==0?"Unlimited":balance.Available.ToString("0.#"))"
                           Caption="@BalanceCaption(balance)" />
             }
         }
@@ -144,6 +150,7 @@
 
     private static string BalanceCaption(LeaveBalance balance)
     {
+        if (balance.LeaveType?.AnnualEntitlement == 0) return "subject to approval · does not consume an allowance";
         var caption = $"days left of {(balance.Entitled + balance.CarriedForward):0.#}";
         // Held, not spent: two pending requests must not be able to spend the same entitlement.
         return balance.Pending > 0 ? $"{caption} · {balance.Pending:0.#} awaiting approval" : caption;

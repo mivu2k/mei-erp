@@ -85,14 +85,13 @@ into `/etc/mei-erp.env` in step 6:
 DB_PASSWORD='replace-with-a-long-random-password'
 
 sudo -u postgres psql \
-  -c "CREATE ROLE meierp LOGIN PASSWORD '$DB_PASSWORD';" \
+  -c "CREATE ROLE meierp LOGIN CREATEDB PASSWORD '$DB_PASSWORD';" \
   -c "CREATE DATABASE mei_erp OWNER meierp;"
 ```
 
-> `CREATEDB` is **not** granted here. Development grants it so the integration
-> tests can create throwaway databases; a server that only runs the application
-> has no reason to. If you intend to run the test suite on this machine, add
-> `CREATEDB` to the role.
+> `CREATEDB` is required by `ops/verify-restore.sh`, which creates an isolated,
+> disposable verification database. It does not give the application role
+> superuser access or permission to read other databases.
 
 Confirm it accepts the credentials:
 
@@ -259,14 +258,14 @@ Without this, `deploy.sh` builds successfully but fails at the restart step
 with `Failed to restart mei-erp.service: Access denied`.
 
 The unit hardens the process: `ProtectSystem=strict` makes the filesystem
-read-only apart from `ReadWritePaths=/opt/mei-erp/current/logs`, plus
-`NoNewPrivileges` and `PrivateTmp`. Anything else the app needs to write must
-be added to `ReadWritePaths` explicitly.
+read-only apart from the persistent `logs`, `App_Data`, and `backups` paths,
+plus `NoNewPrivileges` and `PrivateTmp`. These hold logs, repair evidence, and
+pre-restore safety archives across releases.
 
 `current` is a symlink that repoints to a fresh, empty release directory on
 every deploy, so `deploy.sh` symlinks each new release's `logs/` to one
-persistent `/opt/mei-erp/shared/logs` directory — the path the unit's
-`ReadWritePaths` actually needs to exist. Without that symlink, systemd
+persistent directories under `/opt/mei-erp/shared` — the paths the unit's
+`ReadWritePaths` need to exist. Without those symlinks, systemd
 refuses to even start the process (`status=226/NAMESPACE`, "Failed to set up
 mount namespacing") because `.../current/logs` doesn't exist yet.
 

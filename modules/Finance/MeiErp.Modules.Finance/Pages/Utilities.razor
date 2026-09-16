@@ -26,6 +26,9 @@
     </Actions>
 
     <Stats>
+        <StatTile Label="This month" Value="@ThisMonthTotal.ToString("N2")" Caption="Bills entered" />
+        <StatTile Label="Unpaid" Value="@_bills.Where(b => !b.IsPaid).Sum(b => b.Amount).ToString("N2")" Colour="Color.Warning" />
+        <StatTile Label="Paid" Value="@_bills.Where(b => b.IsPaid).Sum(b => b.Amount).ToString("N2")" Colour="Color.Success" />
         @if (_overdue.Count > 0)
         {
             <StatTile Label="Overdue" Value="@_overdue.Count.ToString()" Colour="Color.Warning"
@@ -54,6 +57,18 @@
     </Toolbar>
 
     <ChildContent>
+    <MudGrid Class="mb-4">
+        @foreach (var connection in _connections)
+        {
+            var selected = _connectionId == connection.Id;
+            <MudItem xs="12" sm="6" md="4"><MudPaper Outlined="true" Class="pa-3" Style="@(selected ? "border-color:var(--mud-palette-primary);" : "cursor:pointer")" @onclick="@(() => SelectConnection(connection.Id))">
+                <div class="d-flex align-center"><MudIcon Icon="@Icons.Material.Outlined.ElectricalServices" Color="@(selected ? Color.Primary : Color.Default)"/><MudText Typo="Typo.subtitle2" Class="ml-2">@connection.Name</MudText><MudSpacer/><MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@connection.Kind</MudChip></div>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2">@connection.Provider · @connection.ConnectionNumber</MudText><MudText Typo="Typo.caption">@(connection.Location ?? "Location not set")</MudText><MudText Typo="Typo.caption">Head: @connection.ExpenseAccount?.Code — @connection.ExpenseAccount?.Name</MudText>
+            </MudPaper></MudItem>
+        }
+    </MudGrid>
+    @if (_connectionId is not null)
+    {<div class="d-flex align-center mb-2"><MudText Typo="Typo.subtitle1">Connection ledger — @_connections.FirstOrDefault(c => c.Id == _connectionId)?.Name</MudText><MudSpacer/><MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Bill(null))">Add monthly bill</MudButton></div>}
     <MudDataGrid T="UtilityBill" Items="_bills" Dense="true" Hover="true" Elevation="0"
                  Filterable="false" RowsPerPage="25">
         <Columns>
@@ -129,7 +144,7 @@
 
 @if (_editingBill)
 {
-    <BillEditor AsDialog="true" BillId="_editingBillId"
+    <BillEditor AsDialog="true" BillId="_editingBillId" ConnectionId="_connectionId"
                 Saved="LoadAsync" Closed="@(() => { _editingBill = false; return Task.CompletedTask; })" />
 }
 
@@ -163,6 +178,9 @@
         _editingBillId = row?.Id;
         _editingBill = true;
     }
+
+    private decimal ThisMonthTotal => _bills.Where(b => b.BillingMonth.Year == Clock.Today.Year && b.BillingMonth.Month == Clock.Today.Month).Sum(b => b.Amount);
+    private async Task SelectConnection(int id){_connectionId=_connectionId==id?null:id;await LoadAsync();}
 
     private async Task Pay(UtilityBill row)
     {

@@ -1,0 +1,16 @@
+@inject ILeaveService Leaves
+@inject ISnackbar Snackbar
+<MudDialog><DialogContent>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">@Row.EmployeeCode · @Row.Year · @(Row.IsPaid?"Paid leave":"Unpaid leave")</MudText>
+    @if(Row.IsUnlimited){<MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3">This leave type is unlimited. Requests still require approval but do not consume an allowance.</MudAlert>}
+    <MudNumericField T="decimal" @bind-Value="_entitled" Label="Allocated days" Min="0" Disabled="Row.IsUnlimited" />
+    <MudNumericField T="decimal" @bind-Value="_carried" Label="Carried forward" Min="0" Disabled="Row.IsUnlimited" />
+    <MudText Typo="Typo.caption" Class="mud-text-secondary">Already taken: @Row.Taken.ToString("0.#") · Pending: @Row.Pending.ToString("0.#")</MudText>
+</DialogContent><DialogActions><MudButton OnClick="@(()=>Dialog.Cancel())">Cancel</MudButton><MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save" Disabled="_busy||Row.IsUnlimited">Save allowance</MudButton></DialogActions></MudDialog>
+@code{
+    [CascadingParameter]private IMudDialogInstance Dialog{get;set;}=default!;
+    [Parameter,EditorRequired]public LeaveEntitlementRow Row{get;set;}=default!;
+    private decimal _entitled,_carried;private bool _busy;
+    protected override void OnInitialized(){_entitled=Row.Entitled;_carried=Row.CarriedForward;}
+    private async Task Save(){_busy=true;var r=await Leaves.SaveEntitlementAsync(new(Row.EmployeeId,Row.LeaveTypeId,Row.Year,_entitled,_carried));_busy=false;if(r.Failed){Snackbar.Add(r.Error!,Severity.Error);return;}Snackbar.Add("Leave allowance updated.",Severity.Success);Dialog.Close(DialogResult.Ok(true));}
+}

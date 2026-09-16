@@ -110,6 +110,44 @@ else
                                   Variant="Variant.Outlined" Lines="3"
                                   HelperText="Printed at the foot of every document — bank details, terms, a thank-you." />
                 </MudPaper>
+
+                <MudPaper Outlined="true" Elevation="0" Class="pa-4 mt-4">
+                    <div class="d-flex align-center gap-2 mb-1">
+                        <MudIcon Icon="@Icons.Material.Outlined.PictureAsPdf" Color="Color.Primary" />
+                        <MudText Typo="Typo.subtitle1">PDF layout</MudText>
+                    </div>
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+                        Applied to page exports, reports, receipts, and official documents in every module.
+                    </MudText>
+
+                    <MudGrid Spacing="2">
+                        <MudItem xs="12" sm="7">
+                            <MudSelect T="string" @bind-Value="_profile.PrintPageSize"
+                                       Label="Paper size" Variant="Variant.Outlined">
+                                <MudSelectItem Value="@("A4")">A4</MudSelectItem>
+                                <MudSelectItem Value="@("Letter")">US Letter</MudSelectItem>
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" sm="5">
+                            <MudNumericField T="decimal" @bind-Value="_profile.PrintMarginMm"
+                                             Label="Margin (mm)" Variant="Variant.Outlined"
+                                             Min="5" Max="30" />
+                        </MudItem>
+                    </MudGrid>
+
+                    <MudSwitch T="bool" @bind-Value="_profile.PrintLandscape" Color="Color.Primary">
+                        Landscape orientation
+                    </MudSwitch>
+                    <MudSwitch T="bool" @bind-Value="_profile.PrintShowLogo" Color="Color.Primary">
+                        Show company logo
+                    </MudSwitch>
+                    <MudSwitch T="bool" @bind-Value="_profile.PrintShowCompanyDetails" Color="Color.Primary">
+                        Show company address and contact details
+                    </MudSwitch>
+                    <MudSwitch T="bool" @bind-Value="_profile.PrintShowFooter" Color="Color.Primary">
+                        Show footer, printed time, and page numbers
+                    </MudSwitch>
+                </MudPaper>
             </MudItem>
 
             <MudItem xs="12" md="5">

@@ -100,6 +100,7 @@ public static class FinanceModule
             new("Chart of accounts", "/finance/accounts", "AccountTree", AccountsView),
             new("Vouchers",          "/finance/vouchers", "ReceiptLong", VouchersView),
             new("Day book",          "/finance/day-book", "MenuBook", VouchersView),
+            new("Payables & receivables", "/finance/outstanding", "Balance", ReportsView),
 
             new("Money requests",    "/finance/money-requests", "RequestQuote", RequestsRaise, "Spending"),
             new("Director funds",    "/finance/money-requests?director=true", "AccountBalanceWallet", DirectorFundsView, "Spending"),

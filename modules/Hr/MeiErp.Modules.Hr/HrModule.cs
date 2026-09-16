@@ -148,10 +148,8 @@ public static class HrModule
         Nav =
         [
             new("Employees", "/hr/employees", "Badge", EmployeesView),
-            // Departments stay Identity-owned master data; HR is just where
-            // people expect to find and maintain the org chart.
-            new("Departments", "/hr/departments", "AccountTree", PlatformPermissions.DepartmentsManage),
             new("Leave",     "/hr/leave", "EventBusy", LeaveRequest)
+            ,new("Leave entitlements", "/hr/leave/entitlements", "EventAvailable", LeaveTypesManage)
             ,new("Attendance", "/hr/attendance", "HowToReg", AttendanceView)
             ,new("My attendance", "/hr/me", "CalendarMonth", AttendanceView)
             ,new("My attendance code", "/hr/attendance/code", "QrCode2", AttendanceView)

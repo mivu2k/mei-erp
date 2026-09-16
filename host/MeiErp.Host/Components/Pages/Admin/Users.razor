@@ -5,24 +5,13 @@
 @inject ISnackbar Snackbar
 @inject IDialogService Dialogs
 
-<PageTitle>Users</PageTitle>
-
-<div class="d-flex align-center mb-1">
-    <div>
-        <MudText Typo="Typo.h5">Users</MudText>
-        <MudText Typo="Typo.body2" Class="mud-text-secondary">
-            Who can sign in, what they can do, and who they report to.
-        </MudText>
-    </div>
-    <MudSpacer />
-    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+<ListShell Title="Users" Subtitle="Who can sign in, their designation and department, what they can do, and who they report to."
+           Icon="@Icons.Material.Outlined.ManageAccounts" Loading="_loading" IsEmpty="@(!_loading&&_rows.Count==0)" EmptyTitle="No users match this view">
+ <Actions><MudButton Variant="Variant.Filled" Color="Color.Primary"
                StartIcon="@Icons.Material.Filled.PersonAdd" OnClick="@(() => OpenEditor(null))">
         New user
-    </MudButton>
-</div>
-
-<MudPaper Outlined="true" Elevation="0" Class="mt-4">
-    <MudToolBar Dense="true">
+    </MudButton></Actions>
+ <Toolbar>
         <MudTextField @bind-Value="_search" @bind-Value:after="LoadAsync"
                       Placeholder="Search name, email or staff number"
                       Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
@@ -31,9 +20,9 @@
         <MudSpacer />
         <MudSwitch T="bool" @bind-Value="_includeInactive" @bind-Value:after="LoadAsync"
                    Color="Color.Primary" Label="Show deactivated" />
-    </MudToolBar>
+ </Toolbar>
 
-    <MudDataGrid T="UserRow" Items="_rows" Loading="_loading" Dense="true"
+ <ChildContent><MudDataGrid T="UserRow" Items="_rows" Loading="_loading" Dense="true"
                  Hover="true" Striped="false" Elevation="0"
                  RowsPerPage="25" Filterable="false" SortMode="SortMode.Single">
         <Columns>
@@ -135,8 +124,8 @@
                 No users match that search.
             </MudText>
         </NoRecordsContent>
-    </MudDataGrid>
-</MudPaper>
+    </MudDataGrid></ChildContent>
+</ListShell>
 
 @code {
     private IReadOnlyList<UserRow> _rows = [];

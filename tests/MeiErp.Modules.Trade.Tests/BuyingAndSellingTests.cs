@@ -182,13 +182,14 @@ public sealed class BuyingAndSellingTests : IAsyncLifetime
         Skip.IfNot(_available, "No PostgreSQL available.");
         await using var db = NewDb();
         var port = Stocked(10, averageCost: 100);
-        var sales = new SalesService(db, port, _clock);
+        var sales = new SalesService(db, port, _clock, new NoApprovals());
 
         var order = await sales.SaveOrderAsync(new SalesOrderInput(
             null, _customerId, FakeStockPort.MainBookId, _clock.Today, null,
             [new SalesOrderLineInput(ItemId, 5, 150)]));
         Assert.True(order.Ok, order.Error);
         await sales.ConfirmAsync(order.Value.Id);
+        await ApproveSalesAsync(db, order.Value.Id);
 
         Assert.True((await sales.DeliverAsync(new DeliveryInput(
             order.Value.Id, _clock.Today, "Someone", null,
@@ -213,12 +214,13 @@ public sealed class BuyingAndSellingTests : IAsyncLifetime
         Skip.IfNot(_available, "No PostgreSQL available.");
         await using var db = NewDb();
         var port = Stocked(3);
-        var sales = new SalesService(db, port, _clock);
+        var sales = new SalesService(db, port, _clock, new NoApprovals());
 
         var order = await sales.SaveOrderAsync(new SalesOrderInput(
             null, _customerId, FakeStockPort.MainBookId, _clock.Today, null,
             [new SalesOrderLineInput(ItemId, 5, 150)]));
         await sales.ConfirmAsync(order.Value.Id);
+        await ApproveSalesAsync(db, order.Value.Id);
 
         var delivered = await sales.DeliverAsync(new DeliveryInput(
             order.Value.Id, _clock.Today, null, null, [new DeliveryLineInput(ItemId, 5)]));
@@ -241,12 +243,13 @@ public sealed class BuyingAndSellingTests : IAsyncLifetime
         Skip.IfNot(_available, "No PostgreSQL available.");
         await using var db = NewDb();
         var port = Stocked(10);
-        var sales = new SalesService(db, port, _clock);
+        var sales = new SalesService(db, port, _clock, new NoApprovals());
 
         var first = await sales.SaveOrderAsync(new SalesOrderInput(
             null, _customerId, FakeStockPort.MainBookId, _clock.Today, null,
             [new SalesOrderLineInput(ItemId, 10, 150)]));
         await sales.ConfirmAsync(first.Value.Id);
+        await ApproveSalesAsync(db, first.Value.Id);
 
         // A soft reservation the stock figure does not honour is worse than
         // none: two orders can still be promised the same unit while both look
@@ -325,6 +328,14 @@ public sealed class BuyingAndSellingTests : IAsyncLifetime
     {
         var order = await db.PurchaseOrders.FirstAsync(o => o.Id == orderId);
         order.Status = PurchaseOrderStatus.Approved;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+    }
+
+    private static async Task ApproveSalesAsync(TradeDbContext db, int orderId)
+    {
+        var order = await db.SalesOrders.FirstAsync(o => o.Id == orderId);
+        order.Status = SalesOrderStatus.Confirmed;
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
     }

@@ -15,7 +15,7 @@
            EmptyTitle="No deliveries yet"
            EmptyHint="A delivery note appears here once a sales order is delivered.">
     <ChildContent>
-    <MudTable Items="_rows" Dense="true" Hover="true">
+    <MudTable Items="_rows" Dense="true" Hover="true" RowsPerPage="25">
         <HeaderContent>
             <MudTh>Number</MudTh><MudTh>Date</MudTh><MudTh>Customer</MudTh><MudTh>Collected by</MudTh><MudTh>Lines</MudTh><MudTh/>
         </HeaderContent>
@@ -25,8 +25,12 @@
             <MudTd>@context.PartyName</MudTd>
             <MudTd>@context.CollectedBy</MudTd>
             <MudTd>@context.Lines.Count</MudTd>
-            <MudTd><MudIconButton Icon="@Icons.Material.Outlined.Print" Href="@($"/print/sales/delivery/{context.Id}")" Target="_blank" /></MudTd>
+            <MudTd>
+                <MudTooltip Text="Print A4 delivery note"><MudIconButton Icon="@Icons.Material.Outlined.Print" Href="@($"/print/sales/delivery/{context.Id}")" Target="_blank" /></MudTooltip>
+                <MudTooltip Text="Print 80 mm POS receipt"><MudIconButton Icon="@Icons.Material.Outlined.ReceiptLong" Href="@($"/print/sales/delivery/{context.Id}?size=roll")" Target="_blank" /></MudTooltip>
+            </MudTd>
         </RowTemplate>
+        <PagerContent><MudTablePager PageSizeOptions="@(new[]{10,25,50,100})" /></PagerContent>
     </MudTable>
     </ChildContent>
 </ListShell>

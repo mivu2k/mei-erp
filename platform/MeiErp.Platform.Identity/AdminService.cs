@@ -2,6 +2,7 @@ using System.Security.Claims;
 using MeiErp.Platform.Kernel;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace MeiErp.Platform.Identity;
 
@@ -31,6 +32,9 @@ public interface IAdminService
     Task<IReadOnlyList<Department>> DepartmentsAsync(CancellationToken ct = default);
     Task<Result> SaveDepartmentAsync(Department department, CancellationToken ct = default);
     Task<Result> DeleteDepartmentAsync(string id, CancellationToken ct = default);
+    Task<IReadOnlyList<Designation>> DesignationsAsync(bool includeInactive = false, CancellationToken ct = default);
+    Task<Result> SaveDesignationAsync(Designation designation, CancellationToken ct = default);
+    Task<Result> DeleteDesignationAsync(string id, CancellationToken ct = default);
 }
 
 public sealed record UserRow(
@@ -40,12 +44,12 @@ public sealed record UserRow(
 
 public sealed record UserDetail(
     string Id, string FullName, string? Email, string? EmployeeCode, string? Designation,
-    string? DepartmentId, string? LineManagerId, bool IsActive,
+    string? DepartmentId, string? LineManagerId, string? PreferredHomePath, bool IsActive,
     IReadOnlyList<string> Roles);
 
 public sealed record UserInput(
     string FullName, string Email, string? EmployeeCode, string? Designation,
-    string? DepartmentId, string? LineManagerId);
+    string? DepartmentId, string? LineManagerId, string? PreferredHomePath = null);
 
 public sealed record RoleRow(
     string Id, string Name, string? ModuleKey, string? Description,
@@ -128,7 +132,7 @@ public sealed class AdminService(
 
         return new UserDetail(
             user.Id, user.FullName, user.Email, user.EmployeeCode, user.Designation,
-            user.DepartmentId, user.LineManagerId, user.IsActive, roleNames);
+            user.DepartmentId, user.LineManagerId, user.PreferredHomePath, user.IsActive, roleNames);
     }
 
     public async Task<Result<string>> CreateUserAsync(
@@ -147,6 +151,7 @@ public sealed class AdminService(
             Designation = input.Designation,
             DepartmentId = string.IsNullOrWhiteSpace(input.DepartmentId) ? null : input.DepartmentId,
             LineManagerId = string.IsNullOrWhiteSpace(input.LineManagerId) ? null : input.LineManagerId,
+            PreferredHomePath = SafeHomePath(input.PreferredHomePath),
             IsActive = true,
             CreatedUtc = clock.UtcNow,
 
@@ -189,9 +194,42 @@ public sealed class AdminService(
         user.Designation = input.Designation;
         user.DepartmentId = string.IsNullOrWhiteSpace(input.DepartmentId) ? null : input.DepartmentId;
         user.LineManagerId = string.IsNullOrWhiteSpace(input.LineManagerId) ? null : input.LineManagerId;
+        user.PreferredHomePath = SafeHomePath(input.PreferredHomePath);
 
         var result = await users.UpdateAsync(user);
-        return result.Succeeded ? Result.Success() : Result.Fail(Describe(result));
+        if (!result.Succeeded) return Result.Fail(Describe(result));
+
+        // A linked employee is the same person, not a second organization
+        // record. Keep the HR snapshot aligned when Admin changes the title or
+        // department; unlinked employees remain independent personnel records.
+        try
+        {
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"""
+                 UPDATE hr."Employees"
+                 SET "Designation" = {user.Designation},
+                     "DepartmentId" = {user.DepartmentId},
+                     "DepartmentName" = (SELECT "Name" FROM platform."Departments" WHERE "Id" = {user.DepartmentId})
+                 WHERE "UserId" = {user.Id} AND "IsDeleted" = FALSE
+                 """, ct);
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            // HR is optional. Identity-only deployments and isolated tests do
+            // not have its schema; the user assignment still remains valid.
+        }
+
+        return Result.Success();
+    }
+
+    private static string? SafeHomePath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || path == "/") return null;
+        path = path.Trim();
+        if (!path.StartsWith('/') || path.StartsWith("//", StringComparison.Ordinal)
+            || path.Contains("://", StringComparison.Ordinal))
+            throw new ArgumentException("Home page must be an internal application page.");
+        return path.Length <= 300 ? path : throw new ArgumentException("Home page is too long.");
     }
 
     /// <summary>Walks up the proposed reporting line looking for the person we started from.</summary>
@@ -439,6 +477,42 @@ public sealed class AdminService(
             return Result.Fail("This department has sub-departments. Remove them first.", "department.has-children");
 
         await db.Departments.Where(d => d.Id == id).ExecuteDeleteAsync(ct);
+        return Result.Success();
+    }
+
+    // ------------------------------------------------------------- designations
+
+    public async Task<IReadOnlyList<Designation>> DesignationsAsync(bool includeInactive = false, CancellationToken ct = default) =>
+        await db.Designations.AsNoTracking()
+            .Where(d => includeInactive || d.IsActive)
+            .OrderBy(d => d.Name)
+            .ToListAsync(ct);
+
+    public async Task<Result> SaveDesignationAsync(Designation designation, CancellationToken ct = default)
+    {
+        designation.Name = designation.Name.Trim();
+        designation.Code = string.IsNullOrWhiteSpace(designation.Code) ? null : designation.Code.Trim();
+        if (designation.Name.Length == 0)
+            return Result.Fail("A designation needs a name.", "designation.no-name");
+        if (await db.Designations.AnyAsync(d => d.Name == designation.Name && d.Id != designation.Id, ct))
+            return Result.Fail("That designation already exists.", "designation.duplicate");
+
+        var existing = await db.Designations.FirstOrDefaultAsync(d => d.Id == designation.Id, ct);
+        if (existing is null) db.Designations.Add(designation);
+        else db.Entry(existing).CurrentValues.SetValues(designation);
+        await db.SaveChangesAsync(ct);
+        return Result.Success();
+    }
+
+    public async Task<Result> DeleteDesignationAsync(string id, CancellationToken ct = default)
+    {
+        var designation = await db.Designations.FirstOrDefaultAsync(d => d.Id == id, ct);
+        if (designation is null) return Result.Success();
+        var usersWithTitle = await db.Users.CountAsync(u => u.Designation == designation.Name, ct);
+        if (usersWithTitle > 0)
+            return Result.Fail($"{usersWithTitle} {(usersWithTitle == 1 ? "user has" : "users have")} this designation. Reassign them first.", "designation.in-use");
+        db.Designations.Remove(designation);
+        await db.SaveChangesAsync(ct);
         return Result.Success();
     }
 

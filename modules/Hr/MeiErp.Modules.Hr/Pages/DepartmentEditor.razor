@@ -152,6 +152,6 @@
     private async Task DismissedAsync()
     {
         if (Closed.HasDelegate) { await Closed.InvokeAsync(); return; }
-        Nav.NavigateTo("/hr/departments");
+        Nav.NavigateTo("/admin/departments");
     }
 }

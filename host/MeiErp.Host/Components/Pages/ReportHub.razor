@@ -1,4 +1,5 @@
 @page "/reports"
+@page "/reports/designer"
 @page "/reports/{ReportKey}"
 @attribute [Authorize]
 @rendermode InteractiveServer
@@ -11,66 +12,97 @@
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
 
-<PageTitle>Reports</PageTitle>
+<PageTitle>Custom report builder</PageTitle>
 
-<MudText Typo="Typo.h5">Reports</MudText>
-<MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
-    Every report in the suite, in one place. You only see the ones you have access to.
-</MudText>
+<div class="d-flex flex-wrap align-center gap-3 mb-4">
+    <div>
+        <MudText Typo="Typo.h5">Custom report builder</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            Build your own reporting scenario from any module dataset you are permitted to use.
+        </MudText>
+    </div>
+    <MudSpacer />
+    <MudChip T="string" Icon="@Icons.Material.Outlined.Dataset" Color="Color.Primary" Variant="Variant.Outlined">
+        @AvailableReports.Count datasets
+    </MudChip>
+</div>
 
-<MudGrid>
-    <MudItem xs="12" md="3">
-        <MudPaper Outlined="true" Elevation="0">
-            <MudTextField @bind-Value="_search" Placeholder="Find a report"
+<MudPaper Outlined="true" Elevation="0" Class="pa-4 mb-4">
+    <div class="d-flex align-center gap-2 mb-3">
+        <MudAvatar Color="Color.Primary" Variant="Variant.Outlined" Size="Size.Small">1</MudAvatar>
+        <div>
+            <MudText Typo="Typo.subtitle1">Choose a module dataset</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">The list is discovered from installed modules and your permissions; it is not a fixed menu.</MudText>
+        </div>
+    </div>
+
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="5">
+            <MudTextField @bind-Value="_search" Placeholder="Search datasets"
                           Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
-                          Variant="Variant.Text" Margin="Margin.Dense" Class="pa-2 mt-0" Immediate="true" />
-            <MudDivider />
-
-            <MudList T="string" Dense="true">
-                @foreach (var group in Visible.GroupBy(r => r.ModuleKey))
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" />
+        </MudItem>
+        <MudItem xs="12" md="7">
+            <div class="d-flex flex-wrap gap-2">
+                <MudButton Size="Size.Small" Variant="@(_module is null ? Variant.Filled : Variant.Outlined)"
+                           Color="Color.Primary" OnClick="@(() => _module = null)">All modules</MudButton>
+                @foreach (var module in AvailableModules)
                 {
-                    <MudListSubheader>@ModuleName(group.Key)</MudListSubheader>
-
-                    @foreach (var report in group)
-                    {
-                        <MudListItem T="string" OnClick="@(() => Select(report))"
-                                     Class="@(report.Key == _current?.Key ? "mud-selected-item" : "")">
-                            <MudText Typo="Typo.body2">@report.Name</MudText>
-                            <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                                @report.Description
-                            </MudText>
-                        </MudListItem>
-                    }
+                    <MudButton Size="Size.Small" Variant="@(_module == module ? Variant.Filled : Variant.Outlined)"
+                               Color="Color.Primary" OnClick="@(() => _module = module)">@ModuleName(module)</MudButton>
                 }
-            </MudList>
+            </div>
+        </MudItem>
+    </MudGrid>
 
-            @if (Visible.Count == 0)
+    @if (Visible.Count == 0)
+    {
+        <MudText Class="pa-6 text-center mud-text-secondary" Typo="Typo.body2">No permitted datasets match this search.</MudText>
+    }
+    else
+    {
+        <MudGrid Spacing="2" Class="mt-1">
+            @foreach (var report in Visible)
             {
-                <MudText Class="pa-6 text-center mud-text-secondary" Typo="Typo.body2">
-                    @(Catalog.All.Count == 0
-                        ? "No reports are registered yet."
-                        : "No reports match that search, or you do not have access to any.")
-                </MudText>
+                <MudItem xs="12" sm="6" lg="4" xl="3">
+                    <MudPaper Outlined="true" Elevation="0" Class="pa-3 h-100"
+                              Style="@(report.Key == _current?.Key ? "border-color:var(--mud-palette-primary);border-width:2px" : "")">
+                        <div class="d-flex align-center mb-2">
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@ModuleName(report.ModuleKey)</MudChip>
+                            <MudSpacer />
+                            <MudIcon Icon="@Icons.Material.Outlined.Dataset" Color="Color.Primary" Size="Size.Small" />
+                        </div>
+                        <MudText Typo="Typo.subtitle2">@report.Name</MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block" Style="min-height:40px">@report.Description</MudText>
+                        <MudButton FullWidth="true" Size="Size.Small" Class="mt-3"
+                                   Variant="@(report.Key == _current?.Key ? Variant.Filled : Variant.Outlined)"
+                                   Color="Color.Primary" OnClick="@(() => Select(report))">
+                            @(report.Key == _current?.Key ? "Selected" : "Use this dataset")
+                        </MudButton>
+                    </MudPaper>
+                </MudItem>
             }
-        </MudPaper>
-    </MudItem>
+        </MudGrid>
+    }
+</MudPaper>
 
-    <MudItem xs="12" md="9">
-        @if (_current is null)
-        {
-            <MudPaper Outlined="true" Elevation="0" Class="pa-12 text-center">
-                <MudIcon Icon="@Icons.Material.Outlined.Assessment" Size="Size.Large"
-                         Class="mud-text-secondary" />
-                <MudText Class="mud-text-secondary mt-3">Pick a report to run it.</MudText>
-            </MudPaper>
-        }
-        else
-        {
+@if (_current is null)
+{
+    <MudPaper Outlined="true" Elevation="0" Class="pa-8 text-center">
+        <MudIcon Icon="@Icons.Material.Outlined.TouchApp" Size="Size.Large" Class="mud-text-secondary" />
+        <MudText Class="mud-text-secondary mt-3">Choose a dataset above to start building your scenario.</MudText>
+    </MudPaper>
+}
+else
+{
             <MudPaper Outlined="true" Elevation="0">
                 <div class="pa-4">
                     <div class="d-flex align-center">
                         <div>
-                            <MudText Typo="Typo.h6">@_current.Name</MudText>
+                            <div class="d-flex align-center gap-2">
+                                <MudAvatar Color="Color.Primary" Variant="Variant.Outlined" Size="Size.Small">2</MudAvatar>
+                                <MudText Typo="Typo.h6">Design scenario · @_current.Name</MudText>
+                            </div>
                             <MudText Typo="Typo.body2" Class="mud-text-secondary">
                                 @_current.Description
                             </MudText>
@@ -108,19 +140,39 @@
                                           Margin="Margin.Dense" Style="max-width:160px" />
                         }
 
+                        @if (_current.Uses.HasFlag(ReportFilters.Party))
+                        {
+                            <MudNumericField T="int?" @bind-Value="_partyId" Label="Party ID" HideSpinButtons="true"
+                                             Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:140px" />
+                        }
+                        @if (_current.Uses.HasFlag(ReportFilters.Person))
+                        {
+                            <MudTextField @bind-Value="_personId" Label="Person" Variant="Variant.Outlined"
+                                          Margin="Margin.Dense" Style="max-width:170px" />
+                        }
+                        @if (_current.Uses.HasFlag(ReportFilters.Department))
+                        {
+                            <MudTextField @bind-Value="_departmentId" Label="Department" Variant="Variant.Outlined"
+                                          Margin="Margin.Dense" Style="max-width:170px" />
+                        }
+                        @if (_current.Uses.HasFlag(ReportFilters.Project))
+                        {
+                            <MudNumericField T="int?" @bind-Value="_projectId" Label="Project ID" HideSpinButtons="true"
+                                             Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:140px" />
+                        }
+                        @if (_current.Uses.HasFlag(ReportFilters.Account))
+                        {
+                            <MudNumericField T="int?" @bind-Value="_accountId" Label="Account ID" HideSpinButtons="true"
+                                             Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:140px" />
+                        }
+                        @if (_current.Uses.HasFlag(ReportFilters.Item))
+                        {
+                            <MudNumericField T="int?" @bind-Value="_itemId" Label="Item ID" HideSpinButtons="true"
+                                             Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:140px" />
+                        }
+
                         <MudTextField @bind-Value="_searchTerm" Label="Contains" Variant="Variant.Outlined"
                                       Margin="Margin.Dense" Style="max-width:200px" />
-
-                        @if (_result is not null && _result.Columns.Count > 0)
-                        {
-                            <MudSelect T="string" @bind-Value="_groupBy" Label="Group by" Clearable="true"
-                                       Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:180px">
-                                @foreach (var column in _result.Columns.Where(c => c.Kind is not ReportValueKind.Money))
-                                {
-                                    <MudSelectItem T="string" Value="@column.Key">@column.Header</MudSelectItem>
-                                }
-                            </MudSelect>
-                        }
 
                         <MudButton Variant="Variant.Filled" Color="Color.Primary"
                                    OnClick="RunAsync" Disabled="_running">
@@ -129,12 +181,53 @@
                     </div>
 
                     <MudExpansionPanels Class="mt-3" Elevation="0">
-                        <MudExpansionPanel Text="Saved views and schedule">
+                        @if (_availableColumns.Count > 0)
+                        {
+                            <MudExpansionPanel Text="Choose fields, sorting and grouping" Expanded="true">
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">Choose exactly what appears on screen and in Excel/PDF.</MudText>
+                                <MudGrid Spacing="1" Class="mt-2">
+                                    @foreach (var column in _availableColumns)
+                                    {
+                                        <MudItem xs="12" sm="6" md="4" lg="3">
+                                            <MudPaper Outlined="true" Elevation="0" Class="px-2 py-1 h-100">
+                                                <MudCheckBox T="bool" Value="@IsColumnSelected(column.Key)"
+                                                             ValueChanged="@(value => SetColumnSelected(column.Key, value))"
+                                                             Label="@column.Header" Dense="true" />
+                                            </MudPaper>
+                                        </MudItem>
+                                    }
+                                </MudGrid>
+                                <MudGrid Spacing="2" Class="mt-2">
+                                    <MudItem xs="12" sm="6" md="4">
+                                        <MudSelect T="string" @bind-Value="_sortBy" Label="Sort by" Clearable="true"
+                                                   Variant="Variant.Outlined" Margin="Margin.Dense" FullWidth="true">
+                                            @foreach (var column in _availableColumns)
+                                            { <MudSelectItem T="string" Value="@column.Key">@column.Header</MudSelectItem> }
+                                        </MudSelect>
+                                    </MudItem>
+                                    <MudItem xs="12" sm="6" md="4">
+                                        <MudSelect T="string" @bind-Value="_groupBy" Label="Group by" Clearable="true"
+                                                   Variant="Variant.Outlined" Margin="Margin.Dense" FullWidth="true">
+                                            @foreach (var column in _availableColumns.Where(c => c.Kind is not ReportValueKind.Money))
+                                            { <MudSelectItem T="string" Value="@column.Key">@column.Header</MudSelectItem> }
+                                        </MudSelect>
+                                    </MudItem>
+                                    <MudItem xs="12" sm="6" md="4" Class="d-flex align-center">
+                                        <MudCheckBox T="bool" @bind-Value="_sortDescending" Label="Descending order" />
+                                    </MudItem>
+                                </MudGrid>
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                                           StartIcon="@Icons.Material.Outlined.Refresh" OnClick="RunAsync" Disabled="_running">
+                                    Apply layout
+                                </MudButton>
+                            </MudExpansionPanel>
+                        }
+                        <MudExpansionPanel Text="Save or schedule this scenario">
                             <div class="d-flex flex-wrap gap-2 align-center">
-                                <MudTextField @bind-Value="_viewName" Label="View name" Variant="Variant.Outlined"
+                                <MudTextField @bind-Value="_viewName" Label="Scenario name" Variant="Variant.Outlined"
                                               Margin="Margin.Dense" Style="max-width:220px" />
                                 <MudCheckBox T="bool" @bind-Value="_viewDefault" Label="Default" />
-                                <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="SaveViewAsync">Save current view</MudButton>
+                                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveViewAsync">Save my scenario</MudButton>
                                 @foreach (var view in _views)
                                 {
                                     <MudChip T="string" Size="Size.Small" OnClick="@(() => ApplyViewAsync(view))"
@@ -310,9 +403,7 @@
                     </div>
                 }
             </MudPaper>
-        }
-    </MudItem>
-</MudGrid>
+}
 
 @code {
     [Parameter] public string? ReportKey { get; set; }
@@ -320,11 +411,18 @@
     private ReportDefinition? _current;
     private ReportResult? _result;
     private IReadOnlyList<ReportGroup> _groups = [];
+    private IReadOnlyList<ReportColumn> _availableColumns = [];
+    private readonly HashSet<string> _selectedColumns = new(StringComparer.OrdinalIgnoreCase);
 
     private string? _search;
+    private string? _module;
     private string? _searchTerm;
     private string? _status;
     private string? _groupBy;
+    private string? _sortBy;
+    private bool _sortDescending;
+    private int? _partyId, _projectId, _accountId, _itemId;
+    private string? _personId, _departmentId;
     private DateTime? _from, _to, _asAt;
     private bool _running;
     private string? _viewName, _scheduleName;
@@ -336,11 +434,18 @@
     private IReadOnlyList<SavedReportView> _views = [];
     private IReadOnlyList<ReportSchedule> _schedules = [];
 
+    private IReadOnlyList<ReportDefinition> AvailableReports => Catalog.Available(User);
+
+    private IReadOnlyList<string> AvailableModules =>
+        [.. AvailableReports.Select(r => r.ModuleKey).Distinct().OrderBy(ModuleName)];
+
     private IReadOnlyList<ReportDefinition> Visible =>
-        [.. Catalog.Available(User)
+        [.. AvailableReports
+            .Where(r => _module is null || r.ModuleKey == _module)
             .Where(r => string.IsNullOrWhiteSpace(_search)
                      || r.Name.Contains(_search, StringComparison.OrdinalIgnoreCase)
-                     || r.Description.Contains(_search, StringComparison.OrdinalIgnoreCase))];
+                     || r.Description.Contains(_search, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(r => ModuleName(r.ModuleKey)).ThenBy(r => r.SortOrder).ThenBy(r => r.Name)];
 
     private static string ModuleName(string key) =>
         key.Length == 0 ? key : char.ToUpperInvariant(key[0]) + key[1..];
@@ -375,7 +480,11 @@
         _current = report;
         _result = null;
         _groups = [];
+        _availableColumns = [];
+        _selectedColumns.Clear();
         _groupBy = null;
+        _sortBy = null;
+        _sortDescending = false;
         await LoadPreferencesAsync();
     }
 
@@ -384,7 +493,11 @@
         From = _current?.Uses.HasFlag(ReportFilters.DateRange) == true && _from is not null ? DateOnly.FromDateTime(_from.Value) : null,
         To = _current?.Uses.HasFlag(ReportFilters.DateRange) == true && _to is not null ? DateOnly.FromDateTime(_to.Value) : null,
         AsAt = _current?.Uses.HasFlag(ReportFilters.AsAtDate) == true && _asAt is not null ? DateOnly.FromDateTime(_asAt.Value) : null,
-        Status = _status, Search = _searchTerm, GroupBy = _groupBy
+        Status = _status, Search = _searchTerm, GroupBy = _groupBy,
+        PartyId = _partyId, PersonId = _personId, DepartmentId = _departmentId,
+        ProjectId = _projectId, AccountId = _accountId, ItemId = _itemId,
+        SelectedColumns = _selectedColumns.Count == 0 ? null : [.. _availableColumns.Where(c => _selectedColumns.Contains(c.Key)).Select(c => c.Key)],
+        SortBy = _sortBy, SortDescending = _sortDescending
     };
 
     private async Task LoadPreferencesAsync()
@@ -402,7 +515,7 @@
         try
         {
             await Preferences.SaveViewAsync(null, _current.Key, _viewName, System.Text.Json.JsonSerializer.Serialize(CurrentRequest()), _viewDefault);
-            _viewName = null; _viewDefault = false; await LoadPreferencesAsync(); Snackbar.Add("View saved.", Severity.Success);
+            _viewName = null; _viewDefault = false; await LoadPreferencesAsync(); Snackbar.Add("Scenario saved.", Severity.Success);
         }
         catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
     }
@@ -413,6 +526,12 @@
         if (request is null) return;
         _from = request.From?.ToDateTime(TimeOnly.MinValue); _to = request.To?.ToDateTime(TimeOnly.MinValue);
         _asAt = request.AsAt?.ToDateTime(TimeOnly.MinValue); _status = request.Status; _searchTerm = request.Search; _groupBy = request.GroupBy;
+        _partyId = request.PartyId; _personId = request.PersonId; _departmentId = request.DepartmentId;
+        _projectId = request.ProjectId; _accountId = request.AccountId; _itemId = request.ItemId;
+        _sortBy = request.SortBy; _sortDescending = request.SortDescending;
+        _selectedColumns.Clear();
+        if (request.SelectedColumns is not null)
+            foreach (var key in request.SelectedColumns) _selectedColumns.Add(key);
         await RunAsync();
     }
 
@@ -442,20 +561,16 @@
         _running = true;
         try
         {
-            var request = new ReportRequest
-            {
-                From = _current.Uses.HasFlag(ReportFilters.DateRange) && _from is not null
-                    ? DateOnly.FromDateTime(_from.Value) : null,
-                To = _current.Uses.HasFlag(ReportFilters.DateRange) && _to is not null
-                    ? DateOnly.FromDateTime(_to.Value) : null,
-                AsAt = _current.Uses.HasFlag(ReportFilters.AsAtDate) && _asAt is not null
-                    ? DateOnly.FromDateTime(_asAt.Value) : null,
-                Status = _status,
-                Search = _searchTerm,
-                GroupBy = _groupBy
-            };
+            var request = CurrentRequest();
+            if (request.From > request.To)
+                throw new InvalidOperationException("The From date must be on or before the To date.");
 
-            _result = await _current.Run(request, CancellationToken.None);
+            var raw = await _current.Run(request, CancellationToken.None);
+            _availableColumns = raw.Columns;
+            if (_selectedColumns.Count == 0)
+                foreach (var column in raw.Columns) _selectedColumns.Add(column.Key);
+            request = CurrentRequest();
+            _result = ReportRenderer.Apply(raw, request);
             _groups = ReportRenderer.Group(_result, _groupBy);
         }
         catch (Exception ex)
@@ -486,7 +601,26 @@
         if (_asAt is not null) query.Add($"asAt={_asAt:yyyy-MM-dd}");
         if (!string.IsNullOrWhiteSpace(_status)) query.Add($"status={Uri.EscapeDataString(_status)}");
         if (!string.IsNullOrWhiteSpace(_searchTerm)) query.Add($"search={Uri.EscapeDataString(_searchTerm)}");
+        if (_partyId is not null) query.Add($"partyId={_partyId}");
+        if (!string.IsNullOrWhiteSpace(_personId)) query.Add($"personId={Uri.EscapeDataString(_personId)}");
+        if (!string.IsNullOrWhiteSpace(_departmentId)) query.Add($"departmentId={Uri.EscapeDataString(_departmentId)}");
+        if (_projectId is not null) query.Add($"projectId={_projectId}");
+        if (_accountId is not null) query.Add($"accountId={_accountId}");
+        if (_itemId is not null) query.Add($"itemId={_itemId}");
+        if (!string.IsNullOrWhiteSpace(_groupBy)) query.Add($"groupBy={Uri.EscapeDataString(_groupBy)}");
+        if (!string.IsNullOrWhiteSpace(_sortBy)) query.Add($"sortBy={Uri.EscapeDataString(_sortBy)}");
+        if (_sortDescending) query.Add("sortDescending=true");
+        if (_selectedColumns.Count > 0)
+            query.Add($"columns={Uri.EscapeDataString(string.Join(',', _availableColumns.Where(c => _selectedColumns.Contains(c.Key)).Select(c => c.Key)))}");
 
         return $"/reports/export/{_current!.Key}?{string.Join("&", query)}";
+    }
+
+    private bool IsColumnSelected(string key) => _selectedColumns.Contains(key);
+
+    private void SetColumnSelected(string key, bool selected)
+    {
+        if (selected) _selectedColumns.Add(key);
+        else if (_selectedColumns.Count > 1) _selectedColumns.Remove(key);
     }
 }

@@ -136,6 +136,10 @@ namespace MeiErp.Platform.Identity.Migrations
                     b.Property<byte[]>("Photo")
                         .HasColumnType("bytea");
 
+                    b.Property<string>("PreferredHomePath")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
                     b.Property<string>("SecurityStamp")
                         .HasColumnType("text");
 
@@ -215,6 +219,27 @@ namespace MeiErp.Platform.Identity.Migrations
                     b.Property<string>("Phone")
                         .HasColumnType("text");
 
+                    b.Property<bool>("PrintLandscape")
+                        .HasColumnType("boolean");
+
+                    b.Property<decimal>("PrintMarginMm")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)");
+
+                    b.Property<string>("PrintPageSize")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<bool>("PrintShowCompanyDetails")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("PrintShowFooter")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("PrintShowLogo")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("SalesTaxNumber")
                         .HasColumnType("text");
 
@@ -258,6 +283,31 @@ namespace MeiErp.Platform.Identity.Migrations
                     b.HasIndex("ParentId");
 
                     b.ToTable("Departments", "platform");
+                });
+
+            modelBuilder.Entity("MeiErp.Platform.Identity.Designation", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Code")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("Designations", "platform");
                 });
 
             modelBuilder.Entity("MeiErp.Platform.Identity.LabelTemplate", b =>

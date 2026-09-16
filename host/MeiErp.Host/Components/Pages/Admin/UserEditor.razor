@@ -3,6 +3,9 @@
 @inject ISnackbar Snackbar
 @inject UserManager<ApplicationUser> Users
 @inject IAccountEmailSender AccountEmail
+@inject IModuleCatalog Modules
+@inject IReportCatalog Reports
+@using MeiErp.Platform.Reporting
 @using MeiErp.Host.Services
 
 <MudDialog>
@@ -20,8 +23,14 @@
             <div class="d-flex gap-3 mb-4">
                 <MudTextField @bind-Value="_employeeCode" Label="Staff number"
                               Variant="Variant.Outlined" />
-                <MudTextField @bind-Value="_designation" Label="Designation"
-                              Variant="Variant.Outlined" />
+                <MudSelect T="string" @bind-Value="_designation" Label="Designation"
+                           Variant="Variant.Outlined" Clearable="true"
+                           HelperText="Managed under Administration → Designations.">
+                    @foreach (var designation in _designations)
+                    {
+                        <MudSelectItem T="string" Value="@designation.Name">@designation.Name</MudSelectItem>
+                    }
+                </MudSelect>
             </div>
 
             <MudSelect T="string" @bind-Value="_departmentId" Label="Department"
@@ -38,6 +47,22 @@
                 @foreach (var u in _people.Where(p => p.Id != UserId))
                 {
                     <MudSelectItem T="string" Value="@u.Id">@u.FullName</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudSelect T="string" @bind-Value="_preferredHomePath" Label="Home page"
+                       Variant="Variant.Outlined" Clearable="true" Class="mt-4"
+                       HelperText="The first page this user sees after sign-in. Access permissions still apply.">
+                <MudSelectItem T="string" Value="@((string?)null)">Shared dashboard</MudSelectItem>
+                <MudSelectItem T="string" Value="@("/approvals")">Approvals</MudSelectItem>
+                <MudSelectItem T="string" Value="@("/reports")">Report center</MudSelectItem>
+                @foreach (var module in Modules.All)
+                {
+                    <MudSelectItem T="string" Value="@module.BasePath">@module.Name</MudSelectItem>
+                }
+                @foreach (var report in Reports.All)
+                {
+                    <MudSelectItem T="string" Value="@($"/reports/{report.Key}")">Report: @report.Name</MudSelectItem>
                 }
             </MudSelect>
 
@@ -81,11 +106,13 @@
     private string? _designation;
     private string? _departmentId;
     private string? _lineManagerId;
+    private string? _preferredHomePath;
     private string _password = "";
     private string? _error;
     private bool _busy;
 
     private IReadOnlyList<Department> _departments = [];
+    private IReadOnlyList<Designation> _designations = [];
     private IReadOnlyList<UserSummary> _people = [];
 
     private bool IsNew => UserId is null;
@@ -93,6 +120,7 @@
     protected override async Task OnInitializedAsync()
     {
         _departments = await Admin.DepartmentsAsync();
+        _designations = await Admin.DesignationsAsync();
         _people = await Directory.SearchAsync(null, take: 500);
 
         if (UserId is null) return;
@@ -107,6 +135,7 @@
         _designation = detail.Designation;
         _departmentId = detail.DepartmentId;
         _lineManagerId = detail.LineManagerId;
+        _preferredHomePath = detail.PreferredHomePath;
     }
 
     private static string? ValidatePassword(string value)
@@ -133,7 +162,7 @@
         {
             var input = new UserInput(
                 _fullName.Trim(), _email.Trim(), _employeeCode, _designation,
-                _departmentId, _lineManagerId);
+                _departmentId, _lineManagerId, _preferredHomePath);
 
             Result result;
             string? createdId = null;
