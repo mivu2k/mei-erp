@@ -91,21 +91,30 @@
             </MudAlert>
         }
 
-        @if (!IsNew && !_emailConfirmed)
+        @if (!IsNew)
         {
-            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mt-4">
-                This account is waiting for email confirmation and cannot sign in.
-                <div class="d-flex gap-2 mt-3">
-                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                               OnClick="ApproveNowAsync" Disabled="_busy">
-                        Approve now
-                    </MudButton>
-                    <MudButton Variant="Variant.Outlined" Color="Color.Primary"
-                               OnClick="SendConfirmationAsync" Disabled="_busy">
-                        Resend confirmation email
-                    </MudButton>
-                </div>
-            </MudAlert>
+            @if (_emailConfirmed)
+            {
+                <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Class="mt-4">
+                    Account approved — this user may sign in.
+                </MudAlert>
+            }
+            else
+            {
+                <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mt-4">
+                    This account is waiting for approval and cannot sign in.
+                    <div class="d-flex gap-2 mt-3 flex-wrap">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                   OnClick="ApproveNowAsync" Disabled="_busy">
+                            Approve now
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                                   OnClick="SendConfirmationAsync" Disabled="_busy">
+                            Resend confirmation email
+                        </MudButton>
+                    </div>
+                </MudAlert>
+            }
         }
     </DialogContent>
 
