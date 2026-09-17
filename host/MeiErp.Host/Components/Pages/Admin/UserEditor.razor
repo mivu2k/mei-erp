@@ -90,6 +90,23 @@
                 @_error
             </MudAlert>
         }
+
+        @if (!IsNew && !_emailConfirmed)
+        {
+            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mt-4">
+                This account is waiting for email confirmation and cannot sign in.
+                <div class="d-flex gap-2 mt-3">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                               OnClick="ApproveNowAsync" Disabled="_busy">
+                        Approve now
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                               OnClick="SendConfirmationAsync" Disabled="_busy">
+                        Resend confirmation email
+                    </MudButton>
+                </div>
+            </MudAlert>
+        }
     </DialogContent>
 
     <DialogActions>
@@ -118,6 +135,7 @@
     private const string ApprovalDirect = "direct";
     private const string ApprovalEmail = "email";
     private string _approvalMethod = ApprovalDirect;
+    private bool _emailConfirmed = true;
     private string? _error;
     private bool _busy;
 
@@ -146,6 +164,9 @@
         _departmentId = detail.DepartmentId;
         _lineManagerId = detail.LineManagerId;
         _preferredHomePath = detail.PreferredHomePath;
+
+        var identityUser = await Users.FindByIdAsync(UserId);
+        _emailConfirmed = identityUser?.EmailConfirmed ?? true;
     }
 
     private static string? ValidatePassword(string value)
@@ -229,4 +250,68 @@
     }
 
     private void Cancel() => Dialog.Cancel();
+
+    private async Task ApproveNowAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var user = await Users.FindByIdAsync(UserId!);
+            if (user is null)
+            {
+                _error = "That user no longer exists.";
+                return;
+            }
+
+            var token = await Users.GenerateEmailConfirmationTokenAsync(user);
+            var result = await Users.ConfirmEmailAsync(user, token);
+            if (!result.Succeeded)
+            {
+                _error = string.Join(" ", result.Errors.Select(e => e.Description));
+                return;
+            }
+
+            _emailConfirmed = true;
+            Snackbar.Add($"{user.FullName}'s account was approved. They can sign in now.", Severity.Success);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task SendConfirmationAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var user = await Users.FindByIdAsync(UserId!);
+            if (user is null)
+            {
+                _error = "That user no longer exists.";
+                return;
+            }
+
+            var token = await Users.GenerateEmailConfirmationTokenAsync(user);
+            var encoded = Microsoft.AspNetCore.WebUtilities.WebEncoders.Base64UrlEncode(
+                System.Text.Encoding.UTF8.GetBytes(token));
+            var url = $"/auth/confirm-email?userId={Uri.EscapeDataString(user.Id)}&token={Uri.EscapeDataString(encoded)}";
+            var delivery = await AccountEmail.SendAsync(user.Email!, "Confirm your MEI ERP email",
+                "Confirm your email address to activate your MEI ERP account.", url);
+
+            if (delivery.Failed)
+            {
+                _error = delivery.Error;
+                return;
+            }
+
+            Snackbar.Add($"A confirmation email was sent to {user.Email}.", Severity.Success);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
 }
