@@ -74,6 +74,13 @@
                               InputType="InputType.Password" Required="true"
                               Validation="@(new Func<string, string?>(ValidatePassword))" Variant="Variant.Outlined"
                               HelperText="They must change it the first time they sign in." />
+
+                <MudSelect T="string" @bind-Value="_approvalMethod" Label="Account approval"
+                           Variant="Variant.Outlined" Class="mt-4"
+                           HelperText="Approve now, or require the user to confirm their email before signing in.">
+                    <MudSelectItem T="string" Value="@ApprovalDirect">Approve directly</MudSelectItem>
+                    <MudSelectItem T="string" Value="@ApprovalEmail">Send confirmation email</MudSelectItem>
+                </MudSelect>
             }
         </MudForm>
 
@@ -108,6 +115,9 @@
     private string? _lineManagerId;
     private string? _preferredHomePath;
     private string _password = "";
+    private const string ApprovalDirect = "direct";
+    private const string ApprovalEmail = "email";
+    private string _approvalMethod = ApprovalDirect;
     private string? _error;
     private bool _busy;
 
@@ -177,6 +187,22 @@
             if (result.Failed)
             {
                 _error = result.Error;
+                return;
+            }
+
+            if (createdId is not null && _approvalMethod == ApprovalDirect)
+            {
+                var user = await Users.FindByIdAsync(createdId);
+                var token = await Users.GenerateEmailConfirmationTokenAsync(user!);
+                var approval = await Users.ConfirmEmailAsync(user!, token);
+                if (!approval.Succeeded)
+                {
+                    _error = string.Join(" ", approval.Errors.Select(e => e.Description));
+                    return;
+                }
+
+                Snackbar.Add($"{_fullName}'s account was approved. They can sign in now.", Severity.Success);
+                Dialog.Close(DialogResult.Ok(true));
                 return;
             }
 
